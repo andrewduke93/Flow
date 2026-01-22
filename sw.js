@@ -5,10 +5,11 @@ const CACHE_NAME = 'flow-v1';
 // App Shell: The minimal set of files needed to run the app offline.
 // Using root-relative paths to be unambiguous.
 const APP_SHELL_URLS = [
-  '/', // The root index.html
-  '/manifest.json',
-  '/icon.svg',
-  '/maskable.svg'
+  '/Flow/', // The root index.html
+  '/Flow/manifest.json',
+  '/Flow/favicon.png',
+  '/Flow/icons/icon-192x192.png',
+  '/Flow/icons/icon-512x512.png'
 ];
 
 // Install event: Pre-cache the app shell.
