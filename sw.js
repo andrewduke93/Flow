@@ -1,6 +1,6 @@
 // sw.js
 
-const CACHE_NAME = 'flow-v5';
+const CACHE_NAME = 'flow-v6';
 
 // App Shell: The minimal set of files needed to run the app offline.
 // Using root-relative paths to be unambiguous.
