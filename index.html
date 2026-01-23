@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -14,11 +15,9 @@
     <title>Flow</title>
     
     <!-- PWA Manifest -->
-    <link rel="manifest" href="/Flow/manifest.json">
+    <link rel="manifest" href="/Flow-main/manifest.json">
     
-    <!-- Icons: Using PNG for Better Compatibility -->
-    <link rel="icon" type="image/png" href="/Flow/favicon.png">
-    <link rel="apple-touch-icon" href="/Flow/icons/apple-touch-icon-180x180.png">
+    <link rel="icon" href="/Flow-main/icon.svg" type="image/svg+xml">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap" rel="stylesheet">
@@ -28,9 +27,7 @@
       // Register the Service Worker for PWA functionality
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          // Get the base path from the current location
-          const basePath = window.location.pathname.split('/Flow')[0] + '/Flow';
-          navigator.serviceWorker.register(basePath + '/sw.js', { scope: basePath + '/' })
+          navigator.serviceWorker.register('/Flow-main/sw.js', { scope: '/' })
             .then(registration => {
               console.log('Flow Service Worker registered:', registration);
             })
@@ -86,7 +83,11 @@
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "jszip": "https://esm.sh/jszip@3.10.1",
     "framer-motion": "https://esm.sh/framer-motion@11.1.7?external=react,react-dom",
-    "@google/genai": "https://esm.sh/@google/genai@^1.38.0"
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
+    "path": "https://esm.sh/path@^0.12.7",
+    "url": "https://esm.sh/url@^0.11.4",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
