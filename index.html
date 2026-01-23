@@ -27,7 +27,7 @@
       // Register the Service Worker for PWA functionality
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/Flow/sw.js', { scope: '/Flow/' })
+          navigator.serviceWorker.register('/Flow/sw.js', { scope: '/' })
             .then(registration => {
               console.log('Flow Service Worker registered:', registration);
             })
