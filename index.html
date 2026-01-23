@@ -15,9 +15,9 @@
     <title>Flow</title>
     
     <!-- PWA Manifest -->
-    <link rel="manifest" href="/Flow-main/manifest.json">
+    <link rel="manifest" href="/Flow/manifest.json">
     
-    <link rel="icon" href="/Flow-main/icon.svg" type="image/svg+xml">
+    <link rel="icon" href="/Flow/icon.svg" type="image/svg+xml">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap" rel="stylesheet">
@@ -27,7 +27,7 @@
       // Register the Service Worker for PWA functionality
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/Flow-main/sw.js', { scope: '/' })
+          navigator.serviceWorker.register('/Flow/sw.js', { scope: '/' })
             .then(registration => {
               console.log('Flow Service Worker registered:', registration);
             })
