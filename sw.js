@@ -1,6 +1,6 @@
 // sw.js
 
-const CACHE_NAME = 'flow-v2';
+const CACHE_NAME = 'flow-v3';
 
 // App Shell: The minimal set of files needed to run the app offline.
 // Using root-relative paths to be unambiguous.
@@ -83,7 +83,7 @@ self.addEventListener('fetch', event => {
             // If the user is trying to navigate to a new page, serve the SPA shell.
             if (request.mode === 'navigate') {
               console.log('[Service Worker] Serving offline fallback for navigation.');
-              return cache.match('/'); // Serve the root page
+              return cache.match('/Flow/'); // Serve the root page
             }
           });
         });
