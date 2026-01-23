@@ -5,13 +5,14 @@ import { TitanReaderView } from './TitanReaderView';
 import { RSVPStageView } from './RSVPStageView'; 
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { ChevronLeft, Rewind } from 'lucide-react';
+import { ChevronLeft, Rewind, Zap } from 'lucide-react';
 import { RSVPContextBackground } from './RSVPContextBackground'; 
 import { MediaCommandCenter } from './MediaCommandCenter';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { SettingsSheet } from './SettingsSheet';
+import { TitanSettingsService } from '../services/configService';
 
 interface ReaderContainerProps {
   book: Book;
@@ -40,6 +41,13 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const holdTimer = useRef<number | null>(null);
   const pointerStart = useRef({ x: 0, y: 0 });
   const wasPlayingRef = useRef(false);
+
+  // Speed Gesture State
+  const [isSpeedAdjusting, setIsSpeedAdjusting] = useState(false);
+  const speedStartData = useRef({ y: 0, val: 0 });
+  
+  // WPM Display for HUD (Local state for smooth updates)
+  const [liveWPM, setLiveWPM] = useState(0);
 
   // Guard against rapid toggling
   const isTransitioningRef = useRef(false);
@@ -159,7 +167,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     }
   };
 
-  // MARK: - Gesture Handling (Rewind & Tap)
+  // MARK: - Gesture Handling (Rewind & Speed)
 
   const handlePointerDown = (e: React.PointerEvent) => {
       if (!isRSVP) return;
@@ -170,53 +178,94 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       // Capture playing state for resume logic
       wasPlayingRef.current = conductor.state === RSVPState.PLAYING;
 
-      // Left 30% Zone for Rewind Hold
-      if (e.clientX < window.innerWidth * 0.3) {
-          holdTimer.current = window.setTimeout(() => {
+      const screenW = window.innerWidth;
+
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+
+      holdTimer.current = window.setTimeout(() => {
+          // ZONE 1: REWIND (Left 45%)
+          if (pointerStart.current.x < screenW * 0.45) {
               setIsRewinding(true);
-              conductor.pause(); // Ensure manual control
+              conductor.pause(); 
               
-              // Start Rewind Loop
-              // 80ms interval = ~12.5 tokens/sec
               rewindInterval.current = window.setInterval(() => {
                   conductor.seekRelative(-1);
-                  if (navigator.vibrate) navigator.vibrate(2); // Micro haptics
+                  if (navigator.vibrate) navigator.vibrate(2); 
               }, 80); 
-          }, 300); // 300ms threshold for hold
+          }
+          // ZONE 2: SPEED (Right 45% -> > 55%)
+          else if (pointerStart.current.x > screenW * 0.55) {
+              setIsSpeedAdjusting(true);
+              setLiveWPM(heartbeat.wpm);
+              // Store initial conditions
+              speedStartData.current = { y: pointerStart.current.y, val: heartbeat.wpm };
+              
+              if (navigator.vibrate) navigator.vibrate(15); 
+          }
+      }, 300); // 300ms threshold for hold
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+      // 1. Cancel hold if moved too much before trigger (prevent accidental trigger while scrolling)
+      if (holdTimer.current && !isRewinding && !isSpeedAdjusting) {
+          const dist = Math.hypot(e.clientX - pointerStart.current.x, e.clientY - pointerStart.current.y);
+          if (dist > 20) {
+              clearTimeout(holdTimer.current);
+              holdTimer.current = null;
+          }
+      }
+
+      // 2. Handle Speed Drag
+      if (isSpeedAdjusting) {
+          e.preventDefault(); // Prevent native scroll
+          e.stopPropagation();
+
+          // Drag Up (negative Y delta) = Increase Speed
+          // Drag Down (positive Y delta) = Decrease Speed
+          const deltaY = speedStartData.current.y - e.clientY; 
+          
+          // Sensitivity: 2 WPM per pixel
+          const wpmDelta = Math.round(deltaY * 2);
+          const newWPM = Math.max(50, Math.min(2000, speedStartData.current.val + wpmDelta));
+          
+          if (newWPM !== heartbeat.wpm) {
+              conductor.updateWPM(newWPM);
+              setLiveWPM(newWPM);
+          }
       }
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
       if (!isRSVP) return;
 
-      // 1. Clean up Hold Timer if released early
+      // Clean up Hold Timer
       if (holdTimer.current) {
           clearTimeout(holdTimer.current);
           holdTimer.current = null;
       }
 
-      // 2. Clean up Rewind Loop
+      // CLEANUP: REWIND
       if (isRewinding) {
           setIsRewinding(false);
           if (rewindInterval.current) {
               clearInterval(rewindInterval.current);
               rewindInterval.current = null;
           }
-          
-          // Resume if it was playing (Short Delay)
-          if (wasPlayingRef.current) {
-              setTimeout(() => {
-                  if (engine.isRSVPMode) conductor.play();
-              }, 300);
-          }
-
-          // Consume event (don't toggle)
+          if (wasPlayingRef.current) setTimeout(() => { if (engine.isRSVPMode) conductor.play(); }, 300);
           e.stopPropagation();
           return;
       }
 
-      // 3. Handle Normal Tap
-      // Only if movement was minimal (not a scroll/swipe)
+      // CLEANUP: SPEED
+      if (isSpeedAdjusting) {
+          setIsSpeedAdjusting(false);
+          // Persist the new speed setting
+          TitanSettingsService.getInstance().updateSettings({ rsvpSpeed: heartbeat.wpm, hasCustomSpeed: true });
+          e.stopPropagation();
+          return;
+      }
+
+      // HANDLE TAP (If not hold, not drag)
       const dist = Math.hypot(e.clientX - pointerStart.current.x, e.clientY - pointerStart.current.y);
       if (dist < 10) {
           handleModeToggle(false);
@@ -227,6 +276,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       if (holdTimer.current) clearTimeout(holdTimer.current);
       if (rewindInterval.current) clearInterval(rewindInterval.current);
       setIsRewinding(false);
+      setIsSpeedAdjusting(false);
   };
 
   return (
@@ -259,6 +309,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             pointerEvents: isRSVP ? 'auto' : 'none'
         }}
         onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerCancel}
         onPointerCancel={handlePointerCancel}
@@ -269,7 +320,36 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
              onOpenSettings={() => setShowSettings(true)} 
          />
          
-         {/* REWIND VISUAL FEEDBACK */}
+         {/* AMBIENT HINTS (Subtle Indicators) */}
+         <AnimatePresence>
+            {isRSVP && !isRewinding && !isSpeedAdjusting && !showSettings && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ delay: 0.5, duration: 1.0 }}
+                    className="absolute inset-0 pointer-events-none z-25"
+                >
+                    {/* Left Hint: Rewind Handle */}
+                    <div 
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-1 h-12 rounded-full opacity-10 shadow-sm"
+                        style={{ backgroundColor: theme.primaryText }}
+                    />
+                    
+                    {/* Right Hint: Speed Slider Track */}
+                    <div 
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-1 h-20 rounded-full opacity-10 flex flex-col items-center justify-between py-1 shadow-sm"
+                        style={{ backgroundColor: theme.primaryText }}
+                    >
+                        {/* Ticks to suggest verticality */}
+                        <div className="w-2 h-[1px] rounded-full opacity-50" style={{ backgroundColor: theme.primaryText }} />
+                        <div className="w-2 h-[1px] rounded-full opacity-50" style={{ backgroundColor: theme.primaryText }} />
+                    </div>
+                </motion.div>
+            )}
+         </AnimatePresence>
+
+         {/* LEFT: REWIND VISUAL FEEDBACK */}
          <AnimatePresence>
             {isRewinding && (
                 <motion.div
@@ -281,6 +361,26 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
                     style={{ backgroundColor: theme.surface }}
                 >
                     <Rewind size={48} className="animate-pulse" style={{ color: theme.accent }} fill="currentColor" />
+                </motion.div>
+            )}
+         </AnimatePresence>
+
+         {/* RIGHT: SPEED VISUAL FEEDBACK */}
+         <AnimatePresence>
+            {isSpeedAdjusting && (
+                <motion.div
+                    initial={{ opacity: 0, x: 30, scale: 0.8 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: 30, scale: 0.8 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                    className="absolute right-8 top-1/2 -translate-y-1/2 p-6 rounded-[2rem] backdrop-blur-md shadow-2xl flex flex-col items-center justify-center border border-white/10 min-w-[120px]"
+                    style={{ backgroundColor: theme.surface }}
+                >
+                    <Zap size={32} className="mb-2" style={{ color: theme.accent }} fill="currentColor" />
+                    <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-black tabular-nums" style={{ color: theme.primaryText }}>{liveWPM}</span>
+                        <span className="text-xs font-bold uppercase" style={{ color: theme.secondaryText }}>wpm</span>
+                    </div>
                 </motion.div>
             )}
          </AnimatePresence>
