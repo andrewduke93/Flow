@@ -5,9 +5,8 @@ const CACHE_NAME = 'flow-v6';
 // App Shell: The minimal set of files needed to run the app offline.
 // Using root-relative paths to be unambiguous.
 const APP_SHELL_URLS = [
-  '/Flow/', // The root index.html
+  '/Flow/',  // The root index.html
   '/Flow/manifest.json',
-  '/Flow/favicon.png',
   '/Flow/icons/icon-192x192.png',
   '/Flow/icons/icon-512x512.png'
 ];
@@ -19,7 +18,11 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME).then(cache => {
       console.log('[Service Worker] Caching App Shell');
       // Use addAll to fetch and cache all shell assets.
-      return cache.addAll(APP_SHELL_URLS);
+      return cache.addAll(APP_SHELL_URLS).catch(err => {
+        console.error('[Service Worker] Cache addAll failed:', err);
+        // Continue anyway - don't let cache failure block installation
+        return Promise.resolve();
+      });
     }).then(() => {
       // Force the waiting service worker to become the active service worker.
       return self.skipWaiting();
