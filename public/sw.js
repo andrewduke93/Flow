@@ -1,6 +1,6 @@
 // sw.js
 
-const CACHE_NAME = 'flow-v7';
+const CACHE_NAME = 'flow-v8';
 
 // Determine the base path from the service worker's own URL
 const swUrl = new URL(self.location.href);
