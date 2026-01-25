@@ -28,9 +28,28 @@
       // Register the Service Worker for PWA functionality
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/Flow/sw.js', { scope: '/Flow/' })
+          // Add cache-bust query param to force SW refresh
+          const swUrl = '/Flow/sw.js?' + new Date().getTime();
+          navigator.serviceWorker.register(swUrl, { scope: '/Flow/' })
             .then(registration => {
               console.log('Flow Service Worker registered:', registration);
+              
+              // Check for updates every 60 seconds
+              setInterval(() => {
+                registration.update();
+              }, 60000);
+              
+              // Listen for SW updates
+              registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.log('New Service Worker available. Page will reload.');
+                    // Force page reload on SW update
+                    window.location.reload();
+                  }
+                });
+              });
             })
             .catch(err => {
               console.error('Flow Service Worker registration failed:', err);
@@ -101,7 +120,7 @@
         to { transform: translateY(100%); }
       }
     </style>
-    <script type="module" crossorigin src="/Flow/assets/index-Bnq2FSW2.js"></script>
+    <script type="module" crossorigin src="/Flow/assets/index-Z74sdlSl.js"></script>
   <link rel="manifest" href="/Flow/manifest.webmanifest"></head>
   <body>
     <div id="root"></div>
