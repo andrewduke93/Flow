@@ -35,7 +35,7 @@ export class IngestionService {
     return IngestionService.instance;
   }
 
-  // Public API
+  // MARK: - Public API
 
   public async ingest(file: File): Promise<Book> {
     try {
@@ -111,7 +111,7 @@ export class IngestionService {
       return book;
   }
 
-  // Internal Helpers
+  // MARK: - Internal Helpers
 
   private async persistBook(book: Book, sourceBuffer: ArrayBuffer) {
       const storage = TitanStorage.getInstance();
@@ -365,7 +365,7 @@ export class IngestionService {
       return txt.value;
   }
 
-  // ZIP Helpers
+  // MARK: - ZIP Helpers
 
   private validateFile(file: File): void {
     if (!file.name.toLowerCase().endsWith('.epub') || file.size === 0) {

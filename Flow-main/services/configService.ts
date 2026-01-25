@@ -33,20 +33,21 @@ export class TitanSettingsService {
       // Visuals
       themeMode: 'System',
       
-      // Type Lab
+      // Type Lab (TRUE BOOK MODE)
       fontFamily: 'New York',
       fontSize: 18.0,      
-      lineHeight: 1.35,
-      paragraphSpacing: 10.0,
+      lineHeight: 1.35,     // Dense, book-like leading
+      paragraphSpacing: 10.0, // Minimal block spacing
       
-      // Motion Fidelity
+      // Motion Fidelity (CLARITY MANDATE: Ultra-Low Default)
       motionBlurIntensity: 0.05, 
-      showReflections: false,
+      showReflections: false,    
 
       // RSVP (Speed Reading) Engine
-      rsvpSpeed: 200,
+      rsvpSpeed: 200, // Updated Baseline
       hasCustomSpeed: false,
-      showGhostPreview: true,
+      rsvpChunkSize: 1,
+      isRSVPContextEnabled: true,
       rsvpColorHighlight: '#FF3B30', 
     };
   }
@@ -80,7 +81,7 @@ export class TitanSettingsService {
     }
   }
 
-  // Public Accessors
+  // MARK: - Public Accessors
 
   public getSettings(): ReaderConfig {
     return { ...this.config };
@@ -92,7 +93,7 @@ export class TitanSettingsService {
     this.notify();
   }
 
-  // Observability
+  // MARK: - Observability
 
   public subscribe(callback: () => void): () => void {
     this.listeners.add(callback);

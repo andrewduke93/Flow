@@ -141,36 +141,20 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       const ribbonRect = ribbon.getBoundingClientRect();
       const left = rect.left - ribbonRect.left;
       
+      // Calculate the pixel position of the focus letter (center character)
+      // by measuring the character width and position within the word
       let focusLetterPos = left + rect.width / 2;
       
-      // If this is the focus word, measure the exact pixel position of the middle character
+      // If this is the focus word, we need to find exact position of center letter
       if (idx === currentIndex && focusToken) {
         const text = focusToken.originalText;
-        const middleCharIdx = Math.floor(text.length / 2);
+        const focusCharIdx = Math.floor(text.length / 2);
         
-        // Measure text up to middle char (inclusive)
-        const tempSpan = document.createElement('span');
-        tempSpan.style.visibility = 'hidden';
-        tempSpan.style.position = 'absolute';
-        tempSpan.style.whiteSpace = 'nowrap';
-        tempSpan.style.font = window.getComputedStyle(child).font;
-        
-        // Measure chars 0 to middle
-        tempSpan.textContent = text.substring(0, middleCharIdx + 1);
-        child.appendChild(tempSpan);
-        const widthToMiddleInclusive = tempSpan.getBoundingClientRect().width;
-        child.removeChild(tempSpan);
-        
-        // Measure chars 0 to middle-1
-        tempSpan.textContent = text.substring(0, middleCharIdx);
-        child.appendChild(tempSpan);
-        const widthToMiddleExclusive = tempSpan.getBoundingClientRect().width;
-        child.removeChild(tempSpan);
-        
-        const middleCharWidth = widthToMiddleInclusive - widthToMiddleExclusive;
-        const focusLetterCenter = widthToMiddleExclusive + middleCharWidth / 2;
-        
-        focusLetterPos = left + focusLetterCenter;
+        // Estimate letter width based on word width and length
+        // This accounts for variable character widths
+        const estimatedCharWidth = rect.width / text.length;
+        const charOffset = focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
+        focusLetterPos = left + charOffset;
       }
       
       wordPositions.current.set(idx, { left, width: rect.width, center: focusLetterPos });

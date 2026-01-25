@@ -38,6 +38,9 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
   const isHandlingPopState = useRef(false);
 
+  // Guard against rapid toggling
+  const isTransitioningRef = useRef(false);
+
   // Sync Logic
   useEffect(() => {
     setIsRSVP(engine.isRSVPMode);
@@ -143,6 +146,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
    * Unified Toggle Logic (Optimized for Speed)
    */
   const handleModeToggle = async (shouldBeRSVP?: boolean, startOffset?: number, tokenIndex?: number) => {
+    if (isTransitioningRef.current) return;
+    
     // If we are ALREADY in RSVP mode and someone triggers a toggle without specific indices,
     // they probably just want to play/pause the conductor.
     if (isRSVP && shouldBeRSVP === undefined && startOffset === undefined && tokenIndex === undefined) {
@@ -156,6 +161,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
     const nextState = shouldBeRSVP ?? !engine.isRSVPMode;
     if (nextState === engine.isRSVPMode && startOffset === undefined && tokenIndex === undefined) return;
+
+    isTransitioningRef.current = true;
 
     try {
         if (nextState) {
@@ -204,8 +211,12 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
         console.error("Toggle failed", e);
         engine.isRSVPMode = false;
         engine.notify();
+    } finally {
+        isTransitioningRef.current = false;
     }
   };
+
+  // MARK: - Gesture Handling moved to RSVPTeleprompter (unified tap/hold/swipe)
 
   // Handle tap from teleprompter - toggle play/pause
   const handleTeleprompterTap = () => {

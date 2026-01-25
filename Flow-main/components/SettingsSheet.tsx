@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ThemePickerView } from './ThemePickerView';
-import { Palette, X, Cloud } from 'lucide-react';
+import { TypeLabView } from './TypeLabView';
+import { Palette, Type, X, Cloud } from 'lucide-react';
 import { useTitanTheme } from '../services/titanTheme';
 import { useTitanSettings } from '../services/configService';
 import { SyncManager } from '../services/syncManager';
@@ -116,6 +117,17 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ onClose }) => {
             >
             <Palette size={14} /> theme
             </button>
+            <button 
+            onClick={() => setActiveTab('typo')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-medium transition-all lowercase`}
+            style={{ 
+                backgroundColor: activeTab === 'typo' ? theme.surface : 'transparent',
+                color: activeTab === 'typo' ? theme.primaryText : theme.secondaryText,
+                opacity: activeTab === 'typo' ? 1 : 0.5
+            }}
+            >
+            <Type size={14} /> typography
+            </button>
         </div>
       </div>
 
@@ -123,6 +135,9 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ onClose }) => {
       <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-6 pb-10 pt-5">
         <div className={`transition-opacity duration-200 ${activeTab === 'optical' ? 'block' : 'hidden'}`}>
              <ThemePickerView />
+        </div>
+        <div className={`transition-opacity duration-200 ${activeTab === 'typo' ? 'block' : 'hidden'}`}>
+             <TypeLabView />
         </div>
       </div>
     </div>

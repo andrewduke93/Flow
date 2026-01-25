@@ -63,30 +63,35 @@ export interface Book {
 
 /**
  * User Configuration & Preferences
+ * Adapted from TitanConfig.swift specifications.
  */
 export interface ReaderConfig {
+  // Singleton-style ID
   id: string;
 
-  // Visuals
+  // -- Visuals --
+  // Deprecated flat properties in favor of Type Lab, but kept for compatibility if needed.
   themeMode: 'System' | 'Light' | 'Dark' | 'Sepia'; 
 
-  // Type Lab
+  // -- Type Lab --
   fontFamily: 'New York' | 'SF Pro' | 'OpenDyslexic' | 'Atkinson Hyperlegible';
-  fontSize: number;
-  lineHeight: number;
-  paragraphSpacing: number;
+  fontSize: number; // 14.0 - 50.0
+  lineHeight: number; // 1.0 - 2.2
+  paragraphSpacing: number; // 0 - 40
 
-  // Motion Fidelity
-  motionBlurIntensity: number;
+  // -- Motion Fidelity --
+  motionBlurIntensity: number; // 0.0 (Off) to 1.0 (Max)
   showReflections: boolean;
 
-  // RSVP (Speed Reading) Engine
-  rsvpSpeed: number;
-  hasCustomSpeed?: boolean;
-  showGhostPreview?: boolean;
-  rsvpColorHighlight: string;
+  // -- RSVP (Speed Reading) Engine --
+  rsvpSpeed: number; // WPM, Default: 150 (Cold Start)
+  hasCustomSpeed?: boolean; // Cold Start Flag
+  rsvpChunkSize: number; // Words at once, Default: 1
+  isRSVPContextEnabled: boolean; // Ghost Ribbon, Default: true
+  rsvpColorHighlight: string; // Hex code, Default: "FF3B30"
+  showGhostPreview?: boolean; // Teleprompter-style word preview during playback
 
-  // Sync Flow
+  // -- Sync Flow --
   isSyncEnabled?: boolean;
   googleDriveEmail?: string;
   lastSyncTimestamp?: number;
