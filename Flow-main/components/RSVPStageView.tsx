@@ -14,8 +14,9 @@ interface RSVPStageViewProps {
  * RSVPStageView (The Projection)
  * Identity: The Lens.
  * Mission: A pure function of heartbeat.currentToken.
+ * Performance: Memoized to prevent unnecessary re-renders.
  */
-export const RSVPStageView: React.FC<RSVPStageViewProps> = ({ onToggleHUD }) => {
+export const RSVPStageView: React.FC<RSVPStageViewProps> = React.memo(({ onToggleHUD }) => {
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
   
@@ -27,20 +28,35 @@ export const RSVPStageView: React.FC<RSVPStageViewProps> = ({ onToggleHUD }) => 
   useEffect(() => {
     // Initial Sync
     setCurrentToken(heartbeat.currentToken);
+    lastIndexRef.current = heartbeat.currentIndex;
 
-    // Optimized Sync Loop
+    // Optimized Sync Loop with RAF batching
+    let rafId: number | null = null;
+    let pendingUpdate = false;
+    
     const sync = () => {
         const idx = heartbeat.currentIndex;
         // Only trigger React render if the index has changed
         if (idx !== lastIndexRef.current) {
-            lastIndexRef.current = idx;
-            setCurrentToken(heartbeat.currentToken);
+            if (!pendingUpdate) {
+                pendingUpdate = true;
+                // Batch state updates using RAF for smoother performance
+                rafId = requestAnimationFrame(() => {
+                    lastIndexRef.current = idx;
+                    setCurrentToken(heartbeat.currentToken);
+                    pendingUpdate = false;
+                });
+            }
         }
     };
 
     const unsubC = conductor.subscribe(sync);
     const unsubH = heartbeat.subscribe(sync);
-    return () => { unsubC(); unsubH(); };
+    return () => { 
+        unsubC(); 
+        unsubH();
+        if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, []);
 
   return (
@@ -52,4 +68,4 @@ export const RSVPStageView: React.FC<RSVPStageViewProps> = ({ onToggleHUD }) => 
       </div>
     </div>
   );
-};
+});

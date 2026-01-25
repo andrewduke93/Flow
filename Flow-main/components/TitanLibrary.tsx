@@ -40,6 +40,9 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
   const [hasDeleted, setHasDeleted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCloudLibrary, setShowCloudLibrary] = useState(false);
+  const isHandlingPopState = useRef(false);
+  const [closingSettings, setClosingSettings] = useState(false);
+  const [closingCloudLibrary, setClosingCloudLibrary] = useState(false);
   
   // Section States
   const [showFinished, setShowFinished] = useState(false); 
@@ -48,6 +51,45 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
   // UNIFIED CONTEXT STATE
   // Used for both Shelf View Tap and Grid View Long Press
   const [inspectingBook, setInspectingBook] = useState<Book | null>(null);
+
+  // Browser back button handling
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isHandlingPopState.current) return;
+      isHandlingPopState.current = true;
+      
+      if (inspectingBook) {
+        setInspectingBook(null);
+      } else if (showCloudLibrary || closingCloudLibrary) {
+        handleCloseCloudLibrary();
+      } else if (showSettings || closingSettings) {
+        handleCloseSettings();
+      }
+      
+      isHandlingPopState.current = false;
+    };
+    
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [inspectingBook, showCloudLibrary, closingCloudLibrary, showSettings, closingSettings]);
+
+  // Close Settings with animation
+  const handleCloseSettings = () => {
+      setClosingSettings(true);
+      setTimeout(() => {
+          setShowSettings(false);
+          setClosingSettings(false);
+      }, 400);
+  };
+
+  // Close Cloud Library with animation
+  const handleCloseCloudLibrary = () => {
+      setClosingCloudLibrary(true);
+      setTimeout(() => {
+          setShowCloudLibrary(false);
+          setClosingCloudLibrary(false);
+      }, 400);
+  };
 
   // Delete Progress
   const [deleteProgress, setDeleteProgress] = useState(0);
@@ -81,10 +123,17 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
       
       return {
           favoriteBooks: sorted.filter(b => b.isFavorite),
-          activeBooks: sorted.filter(b => !b.isFinished && !b.isFavorite),
-          finishedBooks: sorted.filter(b => b.isFinished && !b.isFavorite)
+          activeBooks: sorted.filter(b => !b.isFinished),
+          finishedBooks: sorted.filter(b => b.isFinished)
       };
   }, [books]);
+
+  // Ensure sections stay open if they have books being added/removed
+  useEffect(() => {
+    if (favoriteBooks.length > 0 && !showFavorites && books.some(b => b.isFavorite && !b.isFinished)) {
+        // We don't auto-open, but we ensure state is consistent
+    }
+  }, [favoriteBooks.length]);
 
   // -- Actions --
 
@@ -189,7 +238,12 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
 
       {/* TOP RIGHT SETTINGS BUTTON */}
       <button 
-         onClick={() => setShowSettings(true)}
+         onClick={() => {
+           if (!isHandlingPopState.current) {
+             window.history.pushState({ modal: 'settings' }, '', window.location.href);
+           }
+           setShowSettings(true);
+         }}
          className="absolute top-6 right-6 z-40 p-3 rounded-full hover:bg-black/5 transition-colors"
          style={{ color: theme.secondaryText }}
       >
@@ -199,42 +253,42 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
       {/* 1. SCROLLABLE CONTENT AREA */}
       <div 
         ref={containerRef}
-        className="h-full w-full overflow-y-auto custom-scrollbar pt-24 pb-48 px-4 md:px-8"
+        className="h-full w-full overflow-y-auto custom-scrollbar pt-24 pb-48 px-6 md:px-12"
       >
-         {/* BIG EXPRESSIVE HEADER & TOGGLE */}
+         {/* COMPACT HEADER */}
          <div 
             ref={headerRef}
-            className="mb-12 origin-left will-change-transform flex items-end justify-between pr-4" 
+            className="mb-8 origin-left will-change-transform flex items-end justify-between" 
             style={{ 
                 transform: `scale(1)`, 
                 opacity: 1,
             }}
          >
              <div>
-                <h1 className="text-5xl md:text-7xl font-serif font-black tracking-tighter lowercase leading-none" style={{ color: theme.primaryText }}>
-                    bookshelf.
+                <h1 className="text-4xl md:text-5xl font-serif font-black tracking-tight lowercase leading-none" style={{ color: theme.primaryText }}>
+                    bookshelf
                 </h1>
-                <p className="text-lg md:text-xl font-sans font-medium mt-2 lowercase opacity-60 ml-1" style={{ color: theme.secondaryText }}>
-                    {activeBooks.length} items flowing
+                <p className="text-sm font-sans font-medium mt-2 lowercase opacity-50" style={{ color: theme.secondaryText }}>
+                    {activeBooks.length} {activeBooks.length === 1 ? 'book' : 'books'} in progress
                 </p>
              </div>
 
              {/* VIEW TOGGLE */}
              {books.length > 0 && (
-                 <div className="flex bg-black/5 p-1 rounded-full backdrop-blur-md mb-2">
+                 <div className="flex p-0.5 rounded-xl border" style={{ borderColor: theme.borderColor, backgroundColor: theme.surface }}>
                      <button
                         onClick={() => setViewMode('grid')}
-                        className={`p-2 rounded-full transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'hover:bg-black/5'}`}
-                        style={{ color: viewMode === 'grid' ? 'black' : theme.secondaryText }}
+                        className={`p-2 rounded-lg transition-all active:scale-90 ${viewMode === 'grid' ? 'shadow-sm' : 'opacity-40 hover:opacity-70'}`}
+                        style={{ backgroundColor: viewMode === 'grid' ? theme.background : 'transparent', color: theme.primaryText }}
                      >
-                         <LayoutGrid size={20} />
+                         <LayoutGrid size={18} />
                      </button>
                      <button
                         onClick={() => setViewMode('shelf')}
-                        className={`p-2 rounded-full transition-all ${viewMode === 'shelf' ? 'bg-white shadow-sm' : 'hover:bg-black/5'}`}
-                        style={{ color: viewMode === 'shelf' ? 'black' : theme.secondaryText }}
+                        className={`p-2 rounded-lg transition-all active:scale-90 ${viewMode === 'shelf' ? 'shadow-sm' : 'opacity-40 hover:opacity-70'}`}
+                        style={{ backgroundColor: viewMode === 'shelf' ? theme.background : 'transparent', color: theme.primaryText }}
                      >
-                         <LibraryBig size={20} />
+                         <LibraryBig size={18} />
                      </button>
                  </div>
              )}
@@ -245,22 +299,29 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
              <EmptyLibraryState onImport={triggerImport} hasDeleted={hasDeleted} />
          ) : viewMode === 'shelf' ? (
              // SHELF MODE
-             <TitanShelfView 
-                books={books} 
-                onBookSelect={onBookSelect}
-                onInspectBook={(b) => setInspectingBook(b)}
-             />
+             <div className="transition-opacity duration-400" style={{transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)'}}>
+                 <TitanShelfView 
+                    books={books} 
+                    onBookSelect={onBookSelect}
+                    onInspectBook={(b) => {
+                      if (!isHandlingPopState.current) {
+                        window.history.pushState({ modal: 'detail' }, '', window.location.href);
+                      }
+                      setInspectingBook(b);
+                    }}
+                 />
+             </div>
          ) : (
              // GRID MODE (Classic)
-             <div className="flex flex-col gap-12">
+             <div className="flex flex-col gap-12 transition-opacity duration-400" style={{transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)'}}>
                  
                  {/* 1. Active Books Grid */}
-                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-10 md:gap-x-8 md:gap-y-14">
+                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-6 md:gap-x-6 md:gap-y-8">
                     <AnimatePresence mode='popLayout'>
                         {activeBooks.map((book) => (
                             <motion.div
                                 key={book.id}
-                                initial={{ opacity: 0, scale: 0.9 }}
+                                initial={false}
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0 }}
                             >
@@ -274,7 +335,12 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
                                         setIsEditing(true);
                                         setSelectedIds(new Set([book.id]));
                                     }}
-                                    onLongPress={(b) => setInspectingBook(b)} // Unified Long Press Action
+                                    onLongPress={(b) => {
+                                      if (!isHandlingPopState.current) {
+                                        window.history.pushState({ modal: 'detail' }, '', window.location.href);
+                                      }
+                                      setInspectingBook(b);
+                                    }}
                                 />
                             </motion.div>
                         ))}
@@ -283,90 +349,79 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
                  
                  {/* 2. Favorites Section */}
                  {favoriteBooks.length > 0 && (
-                     <div className="mt-8 border-t pt-8" style={{ borderColor: theme.borderColor }}>
+                     <div className="mt-6 border-t pt-6" style={{ borderColor: theme.borderColor }}>
                          <button 
-                            onClick={() => setShowFavorites(p => !p)}
-                            className="flex items-center gap-2 text-lg font-serif font-bold lowercase hover:opacity-80 transition-opacity mb-6"
-                            style={{ color: theme.secondaryText }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowFavorites(p => !p);
+                            }}
+                            className="flex items-center gap-1.5 text-sm font-medium lowercase hover:opacity-80 transition-opacity mb-4"
+                            style={{ color: theme.secondaryText, opacity: 0.6 }}
                          >
-                            {showFavorites ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                            <span>hall of fame ({favoriteBooks.length})</span>
+                            {showFavorites ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            <span>favorites ({favoriteBooks.length})</span>
                          </button>
                          
-                         <AnimatePresence>
-                             {showFavorites && (
-                                <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    className="overflow-hidden"
-                                >
-                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-10 md:gap-x-8 md:gap-y-14 pb-8">
-                                        {favoriteBooks.map((book) => (
-                                            <motion.div
-                                                key={book.id}
-                                                initial={{ opacity: 0 }}
-                                                animate={{ opacity: 1 }} 
-                                            >
-                                                <TitanBookCell 
-                                                    book={book}
-                                                    onSelect={onBookSelect}
-                                                    isEditing={isEditing}
-                                                    isSelected={selectedIds.has(book.id)}
-                                                    onToggleSelect={handleToggleSelect}
-                                                    onLongPress={(b) => setInspectingBook(b)}
-                                                />
-                                            </motion.div>
-                                        ))}
-                                     </div>
-                                </motion.div>
-                             )}
-                         </AnimatePresence>
+                         {showFavorites && (
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-6 md:gap-x-6 md:gap-y-8 pb-6">
+                                {favoriteBooks.map((book) => (
+                                    <div key={`fav-${book.id}`}>
+                                        <TitanBookCell 
+                                            book={book}
+                                            onSelect={onBookSelect}
+                                            isEditing={isEditing}
+                                            isSelected={selectedIds.has(book.id)}
+                                            onToggleSelect={handleToggleSelect}
+                                            onLongPress={(b) => {
+                                              if (!isHandlingPopState.current) {
+                                                window.history.pushState({ modal: 'detail' }, '', window.location.href);
+                                              }
+                                              setInspectingBook(b);
+                                            }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                         )}
                      </div>
                  )}
 
                  {/* 3. Finished Books Section */}
                  {finishedBooks.length > 0 && (
-                     <div className="mt-2 border-t pt-8" style={{ borderColor: theme.borderColor }}>
+                     <div className="mt-2 border-t pt-6" style={{ borderColor: theme.borderColor }}>
                          <button 
-                            onClick={() => setShowFinished(p => !p)}
-                            className="flex items-center gap-2 text-lg font-serif font-bold lowercase hover:opacity-80 transition-opacity mb-6"
-                            style={{ color: theme.secondaryText }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowFinished(p => !p);
+                            }}
+                            className="flex items-center gap-1.5 text-sm font-medium lowercase hover:opacity-80 transition-opacity mb-4"
+                            style={{ color: theme.secondaryText, opacity: 0.6 }}
                          >
-                            {showFinished ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                            <span>past adventures ({finishedBooks.length})</span>
+                            {showFinished ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            <span>finished ({finishedBooks.length})</span>
                          </button>
                          
-                         <AnimatePresence>
-                             {showFinished && (
-                                <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    className="overflow-hidden"
-                                >
-                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-10 md:gap-x-8 md:gap-y-14 pb-8">
-                                        {finishedBooks.map((book) => (
-                                            <motion.div
-                                                key={book.id}
-                                                initial={{ opacity: 0 }}
-                                                animate={{ opacity: 0.8 }} 
-                                                whileHover={{ opacity: 1 }}
-                                            >
-                                                <TitanBookCell 
-                                                    book={book}
-                                                    onSelect={onBookSelect}
-                                                    isEditing={isEditing}
-                                                    isSelected={selectedIds.has(book.id)}
-                                                    onToggleSelect={handleToggleSelect}
-                                                    onLongPress={(b) => setInspectingBook(b)}
-                                                />
-                                            </motion.div>
-                                        ))}
-                                     </div>
-                                </motion.div>
-                             )}
-                         </AnimatePresence>
+                         {showFinished && (
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-6 md:gap-x-6 md:gap-y-8 pb-6">
+                                {finishedBooks.map((book) => (
+                                    <div key={`fin-${book.id}`}>
+                                        <TitanBookCell 
+                                            book={book}
+                                            onSelect={onBookSelect}
+                                            isEditing={isEditing}
+                                            isSelected={selectedIds.has(book.id)}
+                                            onToggleSelect={handleToggleSelect}
+                                            onLongPress={(b) => {
+                                              if (!isHandlingPopState.current) {
+                                                window.history.pushState({ modal: 'detail' }, '', window.location.href);
+                                              }
+                                              setInspectingBook(b);
+                                            }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                         )}
                      </div>
                  )}
 
@@ -378,93 +433,98 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
       {/* 2. THE SUPERBAR (Bottom Floating Dock) */}
       <div 
           className="absolute left-0 right-0 flex justify-center pointer-events-none z-30"
-          style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
+          style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
       >
           <motion.div 
              layout 
              initial={false}
-             className="pointer-events-auto shadow-2xl backdrop-blur-xl border flex items-center p-2 rounded-full gap-2 relative overflow-hidden"
+             className="pointer-events-auto shadow-xl backdrop-blur-2xl border flex items-center p-1.5 rounded-2xl gap-1 relative overflow-hidden"
              style={{ 
-                 backgroundColor: theme.surface + 'E6', 
+                 backgroundColor: theme.surface + 'f0', 
                  borderColor: theme.borderColor,
-                 minWidth: '200px'
+                 minWidth: '180px'
              }}
           >
              <AnimatePresence mode='wait'>
                  {!isEditing ? (
                      <motion.div 
                         key="normal-dock"
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={false}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -20 }}
-                        className="flex items-center w-full gap-3 px-2"
+                        className="flex items-center w-full gap-2 px-1"
                      >
                         <button 
                             onClick={toggleEditMode}
                             disabled={books.length === 0}
-                            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-black/5 disabled:opacity-30 transition-colors"
+                            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 disabled:opacity-30 transition-colors"
                             style={{ color: theme.secondaryText }}
                         >
-                            <CheckSquare size={20} />
+                            <CheckSquare size={18} />
                         </button>
-                        <div className="w-px h-6 bg-black/10" />
+                        <div className="w-px h-5 bg-black/10" />
                         <button 
-                            onClick={() => setShowCloudLibrary(true)}
-                            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-black/5 transition-colors"
+                            onClick={() => {
+                              if (!isHandlingPopState.current) {
+                                window.history.pushState({ modal: 'cloud' }, '', window.location.href);
+                              }
+                              setShowCloudLibrary(true);
+                            }}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 transition-colors"
                             style={{ color: theme.accent }}
                         >
-                            <CloudDownload size={20} />
+                            <CloudDownload size={18} />
                         </button>
-                        <div className="w-px h-6 bg-black/10" />
+                        <div className="w-px h-5 bg-black/10" />
                         <button 
                             onClick={triggerImport}
-                            className="flex-1 flex items-center justify-center gap-2 px-6 h-10 rounded-full font-bold text-white shadow-lg active:scale-95 transition-transform lowercase"
+                            className="flex-1 flex items-center justify-center gap-1.5 px-4 h-9 rounded-xl font-semibold text-white shadow-md active:scale-[0.98] transition-transform lowercase text-sm"
                             style={{ backgroundColor: theme.accent }}
                         >
-                            {isImporting ? <Sparkles size={18} className="animate-spin" /> : <Plus size={18} strokeWidth={3} />}
+                            {isImporting ? <Sparkles size={16} className="animate-spin" /> : <Plus size={16} strokeWidth={3} />}
                             <span>import</span>
                         </button>
                      </motion.div>
                  ) : (
                      <motion.div 
                         key="edit-dock"
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={false}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -20 }}
-                        className="flex items-center w-full gap-3 px-2"
+                        className="flex items-center w-full gap-2 px-1"
                      >
                         <button 
                             onClick={toggleEditMode}
-                            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-black/5 transition-colors"
+                            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 transition-colors"
                             style={{ color: theme.primaryText }}
                         >
-                            <X size={20} />
+                            <X size={18} />
                         </button>
-                        <div className="w-px h-6 bg-black/10" />
+                        <div className="w-px h-5 bg-black/10" />
                         <button
                            onClick={handleToggleRead}
                            disabled={selectedIds.size === 0}
-                           className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-black/5 transition-colors disabled:opacity-30"
+                           className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 transition-colors disabled:opacity-30"
                            style={{ color: theme.primaryText }}
                         >
-                           <BookmarkCheck size={20} />
+                           <BookmarkCheck size={18} />
                         </button>
-                        <div className="w-px h-6 bg-black/10" />
+                        <div className="w-px h-5 bg-black/10" />
                         <button 
                             onPointerDown={handlePointerDownDelete}
                             onPointerUp={cancelDelete}
                             onPointerLeave={cancelDelete}
                             disabled={selectedIds.size === 0}
-                            className="flex-1 relative flex items-center justify-center gap-2 px-6 h-10 rounded-full font-bold text-white shadow-lg active:scale-95 transition-transform overflow-hidden disabled:opacity-50 disabled:active:scale-100 lowercase"
+                            className="flex-1 relative flex items-center justify-center gap-1.5 px-4 h-9 rounded-xl font-semibold text-white shadow-md active:scale-[0.98] transition-transform overflow-hidden disabled:opacity-50 disabled:active:scale-100 lowercase text-sm"
                             style={{ backgroundColor: theme.accent }}
                         >
                             <div 
                                 className="absolute inset-0 bg-white mix-blend-overlay origin-left"
                                 style={{ transform: `scaleX(${deleteProgress})`, transition: 'transform 0.05s linear' }}
                             />
-                            <div className="relative z-10 flex items-center gap-2">
-                                <Trash2 size={18} />
-                                <span>{selectedIds.size > 0 ? `toss ${selectedIds.size}` : 'select'}</span>
+                            <div className="relative z-10 flex items-center gap-1.5">
+                                <Trash2 size={16} />
+                                <span>{selectedIds.size > 0 ? `delete ${selectedIds.size}` : 'select'}</span>
                             </div>
                         </button>
                      </motion.div>
@@ -497,58 +557,62 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
       </AnimatePresence>
 
       {/* CLOUD LIBRARY SHEET */}
-      <AnimatePresence>
-        {showCloudLibrary && (
-            <>
-                <motion.div 
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-[100]"
-                    style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
-                    onClick={() => setShowCloudLibrary(false)}
+      {(showCloudLibrary || closingCloudLibrary) && (
+        <>
+            <div 
+                className="fixed inset-0 z-[100]"
+                style={{ 
+                  backgroundColor: 'rgba(0,0,0,0.5)', 
+                  backdropFilter: 'blur(2px)',
+                  animation: closingCloudLibrary ? 'fadeOut 0.4s ease-out' : 'fadeIn 0.6s ease-out'
+                }}
+                onClick={handleCloseCloudLibrary}
+            />
+            <div
+                className="fixed bottom-0 left-0 right-0 z-[101] rounded-t-[32px] h-[90vh] shadow-2xl overflow-hidden"
+                style={{ 
+                  backgroundColor: theme.background,
+                  animation: closingCloudLibrary ? 'slideDown 0.5s cubic-bezier(0.7, 0, 0.84, 0)' : 'slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
+            >
+                <TitanCloudLibrary 
+                    existingBooks={books}
+                    onClose={handleCloseCloudLibrary}
+                    onImport={(book) => {
+                        onBookImported(book);
+                    }}
+                    onOpen={(book) => {
+                        setShowCloudLibrary(false);
+                        onBookSelect(book);
+                    }}
                 />
-                <motion.div
-                    initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-                    transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                    className="fixed bottom-0 left-0 right-0 z-[101] rounded-t-[32px] h-[90vh] shadow-2xl overflow-hidden"
-                    style={{ backgroundColor: theme.background }}
-                >
-                    <TitanCloudLibrary 
-                        existingBooks={books}
-                        onClose={() => setShowCloudLibrary(false)}
-                        onImport={(book) => {
-                            onBookImported(book);
-                        }}
-                        onOpen={(book) => {
-                            setShowCloudLibrary(false);
-                            onBookSelect(book);
-                        }}
-                    />
-                </motion.div>
-            </>
-        )}
-      </AnimatePresence>
+            </div>
+        </>
+      )}
 
       {/* SETTINGS SHEET LAYER */}
-      <AnimatePresence>
-        {showSettings && (
-            <>
-            <motion.div 
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[100]"
-                style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
-                onClick={() => setShowSettings(false)}
-            />
-            <motion.div
-                initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-                transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                className="fixed bottom-0 left-0 right-0 z-[101] rounded-t-[32px] h-[70vh] shadow-2xl overflow-hidden"
-                style={{ backgroundColor: theme.background }}
-            >
-                <SettingsSheet onClose={() => setShowSettings(false)} />
-            </motion.div>
-            </>
-        )}
-      </AnimatePresence>
+      {(showSettings || closingSettings) && (
+        <>
+          <div 
+              className="fixed inset-0 z-[100]"
+              style={{ 
+                backgroundColor: 'rgba(0,0,0,0.5)', 
+                backdropFilter: 'blur(2px)',
+                animation: closingSettings ? 'fadeOut 0.4s ease-out' : 'fadeIn 0.6s ease-out'
+              }}
+              onClick={handleCloseSettings}
+          />
+          <div
+              className="fixed bottom-0 left-0 right-0 z-[101] rounded-t-[32px] h-[70vh] shadow-2xl overflow-hidden"
+              style={{ 
+                backgroundColor: theme.background,
+                animation: closingSettings ? 'slideDown 0.5s cubic-bezier(0.7, 0, 0.84, 0)' : 'slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
+              }}
+          >
+              <SettingsSheet onClose={handleCloseSettings} />
+          </div>
+        </>
+      )}
     </div>
   );
 };

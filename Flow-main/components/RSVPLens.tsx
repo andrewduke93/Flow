@@ -12,9 +12,9 @@ interface RSVPLensProps {
  * Identity: Type Engineer.
  * Mission: The "Reedy" Pivot (Inter).
  * Axis: 35.5% Left.
- * Performance: ZERO-LAYOUT THRASHING. Pure heuristic scaling.
+ * Performance: ZERO-LAYOUT THRASHING. Pure heuristic scaling. Fully memoized.
  */
-export const RSVPLens: React.FC<RSVPLensProps> = ({ token }) => {
+export const RSVPLens: React.FC<RSVPLensProps> = React.memo(({ token }) => {
   const theme = useTitanTheme();
 
   // CONSTANT: The Optical Focus Color (Titan Ember)
@@ -31,14 +31,16 @@ export const RSVPLens: React.FC<RSVPLensProps> = ({ token }) => {
       return Math.max(0.6, 10 / len);
   }, [token]);
 
+  // Soft Vignette: Memoized to theme only (never recalculates on token change)
+  const vignette = useMemo(() => 
+    `radial-gradient(circle at 35.5% 42%, transparent 20%, ${theme.background} 85%)`,
+    [theme.background]
+  );
+
   if (!token) return null;
 
   // Fluid Font Size: Fixed clamp to avoid JS calculation overhead
   const fluidFontSize = "clamp(3rem, 13vw, 5rem)";
-
-  // Soft Vignette: Fades to theme background
-  // Memoized strictly to theme to prevent recalculation on token change
-  const vignette = `radial-gradient(circle at 35.5% 42%, transparent 20%, ${theme.background} 85%)`;
 
   return (
     <div className="absolute inset-0 pointer-events-none select-none overflow-hidden box-border">
@@ -112,4 +114,4 @@ export const RSVPLens: React.FC<RSVPLensProps> = ({ token }) => {
       </div>
     </div>
   );
-};
+});

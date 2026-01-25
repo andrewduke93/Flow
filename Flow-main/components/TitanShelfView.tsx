@@ -109,7 +109,7 @@ export const TitanShelfView: React.FC<TitanShelfViewProps> = ({ books, onInspect
   return (
     <div className="relative w-full pb-32">
         {/* SHELF CONTAINER */}
-        <div className="flex flex-wrap items-end gap-y-12 px-4 perspective-[1000px]">
+        <div className="flex flex-wrap items-end gap-y-16 px-6 perspective-[1000px]">
             {books.map((book) => (
                 <TitanSpine 
                     key={book.id} 
@@ -117,11 +117,10 @@ export const TitanShelfView: React.FC<TitanShelfViewProps> = ({ books, onInspect
                     onClick={() => onInspectBook(book)} 
                 />
             ))}
-            <div className="flex-1 min-w-[50px] border-b-[8px] h-72 rounded-sm border-neutral-200/5" />
+            
+            {/* The Floating Shelf Edge */}
+            <div className="w-full h-2 rounded-full bg-current opacity-[0.03] mt-[-4px] blur-[1px]" />
         </div>
-
-        {/* Shelf Line */}
-        <div className="fixed bottom-0 left-0 right-0 h-px bg-transparent pointer-events-none" />
     </div>
   );
 };

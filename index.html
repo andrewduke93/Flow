@@ -14,27 +14,23 @@
     
     <title>Flow</title>
     
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="/Flow/manifest.json">
+    <!-- PWA Manifest (optional in dev) -->
+    <!-- <link rel="manifest" href="./manifest.json"> -->
     
-    <link rel="icon" href="/Flow/icon.svg" type="image/svg+xml">
+    <link rel="icon" href="./icon.svg" type="image/svg+xml">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap" rel="stylesheet">
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
-      // Register the Service Worker for PWA functionality
+      // Disable service worker in development
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/Flow/sw.js', { scope: '/' })
-            .then(registration => {
-              console.log('Flow Service Worker registered:', registration);
-            })
-            .catch(err => {
-              console.error('Flow Service Worker registration failed:', err);
-            });
-        });
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister()
+          }
+        })
       }
       
       tailwind.config = {
@@ -51,6 +47,16 @@
                 ember: '#E25822',
                 gray: '#333333',
               }
+            },
+            transitionDuration: {
+              '300': '300ms',
+              '400': '400ms',
+              '500': '500ms',
+            },
+            transitionTimingFunction: {
+              'smooth': 'cubic-bezier(0.4, 0, 0.2, 1)',
+              'enter': 'cubic-bezier(0.16, 1, 0.3, 1)',
+              'exit': 'cubic-bezier(0.7, 0, 0.84, 0)',
             }
           }
         }
@@ -73,26 +79,24 @@
       .no-tap-highlight {
         -webkit-tap-highlight-color: transparent;
       }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes fadeOut {
+        from { opacity: 1; }
+        to { opacity: 0; }
+      }
+      @keyframes slideUp {
+        from { transform: translateY(100%); }
+        to { transform: translateY(0); }
+      }
+      @keyframes slideDown {
+        from { transform: translateY(0); }
+        to { transform: translateY(100%); }
+      }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "jszip": "https://esm.sh/jszip@3.10.1",
-    "framer-motion": "https://esm.sh/framer-motion@11.1.7?external=react,react-dom",
-    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
-    "path": "https://esm.sh/path@^0.12.7",
-    "url": "https://esm.sh/url@^0.11.4",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
-</head>
+  </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>

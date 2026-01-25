@@ -41,7 +41,8 @@ export const getOverallProgress = (book: Book): number => {
 
 // Logic: Calculate word count (splitting by spaces)
 export const calculateWordCount = (content: string): number => {
-  return content.trim().split(/\s+/).length;
+  if (!content) return 0;
+  return (content.match(/([^\s]+)/g) || []).length;
 };
 
 // Logic: Estimated read time (Words / 250 WPM)

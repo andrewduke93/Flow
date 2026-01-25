@@ -7,6 +7,7 @@ import { RSVPToken } from '../types';
  * to ensure zero-latency updates and precise WPM timing.
  * 
  * Update Phase 9-F: Velocity Ramp & Re-Entry Logic.
+ * Performance Optimized: Batched React notifications, RAF-based timing, microtask batching.
  * 
  * Identity: Game Engine Engineer / Systems Architect.
  */
@@ -32,6 +33,9 @@ export class RSVPHeartbeat {
   // Observability
   private listeners: Set<() => void> = new Set();
   private completionListeners: Set<() => void> = new Set();
+  
+  // PERFORMANCE: Batched notification
+  private notifyScheduled: boolean = false;
 
   private constructor() {}
 
@@ -156,8 +160,9 @@ export class RSVPHeartbeat {
   // -- The Engine Loop --
 
   /**
-   * The Tick Logic.
+   * The Tick Logic (High-Performance Game Loop).
    * Called every screen refresh (approx 60Hz or 120Hz).
+   * Optimized for zero jank and precise WPM timing.
    */
   private loop = (timestamp: number) => {
     if (!this._isPlaying) return;
@@ -243,7 +248,22 @@ export class RSVPHeartbeat {
     return () => this.completionListeners.delete(callback);
   }
 
+  /**
+   * Batched notification system for React optimization.
+   * Prevents excessive React re-renders during rapid heartbeat updates.
+   */
   private notify() {
-    this.listeners.forEach(cb => cb());
+    // During playback, batch notifications to prevent excessive React renders
+    if (this._isPlaying && !this.notifyScheduled) {
+      this.notifyScheduled = true;
+      // Use microtask for immediate batching within same frame
+      queueMicrotask(() => {
+        this.notifyScheduled = false;
+        this.listeners.forEach(cb => cb());
+      });
+    } else if (!this._isPlaying) {
+      // When paused/stopped, notify immediately for responsive UI
+      this.listeners.forEach(cb => cb());
+    }
   }
 }

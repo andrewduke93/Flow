@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, Cloud, AlertTriangle, Check } from 'lucide-react';
 import { useTitanTheme } from '../services/titanTheme';
 
@@ -17,12 +16,9 @@ export const SyncToast: React.FC<SyncToastProps> = ({ status, message, onAction,
   // We'll let parent handle existence, but we animate in.
 
   return (
-    <motion.div
-       initial={{ y: 50, opacity: 0 }}
-       animate={{ y: 0, opacity: 1 }}
-       exit={{ y: 50, opacity: 0 }}
+    <div
        className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 px-4 py-3 rounded-full shadow-xl backdrop-blur-md border border-white/10"
-       style={{ backgroundColor: theme.surface }}
+       style={{ backgroundColor: theme.surface, animation: 'slideUp 400ms cubic-bezier(0.16, 1, 0.3, 1)' }}
     >
        {status === 'syncing' && <RefreshCw size={18} className="animate-spin text-blue-500" />}
        {status === 'error' && <AlertTriangle size={18} className="text-red-500" />}
@@ -41,6 +37,6 @@ export const SyncToast: React.FC<SyncToastProps> = ({ status, message, onAction,
              {actionLabel}
            </button>
        )}
-    </motion.div>
+    </div>
   );
 };

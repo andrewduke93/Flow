@@ -107,52 +107,93 @@ export class IngestionService {
       const startMarker = cleanText.indexOf("*** START OF");
       const endMarker = cleanText.indexOf("*** END OF");
       
-      if (startMarker !== -1) cleanText = cleanText.substring(cleanText.indexOf("\n", startMarker));
-      if (endMarker !== -1) cleanText = cleanText.substring(0, endMarker);
+      if (startMarker !== -1) {
+          const contentPastMarker = cleanText.substring(startMarker);
+          const firstRealLine = contentPastMarker.indexOf("\n", contentPastMarker.indexOf("\n") + 1);
+          cleanText = contentPastMarker.substring(firstRealLine);
+      }
+      if (endMarker !== -1) {
+          cleanText = cleanText.substring(0, endMarker);
+      }
       
       // 2. Segmentation
       const paragraphs = cleanText.split(/\n\s*\n/);
       const chapters: Chapter[] = [];
       let currentChapterContent: string[] = [];
+      let currentChapterTitle: string = "Preface";
       let chapterCount = 1;
-      const PARAGRAPHS_PER_CHAPTER = 60; // Slightly increased
+      
+      // FALLBACK CONSTANTS
+      const MAX_PARAGRAPHS_WITHOUT_CHAPTER = 400; // Force break if no chapter found for too long
 
-      for (const rawP of paragraphs) {
+      for (let i = 0; i < paragraphs.length; i++) {
+          const rawP = paragraphs[i];
           const p = rawP.replace(/\s+/g, ' ').trim(); 
           if (!p) continue;
 
-          // Detection: "Chapter X", "Book I", "Part Two"
-          const isExplicitChapter = /^(chapter|book|part|prologue|epilogue)\s+\w+/i.test(p) && p.length < 50;
+          // Detection Logic: 
+          // 1. Explicit labels: "Chapter 1", "CHAPTER I", "Letter 1", "Book One"
+          // 2. Short, capitalized lines: "I.", "V.", "PROLOGUE"
+          // 3. We exclude common false positives from Gutenberg headers
+          const isExplicitChapterLabel = /^(chapter|book|part|letter|prologue|epilogue|foreword|preface|stave|volume|vol\.)\s*([ivxlcdm\d]+|the\s+\w+)?/i.test(p);
+          const isShortRomanNumeral = /^[IVXLCDM]+\.?$/.test(p);
+          const isSimpleNumeral = /^\d+\.?$/.test(p);
+          const looksLikeTitle = isExplicitChapterLabel || (isShortRomanNumeral && p.length < 10) || (isSimpleNumeral && p.length < 5);
           
-          if (isExplicitChapter && currentChapterContent.length > 15) {
-              this.flushChapter(chapters, currentChapterContent, chapterCount++);
-              currentChapterContent = [];
+          const isExplicitChapter = looksLikeTitle && p.length < 100;
+          
+          // SMART CHAPTER DETECTOR: If we find a chapter marker, flush previous content
+          // We also check if the content we're flushing is substantial (not just a TOC entry)
+          // or if we've already accumulated enough text.
+          if (isExplicitChapter) {
+              const currentWC = calculateWordCount(currentChapterContent.join(" "));
+              
+              // If we have content (more than 50 words), flush it.
+              // If we have very little content, it might be a TOC or a Preface.
+              if (currentWC > 50 || chapters.length === 0) {
+                  this.flushChapter(chapters, currentChapterContent, currentChapterTitle, chapterCount++);
+                  currentChapterContent = [];
+                  currentChapterTitle = p;
+                  continue; 
+              } else {
+                  // If we had < 50 words, just update the title to the latest one we found.
+                  // This naturally "eats" Table of Contents entries.
+                  currentChapterTitle = p;
+                  continue;
+              }
           }
           
           currentChapterContent.push(p);
 
           // Fallback splitting for massive text blocks without explicit chapters
-          if (currentChapterContent.length >= PARAGRAPHS_PER_CHAPTER && !isExplicitChapter) {
-               this.flushChapter(chapters, currentChapterContent, chapterCount++);
+          if (currentChapterContent.length >= MAX_PARAGRAPHS_WITHOUT_CHAPTER) {
+               this.flushChapter(chapters, currentChapterContent, currentChapterTitle, chapterCount++);
                currentChapterContent = [];
+               currentChapterTitle = `Part ${chapterCount}`;
           }
       }
 
       if (currentChapterContent.length > 0) {
-          this.flushChapter(chapters, currentChapterContent, chapterCount++);
+          this.flushChapter(chapters, currentChapterContent, currentChapterTitle, chapterCount++);
       }
 
       return chapters;
   }
 
-  private flushChapter(chapters: Chapter[], content: string[], index: number) {
+  private flushChapter(chapters: Chapter[], content: string[], title: string, index: number) {
       const contentStr = content.map(para => `<p>${para}</p>`).join("\n");
       const wc = calculateWordCount(contentStr);
+      
+      // Polish Title
+      let displayTitle = title.trim();
+      // If it's just "I", make it "Chapter I" or similar? No, keep it auth-faithful.
+      // But if it's some generic Part stuff, we can keep it.
+
       chapters.push({
           id: crypto.randomUUID(),
-          title: `Part ${index}`,
+          title: displayTitle,
           content: contentStr,
-          sortOrder: index - 1,
+          sortOrder: chapters.length,
           wordCount: wc,
           estimatedReadTime: Math.ceil(wc / 250)
       });

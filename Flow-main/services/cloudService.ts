@@ -7,6 +7,8 @@ export interface CloudBook {
   author: string;
   summary: string;
   moodColor: string; // Hex
+  genre?: string;
+  tags?: string[];
   coverUrl?: string; // Enhanced Metadata
   gutenbergId?: string; // The Key to the Vault
   isCopyrightedReplacement?: boolean; // UI feedback
@@ -22,6 +24,8 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "Mary Shelley", 
         summary: "A scientist creates a sentient creature in a unorthodox scientific experiment. Gothic sci-fi vibes.", 
         moodColor: "#56494E",
+        genre: "Gothic Fiction",
+        tags: ["Sci-Fi", "Classic", "Horror"],
         gutenbergId: "84"
     },
     { 
@@ -29,6 +33,8 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "Jane Austen", 
         summary: "The turbulent relationship between Elizabeth Bennet and Fitzwilliam Darcy. Witty and romantic.", 
         moodColor: "#D8A49B",
+        genre: "Romance",
+        tags: ["Social Commentary", "Classic"],
         gutenbergId: "1342"
     },
     { 
@@ -36,6 +42,8 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "Bram Stoker", 
         summary: "Count Dracula's attempt to move from Transylvania to England. The ultimate vampire horror.", 
         moodColor: "#740001",
+        genre: "Horror",
+        tags: ["Epistolary", "Classic", "Vampires"],
         gutenbergId: "345"
     },
     { 
@@ -43,6 +51,8 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "F. Scott Fitzgerald", 
         summary: "A portrait of the Jazz Age in all its decadence and excess. Tragic glamour.", 
         moodColor: "#E3C565",
+        genre: "Modernist Fiction",
+        tags: ["Jazz Age", "American Classic"],
         gutenbergId: "64317"
     },
     { 
@@ -50,6 +60,8 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "Herman Melville", 
         summary: "The narrative of the sailor Ishmael and the obsessive quest of Ahab. Deep ocean madness.", 
         moodColor: "#476C9B",
+        genre: "Adventure",
+        tags: ["Nautical", "Classic"],
         gutenbergId: "2701"
     },
     { 
@@ -57,6 +69,8 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "Lewis Carroll", 
         summary: "A young girl named Alice falls through a rabbit hole into a fantasy world. Surreal and trippy.", 
         moodColor: "#6D9DC5",
+        genre: "Fantasy",
+        tags: ["Surrealism", "Classic", "Children"],
         gutenbergId: "11"
     },
     { 
@@ -64,6 +78,8 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "Oscar Wilde", 
         summary: "A philosophical novel about a man whose portrait ages while he stays young. Aesthetic hedonism.", 
         moodColor: "#2E4052",
+        genre: "Philosophical Fiction",
+        tags: ["Aestheticism", "Classic"],
         gutenbergId: "174"
     },
     { 
@@ -71,6 +87,8 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "Arthur Conan Doyle", 
         summary: "A consulting detective known for his proficiency with observation and deduction. Foggy London mystery.", 
         moodColor: "#5C5C5C",
+        genre: "Mystery",
+        tags: ["Detective", "Classic"],
         gutenbergId: "1661"
     },
     { 
@@ -78,6 +96,8 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "Franz Kafka", 
         summary: "Salesman Gregor Samsa wakes one morning to find himself inexplicably transformed. Existential dread.", 
         moodColor: "#556B2F",
+        genre: "Existentialism",
+        tags: ["Absurdist", "Classic"],
         gutenbergId: "5200"
     },
     { 
@@ -85,21 +105,9 @@ const FEATURED_BOOKS: CloudBook[] = [
         author: "Emily Brontë", 
         summary: "A tale of the all-encompassing and passionate, yet thwarted, love. Windy moors and ghosts.", 
         moodColor: "#483C46",
+        genre: "Gothic Romance",
+        tags: ["Moors", "Classic"],
         gutenbergId: "768"
-    },
-    { 
-        title: "Jane Eyre", 
-        author: "Charlotte Brontë", 
-        summary: "The experiences of the eponymous heroine, including her growth to adulthood and her love for Mr. Rochester.", 
-        moodColor: "#4A3B52",
-        gutenbergId: "1260"
-    },
-    { 
-        title: "Great Expectations", 
-        author: "Charles Dickens", 
-        summary: "The story of the orphan Pip, writing his life from his early days of childhood.", 
-        moodColor: "#2C3E50",
-        gutenbergId: "1400"
     }
 ];
 
@@ -117,6 +125,7 @@ interface GutendexBook {
     id: number;
     title: string;
     authors: { name: string }[];
+    subjects: string[];
     formats: Record<string, string>;
     summaries?: string[];
 }
@@ -149,32 +158,56 @@ export class CloudService {
   /**
    * 1. THE BRAIN (Gutendex Search)
    * Queries the Gutendex API for reliable, downloadable books.
+   * Now intelligently handles multi-dimensional queries (title, author, genre).
    */
   public async searchCuratedBooks(query: string): Promise<CloudBook[]> {
-    const cleanQuery = encodeURIComponent(query.trim());
-    const endpoint = `https://gutendex.com/books/?search=${cleanQuery}`;
+    const cleanQuery = query.trim();
+    if (!cleanQuery) return this.getFeaturedBooks();
+
+    // Strategy: We perform two searches in parallel to broaden the "discovery" reach
+    // 1. Text Search (Titles/Authors)
+    // 2. Topic Search (Genres/Subjects)
+    const textUrl = `https://gutendex.com/books/?search=${encodeURIComponent(cleanQuery)}`;
+    const topicUrl = `https://gutendex.com/books/?topic=${encodeURIComponent(cleanQuery)}`;
 
     try {
-        const response = await fetch(endpoint);
-        if (!response.ok) throw new Error("Gutendex search failed");
-        
-        const data = await response.json();
-        const results: GutendexBook[] = data.results || [];
+        const [textRes, topicRes] = await Promise.all([
+            fetch(textUrl).then(r => r.json()),
+            fetch(topicUrl).then(r => r.json())
+        ]);
 
-        // Map to CloudBook format
-        return results
-            .filter(b => b.formats["text/plain"] || b.formats["text/plain; charset=utf-8"]) // Ensure downloadable
-            .slice(0, 10) // Limit results
+        const textResults: GutendexBook[] = textRes.results || [];
+        const topicResults: GutendexBook[] = topicRes.results || [];
+
+        // Merge and De-duplicate
+        const seenIds = new Set<number>();
+        const merged: GutendexBook[] = [];
+
+        [...textResults, ...topicResults].forEach(book => {
+            if (!seenIds.has(book.id)) {
+                seenIds.add(book.id);
+                merged.push(book);
+            }
+        });
+
+        // Filter for quality and downloadability
+        return merged
+            .filter(b => b.formats["text/plain"] || b.formats["text/plain; charset=utf-8"])
+            .slice(0, 20) // Slightly more results for discovery
             .map(b => {
                 const authorName = b.authors.length > 0 ? b.authors[0].name.replace(/,/, "") : "Unknown Author";
-                
-                // Try to find a cover
-                const cover = b.formats["image/jpeg"] || b.formats["image/png"];
+                const cover = b.formats["image/jpeg"] || b.formats["image/png"] || `https://www.gutenberg.org/cache/epub/${b.id}/pg${b.id}.cover.medium.jpg`;
+
+                // Extract Metadata
+                const genre = b.subjects.length > 0 ? b.subjects[0].split(" -- ")[0] : "Classic";
+                const tags = b.subjects.map(s => s.split(" -- ")[0]).slice(0, 3);
                 
                 return {
                     title: b.title,
                     author: authorName,
-                    summary: b.summaries && b.summaries.length > 0 ? b.summaries[0] : "A classic from the public domain.",
+                    summary: b.summaries && b.summaries.length > 0 ? b.summaries[0] : `A ${genre} masterpiece by ${authorName}.`,
+                    genre,
+                    tags,
                     moodColor: generateColor(b.title),
                     gutenbergId: b.id.toString(),
                     coverUrl: cover
@@ -182,7 +215,7 @@ export class CloudService {
             });
 
     } catch (e) {
-        console.error("Search failed", e);
+        console.error("Discovery search failed", e);
         return [];
     }
   }

@@ -129,29 +129,11 @@ export class RSVPProcessor {
         this.worker = new Worker(this.workerUrl);
 
         this.worker.onmessage = (e) => {
-            // Raw data transfer. We map it to class instances lazily or immediately.
-            // For max performance on huge books, we just use the raw object structure 
-            // but for type safety we cast.
-            const rawTokens = e.data;
+            // HIGH PERFORMANCE: e.data is already an array of RSVPToken interfaces.
+            // By using interfaces instead of classes, we avoid the expensive mapping loop
+            // on the main thread, making preparation nearly instantaneous even for huge books.
+            const tokens = e.data as RSVPToken[];
             
-            // Optimization: Avoid `new RSVPToken(...)` loop if possible to save GC,
-            // but our App relies on class getters. We'll stick to mapping for now.
-            // Ideally, we'd use Plain Objects everywhere.
-            const tokens = rawTokens.map((t: any) => {
-                return new RSVPToken(
-                    t.originalText,
-                    t.leftSegment,
-                    t.centerCharacter,
-                    t.rightSegment,
-                    t.punctuation,
-                    t.durationMultiplier,
-                    t.isSentenceEnd,
-                    t.isParagraphEnd,
-                    t.globalIndex,
-                    t.startOffset
-                );
-            });
-
             this.isProcessing = false;
             if (this.pendingResolve) {
                 this.pendingResolve(tokens);

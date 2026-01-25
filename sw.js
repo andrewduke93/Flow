@@ -1,19 +1,20 @@
 // sw.js
 
-const CACHE_NAME = 'flow-v6';
+const CACHE_NAME = 'flow-v7';
+
+// Determine the base path from the service worker's own URL
+const swUrl = new URL(self.location.href);
+const basePath = swUrl.pathname.substring(0, swUrl.pathname.lastIndexOf('/') + 1);
 
 // App Shell: The minimal set of files needed to run the app offline.
-// Using root-relative paths to be unambiguous.
 const APP_SHELL_URLS = [
-  '/Flow/',  // The root index.html
-  '/Flow/manifest.json',
-  '/Flow/icons/icon-192x192.png',
-  '/Flow/icons/icon-512x512.png'
+  `${basePath}`,  // The root index.html
+  `${basePath}manifest.json`
 ];
 
 // Install event: Pre-cache the app shell.
 self.addEventListener('install', event => {
-  console.log('[Service Worker] Install');
+  console.log('[Service Worker] Install', 'Base path:', basePath);
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       console.log('[Service Worker] Caching App Shell');
@@ -86,7 +87,7 @@ self.addEventListener('fetch', event => {
             // If the user is trying to navigate to a new page, serve the SPA shell.
             if (request.mode === 'navigate') {
               console.log('[Service Worker] Serving offline fallback for navigation.');
-              return cache.match('/Flow/'); // Serve the root page
+              return cache.match(basePath); // Serve the root page
             }
           });
         });

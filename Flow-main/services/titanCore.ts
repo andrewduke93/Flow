@@ -1,5 +1,7 @@
 import { Book } from '../types';
+import { calculateWordCount } from '../utils';
 import { TitanSettingsService } from './configService';
+import { RSVPConductor } from './rsvpConductor';
 
 /**
  * WebTextContentStorage
@@ -74,6 +76,8 @@ export class TitanCore {
   public chapterTokenOffsets: number[] = []; 
   
   private _loadTimestamp: number = 0; // For Safe Guard
+  private _lastSavedTokenIndex: number = -1; // Deduplication guard
+  private _userIntentionalRewind: boolean = false; // Allow user rewinds to 0
 
   private constructor() {
     this.contentStorage = new WebTextContentStorage();
@@ -95,6 +99,8 @@ export class TitanCore {
 
   public async load(book: Book): Promise<void> {
     this._loadTimestamp = Date.now();
+    this._lastSavedTokenIndex = -1; // Reset deduplication
+    this._userIntentionalRewind = false;
     this.isLoading = true;
     this.loadingProgress = 0.1;
     this.notify();
@@ -138,31 +144,31 @@ export class TitanCore {
         const totalChapters = chapters.length;
 
         for (let i = 0; i < totalChapters; i++) {
-             // Cooperative Multitasking
-             if (i % 5 === 0) {
+             // Cooperative Multitasking: Yield more frequently for very long books
+             if (i % 3 === 0) {
                  this.loadingProgress = 0.1 + (0.8 * (i / totalChapters));
                  this.notify();
                  await new Promise(r => setTimeout(r, 0));
              }
 
-             // A. Token Counting (Plain Text)
-             const rawContent = chapters[i].content.replace(/<[^>]+>/g, ' ').trim();
-             const tokensInChapter = rawContent.length > 0 ? rawContent.split(/\s+/).length : 0;
+             // PERFORMANCE FIX: Single pass cleaning
+             const chapterContent = chapters[i].content || "";
              
+             // 2. Optimized HTML Strip
+             // Using a regex is much faster than DOMParser for the load phase
+             const cleanBody = chapterContent
+                .replace(/<(?:.|\n)*?>/gm, ' ') // Strip tags
+                .replace(/&nbsp;/g, ' ')
+                .replace(/\s+/g, ' ') // Normalize spaces
+                .trim();
+             
+             // 1. Calculate ACCURATE tokens from CLEANED text
+             // This matches what RSVP processor will actually tokenize
+             const tokensInChapter = calculateWordCount(cleanBody);
              this.chapterTokenOffsets.push(runningTokenCount);
              runningTokenCount += tokensInChapter;
-
-             // B. HTML Cleaning (For Render)
-             let htmlText = chapters[i].content || "";
-             htmlText = htmlText.replace(/<(br|p|div|h\d|li|blockquote)[^>]*>/gi, '\n');
-             htmlText = htmlText.replace(/<\/(p|div|h\d|li|blockquote)>/gi, '\n');
-             
-             const parser = new DOMParser();
-             const doc = parser.parseFromString(htmlText, 'text/html');
-             const cleanBody = doc.body.textContent || "";
-             // Normalize whitespace but keep paragraph breaks
-             const finalClean = cleanBody.replace(/\u00A0/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-             cleanHtmlChunks.push(finalClean);
+                
+             cleanHtmlChunks.push(cleanBody);
         }
         
         this.totalTokens = Math.max(1, runningTokenCount);
@@ -182,6 +188,10 @@ export class TitanCore {
         
         this.currentBook.bookmarkProgress = this.currentProgress;
         this.updateTypography();
+
+        // 4. BACKGROUND WARMUP: Pre-tokenize for RSVP mode
+        // This ensures that hitting "Play" is instantaneous.
+        RSVPConductor.getInstance().prepare(this.contentStorage.string).catch(() => {});
 
     } catch (error) {
         console.error("[TitanCore] Critical Error loading book:", error);
@@ -230,19 +240,33 @@ export class TitanCore {
   }
 
   /**
-   * NUCLEAR SAVE FUNCTION (With Safe Guards)
+   * NUCLEAR SAVE FUNCTION (With Safe Guards & Deduplication)
    */
-  public saveProgress(tokenIndex: number) {
+  public saveProgress(tokenIndex: number, isUserAction: boolean = false) {
     if (!this.currentBook) return;
     if (typeof tokenIndex !== 'number' || tokenIndex < 0) return;
 
+    // DEDUPLICATION: Skip if same as last save (reduces IDB writes)
+    if (tokenIndex === this._lastSavedTokenIndex && !isUserAction) {
+        return;
+    }
+
+    // Track intentional rewinds to start
+    if (isUserAction && tokenIndex === 0) {
+        this._userIntentionalRewind = true;
+    }
+
     // SAFE GUARD: Prevent accidental reset to 0 during load
+    // Unless user explicitly requested it via chapter jump or scrub
     const timeSinceLoad = Date.now() - this._loadTimestamp;
     const existingIndex = this.currentBook.lastTokenIndex || 0;
     
-    if (tokenIndex === 0 && existingIndex > 50 && timeSinceLoad < 3000) {
+    if (tokenIndex === 0 && existingIndex > 50 && timeSinceLoad < 3000 && !this._userIntentionalRewind) {
         return;
     }
+
+    // Update deduplication guard
+    this._lastSavedTokenIndex = tokenIndex;
 
     // 1. Save the hard integer (The Truth)
     this.currentBook.lastTokenIndex = tokenIndex;
@@ -266,6 +290,9 @@ export class TitanCore {
     }
       
     this.progressListeners.forEach(cb => cb(this.currentProgress));
+    
+    // Notify general subscribers for UI sync (e.g., background scroll in RSVP mode)
+    this.notify();
   }
 
   public restorePosition(totalScrollHeight: number, clientHeight: number): number {
@@ -293,6 +320,12 @@ export class TitanCore {
       if (chapterIndex < 0 || chapterIndex >= this.chapterTokenOffsets.length) return;
       
       const tokenIndex = this.chapterTokenOffsets[chapterIndex];
+      
+      // Mark as intentional if jumping to chapter 0
+      if (chapterIndex === 0) {
+          this._userIntentionalRewind = true;
+      }
+      
       this.currentBook!.lastTokenIndex = tokenIndex;
       
       if (this.totalTokens > 0) {

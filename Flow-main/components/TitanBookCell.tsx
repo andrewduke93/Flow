@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { Book } from '../types';
 import { getDerivedColor } from '../utils';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
@@ -21,19 +21,19 @@ const ProceduralCover: React.FC<{ book: Book }> = React.memo(({ book }) => {
   const themeColor = getDerivedColor(book.tintColorHex);
   return (
     <div 
-      className="w-full h-full flex items-center justify-center p-6 relative overflow-hidden"
+      className="w-full h-full flex items-center justify-center p-5 relative overflow-hidden"
       style={{ backgroundColor: themeColor }}
     >
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-50">
-         {/* Soft, friendly circles instead of sharp geometry */}
-         <div className="absolute w-32 h-32 bg-white rounded-full blur-2xl transform -translate-x-8 -translate-y-8 opacity-60" />
-         <div className="absolute w-24 h-24 bg-white rounded-full blur-xl transform translate-x-6 translate-y-6 opacity-40" />
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
+         {/* Soft, friendly circles now using a more consistent scale */}
+         <div className="absolute w-32 h-32 bg-white rounded-full blur-3xl transform -translate-x-8 -translate-y-8 opacity-40" />
+         <div className="absolute w-24 h-24 bg-white rounded-full blur-2xl transform translate-x-6 translate-y-6 opacity-30" />
       </div>
-      <div className="relative z-10 text-center text-black w-full break-words">
-        <h3 className="font-serif font-bold text-lg leading-tight mb-2 line-clamp-3 lowercase">
+      <div className="relative z-10 text-center text-black w-full break-words px-2">
+        <h3 className="font-serif font-bold text-base leading-tight mb-1.5 line-clamp-3 lowercase">
           {book.title}
         </h3>
-        <p className="font-sans text-[10px] md:text-xs font-semibold uppercase tracking-wider opacity-60">
+        <p className="font-sans text-[9px] font-bold uppercase tracking-[0.15em] opacity-40">
           {book.author}
         </p>
       </div>
@@ -57,6 +57,16 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
   const isLongPressTriggered = useRef(false);
   const hasMovedRef = useRef(false);
   const startPos = useRef({ x: 0, y: 0 });
+  
+  // Cleanup timer on unmount to prevent memory leaks
+  useEffect(() => {
+      return () => {
+          if (timerRef.current) {
+              clearTimeout(timerRef.current);
+              timerRef.current = null;
+          }
+      };
+  }, []);
 
   const handlePointerDown = (e: React.PointerEvent) => {
       isLongPressTriggered.current = false;
@@ -174,18 +184,12 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
           e.preventDefault(); // Prevent native browser context menu
       }}
     >
-      <motion.div 
-        variants={jiggle}
-        animate={isEditing ? "editing" : "idle"}
-        className="relative aspect-[2/3] w-full rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] overflow-hidden transition-all duration-300 z-10 will-change-transform"
+      <div 
+        className="relative aspect-[2/3] w-full rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] overflow-hidden z-10 will-change-transform active:scale-[0.97] hover:scale-[1.02] hover:-translate-y-0.5"
         style={{ 
           backgroundColor: theme.surface,
-          scale: isEditing ? 0.92 : 1.0,
-        }}
-        whileTap={{ scale: 0.96 }}
-        whileHover={{ 
-            scale: isEditing ? 0.92 : 1.03,
-            y: isEditing ? 0 : -5 
+          transform: isEditing ? 'scale(0.94)' : 'scale(1.0)',
+          transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease-out',
         }}
       >
         {book.coverUrl ? (
@@ -259,17 +263,16 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
               />
            </div>
         )}
-      </motion.div>
+      </div>
       
       {/* SELECTION BADGE */}
-      <AnimatePresence>
-        {isEditing && (
-            <motion.div 
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0 }}
-                className="absolute -top-1 -left-1 z-50"
-            >
+      {isEditing && (
+          <div 
+              className="absolute -top-1 -left-1 z-50 transition-transform duration-200"
+              style={{
+                transform: 'scale(1)',
+              }}
+          >
                 <div 
                     className={`w-8 h-8 rounded-full border-[3px] shadow-sm flex items-center justify-center transition-all duration-200`}
                     style={{
@@ -280,20 +283,19 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
                 >
                     {isSelected && <Check size={16} strokeWidth={4} />}
                 </div>
-            </motion.div>
+            </div>
         )}
-      </AnimatePresence>
-
+      
       {/* Metadata */}
-      <div className="mt-3 space-y-0.5 px-0.5">
+      <div className="mt-2.5 space-y-0.5">
         <h3 
-            className="font-serif font-bold text-base leading-tight line-clamp-2 transition-colors duration-200"
+            className="font-serif font-semibold text-sm leading-snug line-clamp-2"
             style={{ color: theme.primaryText }}
         >
           {book.title}
         </h3>
         <p 
-            className="font-sans text-sm font-medium transition-colors duration-200"
+            className="font-sans text-xs opacity-60"
             style={{ color: theme.secondaryText }}
         >
           {book.author}

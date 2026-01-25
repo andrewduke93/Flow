@@ -76,6 +76,14 @@
       .no-tap-highlight {
         -webkit-tap-highlight-color: transparent;
       }
+      /* Animation: slideUp - only plays once on mount */
+      @keyframes slideUp {
+        from { transform: translateY(100%); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .animate-slideUp {
+        animation: slideUp 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
     </style>
   <script type="importmap">
 {

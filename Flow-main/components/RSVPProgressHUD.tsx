@@ -67,28 +67,30 @@ export const RSVPProgressHUD: React.FC = () => {
   }, []);
 
   // 2. TIMELINE MARKERS (Semantic Segmentation)
+  // Use TitanCore's pre-calculated token offsets for accuracy
   const markers = useMemo<ChapterMarker[]>(() => {
     const book = core.currentBook;
     const tokens = heartbeat.tokens;
     if (!book || !book.chapters || tokens.length === 0) return [];
 
-    let charAccumulator = 0;
+    // Use TitanCore's accurate chapter token offsets
+    const chapterOffsets = core.chapterTokenOffsets;
+    
     const result: ChapterMarker[] = [];
-
-    book.chapters.forEach((chapter) => {
-      const tokenIndex = tokens.findIndex(t => t.startOffset >= charAccumulator);
-      if (tokenIndex !== -1) {
+    book.chapters.forEach((chapter, i) => {
+      const tokenIndex = chapterOffsets[i] ?? 0;
+      // Only add if within bounds
+      if (tokenIndex < tokens.length) {
         result.push({
           index: tokenIndex,
           percentage: tokenIndex / tokens.length,
           title: chapter.title
         });
       }
-      charAccumulator += chapter.content.length + 2; 
     });
 
     return result;
-  }, [core.currentBook, totalTokens]);
+  }, [core.currentBook, core.chapterTokenOffsets, totalTokens]);
 
   // 3. CURRENT CHAPTER & TIME REMAINING
   const currentChapterInfo = useMemo(() => {

@@ -1,6 +1,5 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 import { Book, Chapter } from '../types';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useTitanTheme } from '../services/titanTheme';
 import { Check, Clock, ChevronDown } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
@@ -106,27 +105,30 @@ export const SmartChapterSelector: React.FC<SmartChapterSelectorProps> = ({
       onClose();
   };
 
+  // Use a stable key to prevent animation re-triggering on re-renders
+  const mountTimeRef = useRef(Date.now());
+
   return (
-    <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 20, scale: 0.95 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="absolute bottom-full mb-4 left-0 right-0 z-50 flex flex-col max-h-[60vh] rounded-[32px] overflow-hidden shadow-2xl border backdrop-blur-xl origin-bottom"
+    <div
+        key={mountTimeRef.current}
+        className="absolute bottom-full mb-4 left-2 right-2 z-50 flex flex-col max-h-[60vh] rounded-3xl overflow-hidden shadow-2xl border backdrop-blur-3xl origin-bottom animate-slideUp"
         style={{ 
-            backgroundColor: theme.dimmer, 
-            borderColor: theme.borderColor 
+            backgroundColor: `${theme.dimmer}f5`, 
+            borderColor: theme.borderColor
         }}
     >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: theme.borderColor }}>
-            <span className="text-xs font-bold uppercase tracking-widest opacity-50" style={{ color: theme.primaryText }}>
-                {tracks.length} Chapters
-            </span>
+        <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: theme.borderColor }}>
+            <div>
+                <h3 className="text-base font-bold lowercase" style={{ color: theme.primaryText }}>chapters</h3>
+                <span className="text-[10px] opacity-40" style={{ color: theme.secondaryText }}>
+                    {tracks.length} {tracks.length !== 1 ? 'sections' : 'section'}
+                </span>
+            </div>
             <button 
                 onClick={onClose}
-                className="p-1 rounded-full hover:bg-black/5 active:bg-black/10 transition-colors"
-                style={{ color: theme.secondaryText }}
+                className="w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-95"
+                style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
             >
                 <ChevronDown size={20} />
             </button>
@@ -135,7 +137,7 @@ export const SmartChapterSelector: React.FC<SmartChapterSelectorProps> = ({
         {/* List */}
         <div 
             ref={scrollRef}
-            className="overflow-y-auto custom-scrollbar p-2"
+            className="overflow-y-auto custom-scrollbar px-2 pb-4 pt-1"
         >
             {tracks.map((track, i) => {
                 const isActive = i === activeTrackIndex;
@@ -144,8 +146,8 @@ export const SmartChapterSelector: React.FC<SmartChapterSelectorProps> = ({
                     <button
                         key={track.original.id}
                         onClick={() => handleSelect(track.index)}
-                        className={`w-full text-left flex items-center gap-4 p-3 rounded-2xl transition-all duration-200 group ${
-                            isActive ? 'shadow-sm' : 'hover:bg-black/5'
+                        className={`w-full text-left flex items-center gap-3 p-3 rounded-2xl transition-all duration-200 group ${
+                            isActive ? 'shadow-md' : 'hover:bg-white/5 opacity-50'
                         }`}
                         style={{
                             backgroundColor: isActive ? theme.surface : 'transparent'
@@ -153,50 +155,52 @@ export const SmartChapterSelector: React.FC<SmartChapterSelectorProps> = ({
                     >
                         {/* Status Icon */}
                         <div 
-                            className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                                isActive ? 'bg-black/5' : 'bg-transparent'
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all ${
+                                isActive ? 'bg-white/5' : 'bg-transparent'
                             }`}
                             style={{ 
-                                color: isActive ? theme.accent : theme.secondaryText,
-                                opacity: isActive ? 1 : 0.3
+                                color: isActive ? theme.accent : theme.secondaryText
                             }}
                         >
                             {isActive ? (
                                 <div className="relative">
-                                     <div className="absolute inset-0 bg-current opacity-20 animate-ping rounded-full" />
+                                     <div className="absolute inset-0 bg-current opacity-30 animate-ping rounded-full" />
                                      <div className="w-2.5 h-2.5 bg-current rounded-full" />
                                 </div>
                             ) : (
-                                <span className="text-xs font-bold tabular-nums">{i + 1}</span>
+                                <span className="text-xs font-semibold opacity-40 tabular-nums">{i + 1}</span>
                             )}
                         </div>
 
                         {/* Text Info */}
                         <div className="flex-1 min-w-0">
                             <h4 
-                                className={`text-sm font-bold truncate leading-tight ${isActive ? '' : 'opacity-80'}`}
+                                className="text-sm font-semibold truncate lowercase"
                                 style={{ color: theme.primaryText }}
                             >
                                 {track.cleanTitle}
                             </h4>
-                            <div className="flex items-center gap-2 mt-0.5 opacity-50">
-                                {track.cleanTitle !== track.original.title && (
-                                    <span className="text-[10px] uppercase tracking-wide truncate max-w-[120px]">
-                                        {track.original.title}
-                                    </span>
-                                )}
-                            </div>
+                            {track.cleanTitle !== track.original.title && (
+                                <span 
+                                    className="text-[10px] opacity-30 truncate block"
+                                    style={{ color: theme.primaryText }}
+                                >
+                                    {track.original.title}
+                                </span>
+                            )}
                         </div>
 
                         {/* Duration */}
-                        <div className="flex items-center gap-1.5 opacity-40 shrink-0 text-xs font-medium">
-                            <Clock size={12} />
-                            <span>{track.durationLabel}</span>
+                        <div 
+                            className="flex items-center gap-1 opacity-40 shrink-0"
+                            style={{ color: theme.primaryText }}
+                        >
+                            <span className="text-[11px] font-medium tabular-nums">{track.durationLabel}</span>
                         </div>
                     </button>
                 );
             })}
         </div>
-    </motion.div>
+    </div>
   );
 };

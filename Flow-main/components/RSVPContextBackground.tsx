@@ -12,7 +12,7 @@ interface RSVPContextBackgroundProps {
  * RSVPContextBackground (Phase 9-H: Rack Focus - Optimized)
  * Identity: Immersive Design Specialist.
  * Mission: Dim the background without expensive filter repaints.
- * Performance: REMOVED BLUR FILTER. Opacity only.
+ * Performance: CSS Transitions only. Zero Framer-Motion overhead.
  */
 export const RSVPContextBackground: React.FC<RSVPContextBackgroundProps> = ({ children, active }) => {
   const conductor = RSVPConductor.getInstance();
@@ -34,28 +34,20 @@ export const RSVPContextBackground: React.FC<RSVPContextBackgroundProps> = ({ ch
   }, []);
 
   // Optimization: Just use opacity. Blur is too expensive for 60fps text rendering on some devices.
-  const opacity = active ? (isPaused ? 0.3 : 0.05) : 1.0;
+  const opacity = active ? (isPaused ? 0.4 : 0.05) : 1.0;
+  const scale = active ? 0.98 : 1.0;
 
   return (
-    <motion.div 
-      className="absolute inset-0 origin-center will-change-transform"
-      animate={{
-        scale: active ? 0.98 : 1.0, 
-        opacity: opacity,
-      }}
-      transition={{
-        type: "spring",
-        stiffness: 200, 
-        damping: 30
-      }}
+    <div 
+      className="absolute inset-0 origin-center will-change-transform transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
       style={{
-        pointerEvents: 'auto', 
+        pointerEvents: active && !isPaused ? 'none' : 'auto', 
         backgroundColor: theme.background,
-        // Force hardware acceleration
-        transform: 'translateZ(0)'
+        transform: `scale(${scale}) translateZ(0)`,
+        opacity: opacity
       }}
     >
       {children}
-    </motion.div>
+    </div>
   );
 };

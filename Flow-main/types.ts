@@ -54,6 +54,11 @@ export interface Book {
 
   // Relations
   chapters?: Chapter[];
+
+  // Tags & Categorization
+  genre?: string;
+  tags?: string[];
+  description?: string;
 }
 
 /**
@@ -113,39 +118,22 @@ export class IngestionError extends Error {
 /**
  * RSVPToken Structure (Phase 7-A)
  * Represents a single word tokenized for "Optical Alignment" speed reading.
- * Adapted from RSVPToken.swift.
+ * Optimized as a plain interface for high-performance transmission from WebWorkers.
  */
-export class RSVPToken {
-  public readonly id: string;
-
-  constructor(
-    public readonly originalText: string,
-    // Visual Components
-    public readonly leftSegment: string,
-    public readonly centerCharacter: string,
-    public readonly rightSegment: string,
-    public readonly punctuation: string | undefined,
-    // Metadata
-    public readonly durationMultiplier: number,
-    public readonly isSentenceEnd: boolean,
-    public readonly isParagraphEnd: boolean, // Added for Semantic Navigation
-    public readonly globalIndex: number,
-    public readonly startOffset: number // Phase 9-G: Bidirectional Sync Offset
-  ) {
-    // OPTIMIZATION: Use deterministic ID for speed (avoids crypto overhead)
-    this.id = `t-${globalIndex}`;
-  }
-
-  /**
-   * Reconstructs the visual part of the word (excluding trailing punctuation).
-   */
-  get fullWord(): string {
-    return `${this.leftSegment}${this.centerCharacter}${this.rightSegment}`;
-  }
-
-  get debugDescription(): string {
-    return `[${this.globalIndex}] ${this.leftSegment}|${this.centerCharacter}|${this.rightSegment}${this.punctuation || ''} (${this.durationMultiplier.toFixed(2)}x)`;
-  }
+export interface RSVPToken {
+  id: string;
+  originalText: string;
+  // Visual Components
+  leftSegment: string;
+  centerCharacter: string;
+  rightSegment: string;
+  punctuation: string | undefined;
+  // Metadata
+  durationMultiplier: number;
+  isSentenceEnd: boolean;
+  isParagraphEnd: boolean; 
+  globalIndex: number;
+  startOffset: number; 
 }
 
 // -- SYNC TYPES --

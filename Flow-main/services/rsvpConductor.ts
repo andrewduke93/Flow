@@ -22,6 +22,7 @@ export interface RSVPStartConfig {
  * RSVPConductor (Phase 15: Async Pipeline)
  * The Systems Logic Architect.
  * Orchestrates the RSVP session with async preparation.
+ * Performance Optimized: Content caching, deduplication, batched notifications.
  */
 export class RSVPConductor {
   private static instance: RSVPConductor;
@@ -39,6 +40,9 @@ export class RSVPConductor {
 
   // Wake Lock Sentinel
   private wakeLock: WakeLockSentinel | null = null;
+  
+  // PERFORMANCE: Batched notification system
+  private notifyScheduled: boolean = false;
 
   private constructor() {
     this.heartbeat = RSVPHeartbeat.getInstance();
@@ -169,7 +173,14 @@ export class RSVPConductor {
   }
 
   public play() {
-    if (this.state === RSVPState.FINISHED || this.heartbeat.tokens.length === 0) {
+    // If finished, restart from beginning
+    if (this.state === RSVPState.FINISHED) {
+        this.heartbeat.seek(0);
+        this.state = RSVPState.PAUSED;
+        RSVPHapticEngine.impactMedium(); // Haptic feedback for restart
+    }
+    
+    if (this.heartbeat.tokens.length === 0) {
         return; 
     }
 
@@ -179,19 +190,21 @@ export class RSVPConductor {
     this.notify();
   }
 
-  public pause() {
+  public pause(skipContextRewind: boolean = false) {
     this.state = RSVPState.PAUSED;
     this.heartbeat.pause();
     this.releaseWakeLock(); // Release lock
     
     // Context Rewind: Move back slightly to give context upon resume
     // This provides a better "re-entry" experience into the text
-    const currentIndex = this.heartbeat.currentIndex;
-    const rewindAmount = 1; 
-    const targetIndex = Math.max(0, currentIndex - rewindAmount);
-    
-    if (targetIndex !== currentIndex) {
-        this.heartbeat.seek(targetIndex);
+    if (!skipContextRewind) {
+        const currentIndex = this.heartbeat.currentIndex;
+        const rewindAmount = 1; 
+        const targetIndex = Math.max(0, currentIndex - rewindAmount);
+        
+        if (targetIndex !== currentIndex) {
+            this.heartbeat.seek(targetIndex);
+        }
     }
     
     // CRITICAL: Force sync to core so ReaderView can snap to this exact location
@@ -209,9 +222,10 @@ export class RSVPConductor {
       // Only seek if changed
       if (target !== current) {
           if (this.state === RSVPState.PLAYING) {
-             this.pause();
+             this.pause(true); // Don't do context rewind when manually seeking
           }
           this.heartbeat.seek(target);
+          this.syncProgressToCore(true); // Ensure Core is updated so UI reflects change
       }
   }
 
@@ -308,7 +322,18 @@ export class RSVPConductor {
     return () => this.listeners.delete(callback);
   }
 
+  /**
+   * Batched notification system for React optimization.
+   * Multiple rapid notify() calls within same frame will batch into single update.
+   */
   private notify() {
-    this.listeners.forEach(cb => cb());
+    if (this.notifyScheduled) return;
+    
+    this.notifyScheduled = true;
+    // Use microtask queue for immediate-next-tick batching
+    queueMicrotask(() => {
+      this.notifyScheduled = false;
+      this.listeners.forEach(cb => cb());
+    });
   }
 }

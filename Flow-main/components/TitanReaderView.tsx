@@ -5,12 +5,12 @@ import { RSVPConductor } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { useTitanTheme, TitanThemeColors } from '../services/titanTheme';
 import { useTitanSettings } from '../services/configService';
-import { motion, AnimatePresence } from 'framer-motion';
 
 interface TitanReaderViewProps {
   book: Book;
   onToggleChrome: () => void;
   onRequestRSVP?: (startOffset: number, tokenIndex: number) => void; 
+  isActive: boolean; // New prop for hibernation
 }
 
 /**
@@ -76,9 +76,7 @@ const StaticParagraph = memo(({
                 whiteSpace: 'pre-line', 
                 textAlign: 'justify',
                 hyphens: 'auto',
-                WebkitHyphens: 'auto',
-                contentVisibility: 'auto',
-                containIntrinsicSize: '0 100px'
+                WebkitHyphens: 'auto'
             }}
         >
             {text}
@@ -153,9 +151,70 @@ const ParagraphChunk = memo(({
 });
 
 /**
+ * ParagraphSection
+ * Groups paragraphs to reduce React reconciliation overhead on long books.
+ */
+const ParagraphSection = memo(({ 
+    sectionIndex,
+    paragraphs, 
+    activeParagraphIndex, 
+    activeIndex, 
+    onWordClick, 
+    onParagraphClick,
+    settings, 
+    theme 
+}: {
+    sectionIndex: number,
+    paragraphs: any[],
+    activeParagraphIndex: number,
+    activeIndex: number,
+    onWordClick: any,
+    onParagraphClick: any,
+    settings: any,
+    theme: any
+}) => {
+    // Optimization: Skip rendering entirely if far from active window
+    // This is "soft virtualization" - keeps DOM structure but skips React work
+    const isSectionActive = Math.abs(sectionIndex - Math.floor(activeParagraphIndex / 30)) <= 2;
+    
+    return (
+        <div>
+            {paragraphs.map((p, i) => {
+                const globalIndex = sectionIndex * 30 + i;
+                const isActiveWindow = Math.abs(globalIndex - activeParagraphIndex) <= 1;
+
+                if (isActiveWindow) {
+                    return (
+                        <ParagraphChunk 
+                            key={globalIndex}
+                            startTokenIndex={p.startIndex}
+                            tokens={p.tokens} 
+                            activeIndex={activeIndex}
+                            onWordClick={onWordClick}
+                            settings={settings}
+                            theme={theme}
+                        />
+                    );
+                } else {
+                    return (
+                        <StaticParagraph 
+                            key={globalIndex}
+                            text={p.plainText}
+                            settings={settings}
+                            startTokenIndex={p.startIndex}
+                            onParagraphClick={onParagraphClick}
+                        />
+                    );
+                }
+            })}
+        </div>
+    );
+});
+
+/**
  * TitanReaderView (Nuclear Option Edition)
  */
-export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggleChrome, onRequestRSVP }) => {
+export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggleChrome, onRequestRSVP, isActive }) => {
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
@@ -271,14 +330,49 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
     });
     
     const init = async () => {
-      await core.load(book);
-      const fullText = core.contentStorage.string;
+      // RESET COMPONENT STATE
+      setIsReady(false);
+      setIsRestored(false);
+      setLoadingProgress(0);
+      setTokens([]);
+
+      // CRITICAL VALIDATION: Check if book has chapters before loading
+      if (!book.chapters || book.chapters.length === 0) {
+          console.error("[TitanReaderView] Book has no chapters! This indicates a data loading issue.", {
+              bookId: book.id,
+              title: book.title,
+              hasChapters: !!book.chapters,
+              chaptersLength: book.chapters?.length
+          });
+          // Still mark as ready so UI shows (with empty content vs infinite loading)
+          setIsReady(true);
+          setIsRestored(true);
+          return;
+      }
+
       try {
+          await core.load(book);
+          const fullText = core.contentStorage.string;
+          
+          if (!fullText) {
+              console.warn("[TitanReaderView] Loaded book has no content string.");
+          }
+
           await conductor.prepare(fullText, { progress: 0 }); 
-      } catch (e) {}
-      
-      setTokens(heartbeat.tokens);
-      setIsReady(true);
+      } catch (e) {
+          console.error("[TitanReaderView] Initialization pipeline failed:", e);
+      } finally {
+          const loadedTokens = heartbeat.tokens;
+          setTokens(loadedTokens);
+          
+          // CRITICAL: Only mark as ready if we actually have tokens or if we've definitely finished trying
+          setIsReady(true);
+          
+          // Give the DOM a tiny beat to paint before showing
+          requestAnimationFrame(() => {
+              setIsRestored(true);
+          });
+      }
     };
 
     init();
@@ -286,26 +380,69 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   }, [book.id, updateActiveIndex]);
 
   // -- 2. LIVE SYNC (Core -> View) --
+  // Always listen for chapter jumps to keep background in sync, even during RSVP
   useEffect(() => {
       const handleCoreUpdate = () => {
-          if (!core.isRSVPMode && core.currentBook?.lastTokenIndex !== undefined) {
-              const targetIndex = core.currentBook.lastTokenIndex;
+          const targetIndex = core.currentBook?.lastTokenIndex;
+          if (targetIndex === undefined) return;
+          
+          // CRITICAL: Detect Jumps
+          const diff = Math.abs(targetIndex - activeIndexRef.current);
+          
+          if (diff > 0) {
+              updateActiveIndex(targetIndex);
               
-              // CRITICAL: Detect Jumps
-              const diff = Math.abs(targetIndex - activeIndexRef.current);
-              
-              if (diff > 0) {
-                  updateActiveIndex(targetIndex);
-                  
-                  // Only trigger auto-scroll if it's a significant jump
-                  if (diff > 10) {
-                       scrollToToken(targetIndex, false); // Instant snap for responsiveness
-                  }
+              // Trigger auto-scroll for significant jumps (chapter changes)
+              // In RSVP mode: smooth scroll for visual continuity in background
+              // In scroll mode: instant snap for responsiveness
+              if (diff > 10) {
+                   const useSmooth = core.isRSVPMode;
+                   scrollToToken(targetIndex, useSmooth);
               }
           }
       };
+      
+      // Handle explicit jump requests (chapter selection)
+      const handleJump = (percentage: number) => {
+          if (core.totalTokens > 0) {
+              const targetIndex = Math.floor(percentage * core.totalTokens);
+              updateActiveIndex(targetIndex);
+              scrollToToken(targetIndex, core.isRSVPMode);
+          }
+      };
+      
       const unsub = core.subscribe(handleCoreUpdate);
-      return unsub;
+      const unsubJump = core.onJump(handleJump);
+      return () => {
+          unsub();
+          unsubJump();
+      };
+  }, [updateActiveIndex, scrollToToken]);
+
+  // -- 2b. RSVP SYNC (Heartbeat -> View) --
+  // When RSVP pauses, sync the exact word position to the scroll view
+  useEffect(() => {
+      const conductor = RSVPConductor.getInstance();
+      const heartbeat = RSVPHeartbeat.getInstance();
+      
+      let lastConductorState = conductor.state;
+      
+      const handleRSVPStateChange = () => {
+          const currentState = conductor.state;
+          
+          // When RSVP pauses (was playing, now paused), sync the exact position
+          if (lastConductorState === 'PLAYING' && currentState === 'PAUSED') {
+              const currentTokenIndex = heartbeat.currentIndex;
+              updateActiveIndex(currentTokenIndex);
+              // Smooth scroll to show current word in background
+              scrollToToken(currentTokenIndex, true);
+          }
+          
+          lastConductorState = currentState;
+      };
+      
+      const unsubConductor = conductor.subscribe(handleRSVPStateChange);
+      return () => unsubConductor();
   }, [updateActiveIndex, scrollToToken]);
 
   // -- 3. RESTORATION --
@@ -325,9 +462,47 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       requestAnimationFrame(performRestoration);
   }, [isReady, tokens.length, book.id, scrollToToken]);
 
+  // Debounced save for scroll tracking - prevents excessive writes
+  const scrollSaveTimer = useRef<number | null>(null);
+  const pendingSaveIndex = useRef<number>(-1);
+
+  const debouncedScrollSave = useCallback((idx: number) => {
+      // Always update in-memory state immediately for responsiveness
+      pendingSaveIndex.current = idx;
+      
+      // Clear existing timer
+      if (scrollSaveTimer.current) {
+          clearTimeout(scrollSaveTimer.current);
+      }
+      
+      // Batch writes: save after 500ms of scroll inactivity
+      scrollSaveTimer.current = window.setTimeout(() => {
+          if (pendingSaveIndex.current >= 0) {
+              core.saveProgress(pendingSaveIndex.current);
+          }
+          scrollSaveTimer.current = null;
+      }, 500);
+  }, []);
+
+  // Cleanup scroll save timer on unmount
+  useEffect(() => {
+      return () => {
+          if (scrollSaveTimer.current) {
+              // Flush pending save on unmount
+              if (pendingSaveIndex.current >= 0) {
+                  core.saveProgress(pendingSaveIndex.current);
+              }
+              clearTimeout(scrollSaveTimer.current);
+          }
+      };
+  }, []);
+
   // -- 4. SCROLL TRACKING (OBSERVER) --
   useEffect(() => {
-    if (!isRestored || core.isRSVPMode) return;
+    if (!isRestored || !isActive) {
+        if (observerRef.current) observerRef.current.disconnect();
+        return;
+    }
 
     if (observerRef.current) observerRef.current.disconnect();
 
@@ -341,7 +516,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
                 const idx = parseInt(target.dataset.startIndex || "-1");
                 if (idx >= 0) {
                     updateActiveIndex(idx);
-                    core.saveProgress(idx);
+                    debouncedScrollSave(idx); // Debounced instead of immediate
                     break;
                 }
             }
@@ -411,6 +586,15 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       );
   }, [paragraphs, activeIndex]);
 
+  // Sectioning logic: chunk paragraphs into blocks of 30
+  const sections = useMemo(() => {
+      const result = [];
+      for (let i = 0; i < paragraphs.length; i += 30) {
+          result.push(paragraphs.slice(i, i + 30));
+      }
+      return result;
+  }, [paragraphs]);
+
   return (
     <div 
       ref={containerRef}
@@ -422,68 +606,62 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
         WebkitOverflowScrolling: 'touch',
         touchAction: 'pan-y',
         overscrollBehaviorY: 'contain',
-        transform: 'translateZ(0)',
-        opacity: isRestored ? 1 : 0, 
-        transition: 'opacity 0.2s ease-out'
+        transform: 'translateZ(0)'
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onToggleChrome();
       }}
     >
       {/* LOADING OVERLAY */}
-      <AnimatePresence>
-        {(!isReady || !isRestored) && (
-            <motion.div 
-                initial={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none"
-                style={{ backgroundColor: theme.background }}
-            >
-                <div className="flex flex-col items-center gap-6">
-                    <div className="w-12 h-12 relative">
-                         <div className="absolute inset-0 rounded-full border-2 opacity-20" style={{ borderColor: theme.accent }} />
-                         <div 
-                            className="absolute inset-0 rounded-full border-2 border-t-transparent animate-spin" 
-                            style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} 
-                         />
-                    </div>
-                    <div className="flex flex-col items-center">
-                        <span className="text-sm font-bold tracking-widest uppercase lowercase" style={{ color: theme.secondaryText }}>ingesting</span>
-                        <span className="text-xs font-mono mt-1 opacity-50" style={{ color: theme.primaryText }}>{Math.floor(loadingProgress * 100)}%</span>
-                    </div>
-                </div>
-            </motion.div>
-        )}
-      </AnimatePresence>
+      {!isReady && (
+          <div 
+              className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-auto"
+              style={{ backgroundColor: theme.background }}
+          >
+              <div className="flex flex-col items-center gap-6">
+                  <div className="w-12 h-12 relative">
+                       <div className="absolute inset-0 rounded-full border-2 opacity-20" style={{ borderColor: theme.accent }} />
+                       <div 
+                          className="absolute inset-0 rounded-full border-2 border-t-transparent animate-spin" 
+                          style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} 
+                       />
+                  </div>
+                  <div className="flex flex-col items-center">
+                      <span className="text-sm font-bold tracking-widest lowercase" style={{ color: theme.secondaryText }}>loading</span>
+                      <span className="text-xs font-mono mt-1 opacity-50" style={{ color: theme.primaryText }}>{Math.floor(loadingProgress * 100)}%</span>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* EMPTY STATE: No content loaded */}
+      {isReady && tokens.length === 0 && (
+          <div 
+              className="fixed inset-0 flex items-center justify-center z-[50] pointer-events-none"
+              style={{ backgroundColor: theme.background }}
+          >
+              <div className="flex flex-col items-center gap-4 px-8 text-center">
+                  <div className="text-4xl opacity-30">📖</div>
+                  <span className="text-lg font-medium" style={{ color: theme.secondaryText }}>No content available</span>
+                  <span className="text-sm opacity-60" style={{ color: theme.secondaryText }}>This book appears to be empty or failed to load.</span>
+              </div>
+          </div>
+      )}
 
       <div className="w-full min-h-[100dvh] px-6 md:px-0 py-24 md:py-32 box-border relative">
-           {paragraphs.map((p, i) => {
-             const isActiveWindow = Math.abs(i - activeParagraphIndex) <= 1;
-
-             if (isActiveWindow) {
-                 return (
-                    <ParagraphChunk 
-                        key={i}
-                        startTokenIndex={p.startIndex}
-                        tokens={p.tokens} 
-                        activeIndex={activeIndex}
-                        onWordClick={handleWordClick}
-                        settings={settings}
-                        theme={theme}
-                    />
-                 );
-             } else {
-                 return (
-                     <StaticParagraph 
-                        key={i}
-                        text={p.plainText}
-                        settings={settings}
-                        startTokenIndex={p.startIndex}
-                        onParagraphClick={handleParagraphClick}
-                     />
-                 );
-             }
-           })}
+           {sections.map((section, idx) => (
+               <ParagraphSection 
+                  key={idx}
+                  sectionIndex={idx}
+                  paragraphs={section}
+                  activeParagraphIndex={activeParagraphIndex}
+                  activeIndex={activeIndex}
+                  onWordClick={handleWordClick}
+                  onParagraphClick={handleParagraphClick}
+                  settings={settings}
+                  theme={theme}
+               />
+           ))}
            <div className="h-[40vh]" /> 
       </div>
     </div>

@@ -5,7 +5,6 @@ import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { Play, Pause, Plus, Minus, Type, ListMusic, ChevronUp } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
 import { SmartChapterSelector } from './SmartChapterSelector';
@@ -35,6 +34,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
   const [scrubPreviewPct, setScrubPreviewPct] = useState(0);
   const [currentProgress, setCurrentProgress] = useState(0);
   const [showChapterSelector, setShowChapterSelector] = useState(false);
+  const showChapterSelectorRef = useRef(false); // Ref to avoid re-renders during selector open
   
   // Refs
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -45,6 +45,8 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
   const dragStartY = useRef(0);
   const dragStartPct = useRef(0);
   const wasPlayingRef = useRef(false);
+  const lastActionTime = useRef(0); // Debounce guard
+  const lastSpeedAdjustTime = useRef(0); // Speed debounce
 
   const activeColor = theme.accent; 
 
@@ -72,32 +74,35 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
     const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
     const idx = Math.floor(pct * total);
     const left = total - idx;
+    const speed = settings.rsvpSpeed || 250; // Fallback if settings corrupted
+    const mins = Math.ceil(left / speed);
     
-    const mins = Math.ceil(left / settings.rsvpSpeed);
-    
-    if (mins < 1) return "< 1m left";
+    if (mins < 1) return "< 1m";
     if (mins >= 60) {
         const h = Math.floor(mins / 60);
         const m = mins % 60;
-        return `${h}h ${m}m left`;
+        return `${h}h ${m}m`;
     }
-    return `${mins}m left`;
+    return `${mins}m`;
   }, [settings.rsvpSpeed, heartbeat.tokens.length, core.totalTokens]);
 
   const getCurrentChapterTitle = useCallback((pct: number) => {
       if (!book.chapters || book.chapters.length === 0) return "";
       
+      // Use a binary search or at least don't re-search every frame if possible
       let idx = 0;
-      for (let i = 0; i < preciseThresholds.length; i++) {
-          if (pct >= preciseThresholds[i]) {
+      // Reverse find is often faster for current progress
+      for (let i = preciseThresholds.length - 1; i >= 0; i--) {
+          if (pct >= preciseThresholds[i] - 0.0001) {
               idx = i;
-          } else {
               break;
           }
       }
       
-      idx = Math.min(idx, book.chapters.length - 1);
-      const rawTitle = book.chapters[idx].title.trim();
+      const chapter = book.chapters[idx];
+      if (!chapter) return "";
+      
+      const rawTitle = chapter.title.trim();
       
       const verboseMatch = rawTitle.match(/^(?:chapter|part|book|letter|section)\s+(?:[\divxlcdm]+)\s*[:.-]\s+(.+)$/i);
       const numberMatch = rawTitle.match(/^\d+\.\s+(.+)$/i);
@@ -109,6 +114,8 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
 
   }, [book.chapters, preciseThresholds]);
 
+  const lastRenderedPct = useRef(0);
+
   // -- Visual Sync --
   const updateVisuals = useCallback((pct: number) => {
       const safePct = Math.max(0, Math.min(1, pct));
@@ -119,32 +126,63 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
           knobRef.current.style.left = `${safePct * 100}%`;
           knobRef.current.style.transform = `translateX(-50%)`;
       }
-      setCurrentProgress(safePct);
-  }, []);
+      
+      // OPTIMIZATION: Skip React state updates when chapter selector is open
+      // This prevents re-renders that cause the selector to re-animate
+      if (showChapterSelectorRef.current) return;
+      
+      // OPTIMIZATION: Heavy throttling for React state updates.
+      // Direct DOM updates above handle the smoothness.
+      // We only rerender labels (time/chapter) every 0.5% or at boundaries.
+      const diff = Math.abs(safePct - lastRenderedPct.current);
+      if (diff > 0.005 || safePct === 0 || safePct === 1) {
+          lastRenderedPct.current = safePct;
+          setCurrentProgress(safePct);
+      }
+  }, []); // Remove dependency on currentProgress
 
   useEffect(() => {
     const syncState = () => {
       setIsPlaying(conductor.state === RSVPState.PLAYING);
-      if (conductor.state === RSVPState.PLAYING) setShowChapterSelector(false);
+      // Note: We no longer auto-close chapter selector here.
+      // The selector pauses RSVP when opened, and closes itself on selection.
     };
 
     const syncProgress = (pct: number) => {
       if (!isScrubbingRef.current) updateVisuals(pct);
     };
 
+    // HIGH-FREQUENCY SYNC (Direct DOM)
+    const syncSmoothProgress = () => {
+        if (!isScrubbingRef.current && core.isRSVPMode && heartbeat.tokens.length > 0) {
+            const pct = heartbeat.currentIndex / heartbeat.tokens.length;
+            updateVisuals(pct);
+        }
+    };
+
     syncState();
-    if (core.isRSVPMode && heartbeat.tokens.length > 0) {
-        updateVisuals(heartbeat.currentIndex / heartbeat.tokens.length);
-    } else {
-        updateVisuals(core.currentProgress);
-    }
+    
+    // Initial position
+    const initialPct = (core.isRSVPMode && heartbeat.tokens.length > 0) 
+        ? heartbeat.currentIndex / heartbeat.tokens.length 
+        : core.currentProgress;
+    
+    lastRenderedPct.current = initialPct;
+    setCurrentProgress(initialPct);
+    updateVisuals(initialPct);
 
     const unsubCore = core.subscribe(syncState);
     const unsubCond = conductor.subscribe(syncState);
     const unsubProgress = core.onProgress(syncProgress);
+    const unsubHeartbeat = heartbeat.subscribe(syncSmoothProgress);
 
-    return () => { unsubCore(); unsubCond(); unsubProgress(); };
-  }, [updateVisuals]);
+    return () => { 
+        unsubCore(); 
+        unsubCond(); 
+        unsubProgress(); 
+        unsubHeartbeat();
+    };
+  }, [updateVisuals]); // updateVisuals now has no dependencies, so this effect runs once.
 
   // -- Interaction Logic --
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -240,25 +278,37 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
 
   const handleMainAction = (e: React.PointerEvent | React.MouseEvent) => {
     e.stopPropagation();
+    // Debounce rapid taps (300ms)
+    const now = Date.now();
+    if (now - lastActionTime.current < 300) return;
+    lastActionTime.current = now;
+    
     if (navigator.vibrate) navigator.vibrate(10);
     onToggleRSVP();
   };
 
   const adjustSpeed = (delta: number) => {
+      // Debounce rapid adjustments (80ms - allows holding but prevents spam)
+      const now = Date.now();
+      if (now - lastSpeedAdjustTime.current < 80) return;
+      lastSpeedAdjustTime.current = now;
+      
       RSVPHapticEngine.impactLight();
-      const current = settings.rsvpSpeed;
+      const current = settings.rsvpSpeed || 250; // Fallback for safety
       const next = Math.max(50, Math.min(2000, current + delta));
       updateSettings({ rsvpSpeed: next, hasCustomSpeed: true });
   };
 
   const handleChapterSelect = (chapterIndex: number) => {
+      RSVPHapticEngine.impactMedium(); // Confirm navigation
+      
       if (core.isRSVPMode) {
           if (chapterIndex < core.chapterTokenOffsets.length) {
               const tokenIdx = core.chapterTokenOffsets[chapterIndex];
               heartbeat.seek(tokenIdx);
-              // Force sync to core to update UI/Progress immediately
-              // This triggers the progress listeners which updates the scrubber/time
-              core.saveProgress(tokenIdx); 
+              // Use jumpToChapter to ensure all listeners are notified
+              // This triggers both jumpListeners and notify() for proper background sync
+              core.jumpToChapter(chapterIndex);
           }
       } else {
           // Scroll Mode
@@ -271,27 +321,25 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
         className="w-full relative pointer-events-auto"
     >
           {/* SMART CHAPTER SELECTOR POPUP */}
-          <AnimatePresence>
-            {showChapterSelector && (
+          {showChapterSelector && (
                 <SmartChapterSelector 
                     book={book}
                     currentProgress={currentProgress}
                     readSpeed={settings.rsvpSpeed}
                     preciseThresholds={preciseThresholds}
                     onSelectChapter={(idx) => handleChapterSelect(idx)}
-                    onClose={() => setShowChapterSelector(false)}
+                    onClose={() => {
+                        showChapterSelectorRef.current = false;
+                        setShowChapterSelector(false);
+                    }}
                 />
             )}
-          </AnimatePresence>
 
           {/* SCRUB PREVIEW TOOLTIP */}
-          <AnimatePresence>
-            {isScrubbing && !showChapterSelector && (
-                <motion.div 
-                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                    animate={{ opacity: 1, y: -16, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.9 }}
+          {isScrubbing && !showChapterSelector && (
+                <div 
                     className="absolute -top-12 left-0 right-0 flex justify-center pointer-events-none z-50"
+                    style={{animation: 'fadeIn 300ms cubic-bezier(0.16, 1, 0.3, 1)'}}
                 >
                     <div 
                         className="px-4 py-1.5 rounded-full shadow-xl border backdrop-blur-md text-xs font-bold font-variant-numeric tabular-nums flex items-center gap-2"
@@ -305,15 +353,14 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
                         <span className="opacity-30">|</span>
                         <span className="lowercase">{getEstTime(scrubPreviewPct)}</span>
                     </div>
-                </motion.div>
+                </div>
             )}
-          </AnimatePresence>
 
           {/* MAIN FLOATING DECK */}
           <div 
-            className="w-full backdrop-blur-2xl rounded-[36px] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.4)] border border-white/10 overflow-hidden"
+            className="w-full backdrop-blur-2xl rounded-3xl shadow-2xl border overflow-hidden"
             style={{
-                backgroundColor: theme.dimmer,
+                backgroundColor: `${theme.surface}f5`,
                 borderColor: theme.borderColor
             }}
           >
@@ -321,34 +368,40 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
               <button 
                 onClick={() => {
                     RSVPHapticEngine.impactLight();
-                    setShowChapterSelector(p => !p);
+                    // Pause RSVP when opening chapter selector
+                    if (!showChapterSelector && conductor.state === RSVPState.PLAYING) {
+                        conductor.pause();
+                    }
+                    const nextState = !showChapterSelector;
+                    showChapterSelectorRef.current = nextState;
+                    setShowChapterSelector(nextState);
                 }}
-                className="w-full flex justify-between items-center px-8 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider select-none hover:opacity-100 transition-opacity active:scale-[0.99]" 
+                className="w-full flex justify-between items-center px-5 pt-2.5 pb-0 text-[10px] font-medium select-none hover:opacity-100 transition-opacity active:scale-[0.99]" 
                 style={{ 
                     color: theme.primaryText,
-                    opacity: showChapterSelector ? 1.0 : 0.6
+                    opacity: showChapterSelector ? 0.8 : 0.4
                 }}
               >
-                 <div className="flex items-center gap-2 truncate max-w-[65%]">
-                     {showChapterSelector ? <ChevronUp size={12} /> : <ListMusic size={12} />}
-                     <span className="truncate">{getCurrentChapterTitle(currentProgress)}</span>
+                 <div className="flex items-center gap-1.5 truncate max-w-[70%]">
+                     <ListMusic size={10} className="opacity-60" />
+                     <span className="truncate lowercase">{getCurrentChapterTitle(currentProgress)}</span>
                  </div>
-                 <span className="lowercase tabular-nums">{getEstTime(currentProgress)}</span>
+                 <span className="tabular-nums opacity-60 text-[9px]">{getEstTime(currentProgress)}</span>
               </button>
 
               {/* 1. TIMELINE GROOVE (Full Width) */}
               <div 
-                 className="relative h-5 w-full cursor-pointer group touch-none z-20"
+                 className="relative h-4 w-full cursor-pointer group touch-none z-20"
                  onPointerDown={handlePointerDown}
                  onPointerMove={handlePointerMove}
                  onPointerUp={handlePointerUp}
                  onPointerCancel={handlePointerUp}
               >
-                  <div ref={trackRef} className="w-full h-full relative flex items-center px-6">
+                  <div ref={trackRef} className="absolute inset-x-6 inset-y-0 flex items-center">
                       {/* Groove Track */}
                       <div 
-                        className="w-full h-[3px] rounded-full overflow-hidden relative"
-                        style={{ backgroundColor: theme.primaryText + '15' }}
+                        className="w-full h-[1.5px] rounded-full overflow-hidden relative"
+                        style={{ backgroundColor: theme.primaryText + '08' }}
                       >
                           {/* Progress Fill */}
                           <div 
@@ -357,87 +410,96 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
                             style={{ width: '0%', backgroundColor: activeColor }}
                           />
                           {/* Chapter Ticks */}
-                          {preciseThresholds.map((t, i) => (
+                          {useMemo(() => preciseThresholds.map((t, i) => (
                               <div 
                                 key={i}
-                                className="absolute top-0 bottom-0 w-[1px] bg-white/50 mix-blend-overlay"
+                                className="absolute top-0 bottom-0 w-[1px] bg-white/10"
                                 style={{ left: `${t * 100}%` }}
                               />
-                          ))}
+                          )), [preciseThresholds])}
                       </div>
 
                       {/* Knob */}
                       <div 
                         ref={knobRef}
-                        className={`absolute top-1/2 w-3.5 h-3.5 -mt-[1.75px] rounded-full shadow-[0_2px_4px_rgba(0,0,0,0.3)] border border-black/5 transition-transform duration-75 will-change-transform ${
-                            isScrubbing ? 'scale-125' : 'scale-0 group-hover:scale-100'
+                        className={`absolute top-1/2 w-3.5 h-3.5 -mt-[7px] rounded-full shadow-lg border-2 border-white transition-all duration-200 will-change-transform ${
+                            isScrubbing ? 'scale-125' : 'scale-0 group-hover:scale-75'
                         }`}
                         style={{ 
                             left: '0%', 
-                            backgroundColor: theme.surface 
+                            backgroundColor: theme.accent,
+                            boxShadow: `0 0 10px ${theme.accent}33`
                         }}
                       />
                   </div>
               </div>
 
-              {/* 2. CONTROL CLUSTER (Symmetrical 3-Column Grid) */}
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center px-6 pb-5 pt-1 gap-4">
-                  {/* ... Same controls as before ... */}
-                  <div className="justify-self-end w-full max-w-[140px]">
-                      <div 
-                        className="flex items-center h-12 rounded-full px-1 border border-white/5 bg-black/5 w-full"
-                        style={{ borderColor: theme.borderColor }}
-                      >
-                          <button 
-                            onClick={() => adjustSpeed(-25)}
-                            className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full hover:bg-black/5 active:scale-90 transition-all"
-                            style={{ color: theme.secondaryText }}
-                          >
-                            <Minus size={16} />
-                          </button>
-                          
-                          <div className="flex-1 text-center border-l border-r border-black/5 h-4 flex items-center justify-center overflow-hidden">
-                            <span className="font-variant-numeric tabular-nums text-sm font-bold tracking-tight" style={{ color: theme.primaryText }}>
-                                {settings.rsvpSpeed}
-                            </span>
-                          </div>
-
-                          <button 
-                            onClick={() => adjustSpeed(25)}
-                            className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full hover:bg-black/5 active:scale-90 transition-all"
-                            style={{ color: theme.secondaryText }}
-                          >
-                            <Plus size={16} />
-                          </button>
-                      </div>
-                  </div>
-
-                  <motion.button
-                     onPointerDown={handleMainAction}
-                     whileTap={{ scale: 0.95 }}
-                     className="w-16 h-16 rounded-full flex items-center justify-center shadow-lg relative text-white border-2 border-transparent hover:border-white/20 transition-all"
-                     style={{ 
-                         backgroundColor: activeColor,
-                         boxShadow: `0 8px 30px -8px ${activeColor}66`
-                     }}
+              {/* 2. CONTROL CLUSTER */}
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center px-5 pb-4 pt-0.5">
+                  
+                  {/* SPEED SPOT */}
+                  <div 
+                    className="flex items-center h-11 rounded-xl overflow-hidden border"
+                    style={{ borderColor: theme.borderColor, backgroundColor: `${theme.primaryText}05` }}
                   >
-                      {isRSVPActive ? (
-                          <Pause size={28} className="fill-current" />
-                      ) : (
-                          <Play size={28} className="fill-current ml-1" />
-                      )}
-                  </motion.button>
-
-                  <div className="justify-self-start w-full max-w-[140px]">
-                      <div 
-                        className="flex items-center h-12 rounded-full px-1 border border-white/5 bg-black/5 w-full justify-center cursor-pointer active:scale-95 transition-transform"
-                        style={{ borderColor: theme.borderColor }}
-                        onClick={(e) => { e.stopPropagation(); onSettingsClick(); }}
+                      <button 
+                        onClick={() => adjustSpeed(-25)}
+                        className="w-11 h-full flex items-center justify-center hover:bg-white/5 active:scale-90 transition-all outline-none"
+                        style={{ color: theme.secondaryText }}
                       >
-                         <Type size={20} style={{ color: theme.secondaryText }} />
-                         <span className="ml-2 text-sm font-bold lowercase" style={{ color: theme.primaryText }}>Aa</span>
+                        <Minus size={16} />
+                      </button>
+                      
+                      <div className="w-px h-5" style={{ backgroundColor: theme.borderColor }} />
+                      
+                      <div className="px-2 text-center flex items-center justify-center min-w-[44px]">
+                        <span className="font-variant-numeric tabular-nums text-xs font-semibold" style={{ color: theme.primaryText }}>
+                            {settings.rsvpSpeed}
+                        </span>
                       </div>
+                      
+                      <div className="w-px h-5" style={{ backgroundColor: theme.borderColor }} />
+
+                      <button 
+                        onClick={() => adjustSpeed(25)}
+                        className="w-11 h-full flex items-center justify-center hover:bg-white/5 active:scale-90 transition-all outline-none"
+                        style={{ color: theme.secondaryText }}
+                      >
+                        <Plus size={16} />
+                      </button>
                   </div>
+
+                  {/* MASTER PLAY SPOT (Fixed Center) */}
+                  <div className="flex items-center justify-center px-4">
+                      <button
+                          onClick={handleMainAction}
+                          className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg relative text-white border border-white/10 hover:scale-105 active:scale-95 transition-all outline-none"
+                          style={{ 
+                              backgroundColor: activeColor,
+                              boxShadow: `0 6px 24px -4px ${activeColor}66`
+                          }}
+                      >
+                          {(isRSVPActive && isPlaying) ? (
+                              <Pause size={20} className="fill-white" />
+                          ) : (
+                              <Play size={20} className="fill-white ml-0.5" />
+                          )}
+                      </button>
+                  </div>
+
+                  {/* TYPE SPOT (Matching Speed Spot Dimensions) */}
+                  <button 
+                    className="flex items-center justify-center h-11 gap-2 rounded-xl border hover:bg-white/5 active:scale-95 transition-all outline-none px-3"
+                    style={{ borderColor: theme.borderColor, backgroundColor: `${theme.primaryText}05` }}
+                    onClick={(e) => { e.stopPropagation(); onSettingsClick(); }}
+                  >
+                     <Type size={16} style={{ color: theme.secondaryText }} />
+                     <div className="w-px h-4" style={{ backgroundColor: theme.borderColor }} />
+                     <div className="flex items-baseline gap-0.5 opacity-60">
+                         <Type size={14} style={{ color: theme.secondaryText }} />
+                         <Type size={10} style={{ color: theme.secondaryText }} />
+                     </div>
+                  </button>
               </div>
           </div>
     </div>

@@ -57,36 +57,42 @@ export const EmptyLibraryState: React.FC<EmptyLibraryStateProps> = ({ onImport, 
   return (
     <div 
       onClick={onImport}
-      className="group flex flex-col items-center justify-center p-8 md:p-12 border-2 border-dashed rounded-3xl cursor-pointer transition-all duration-300 max-w-sm md:max-w-md mx-auto mt-8 md:mt-12 hover:shadow-xl hover:scale-[1.02]"
+      className="group flex flex-col items-center justify-center p-12 rounded-[40px] cursor-pointer transition-all duration-500 max-w-sm mx-auto mt-20 hover:scale-[0.98] active:scale-95"
       style={{ 
-          borderColor: theme.borderColor,
           backgroundColor: theme.surface,
+          border: `1px solid ${theme.borderColor}`
       }}
     >
       <div 
-        className="w-16 h-16 md:w-20 md:h-20 rounded-full flex items-center justify-center mb-4 md:mb-6 shadow-inner group-hover:shadow-lg transition-all duration-300"
+        className="w-20 h-20 rounded-full flex items-center justify-center mb-8 shadow-2xl group-hover:shadow-ember/20 transition-all duration-500"
         style={{ 
-            backgroundColor: theme.accent, // Use unified Ember accent
+            backgroundColor: theme.accent,
             color: '#FFFFFF'
         }}
       >
         {hasDeleted ? (
-            <Sparkles size={24} strokeWidth={1.5} className="md:w-8 md:h-8 animate-pulse" />
+            <Sparkles size={28} strokeWidth={2} className="animate-pulse" />
         ) : (
-            <FilePlus size={24} strokeWidth={1.5} className="md:w-8 md:h-8" />
+            <FilePlus size={28} strokeWidth={2} />
         )}
       </div>
 
-      <h2 className="text-xl md:text-2xl font-serif font-bold mb-2 text-center lowercase" style={{ color: theme.primaryText }}>
+      <h2 className="text-3xl font-black mb-2 text-center lowercase tracking-tighter leading-none" style={{ color: theme.primaryText }}>
         {hasDeleted ? "poof. gone." : "clean slate."}
       </h2>
       
-      <p className="font-sans font-medium text-center leading-relaxed text-sm md:text-base max-w-[250px] md:max-w-xs lowercase" style={{ color: theme.secondaryText }}>
+      <p className="text-[10px] uppercase font-black tracking-[0.2em] text-center mt-3 opacity-30 max-w-[180px]" style={{ color: theme.secondaryText }}>
         {hasDeleted 
             ? "all cleared out. plenty of room for new magic." 
-            : "nothing here yet, but that’s cool. tap here to find a story."
+            : "nothing here yet. tap here to find a story."
         }
       </p>
+
+      <div className="mt-8 flex items-center gap-2 opacity-20">
+          <div className="w-1.5 h-1.5 rounded-full bg-current" style={{ backgroundColor: theme.primaryText }} />
+          <div className="w-10 h-[1px] bg-current" style={{ backgroundColor: theme.primaryText }} />
+          <div className="w-1.5 h-1.5 rounded-full bg-current" style={{ backgroundColor: theme.primaryText }} />
+      </div>
     </div>
   );
 };

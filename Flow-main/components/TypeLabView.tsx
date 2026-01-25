@@ -39,36 +39,36 @@ export const TypeLabView: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col gap-8 pt-4">
+    <div className="flex flex-col gap-6 pt-2">
       
       {/* 1. Explicit Speed Control Row */}
-      <div className="space-y-4">
-        <h3 className="flex items-center gap-2 text-xs font-sans font-bold uppercase tracking-wider opacity-60 px-1 lowercase" style={{ color: theme.secondaryText }}>
-           <Zap size={14} /> the pace
+      <div className="space-y-3">
+        <h3 className="text-[11px] font-medium opacity-50 lowercase flex items-center gap-1.5" style={{ color: theme.secondaryText }}>
+           <Zap size={12} /> pace
         </h3>
         
         <div 
-            className="rounded-2xl p-4 shadow-sm border"
+            className="rounded-2xl p-4 border"
             style={{ 
                 backgroundColor: theme.surface, 
                 borderColor: theme.borderColor 
             }}
         >
-            <div className="flex items-center justify-between mb-4">
-                 <span className="text-sm font-semibold lowercase" style={{ color: theme.primaryText }}>speed (wpm)</span>
-                 <span className="text-2xl font-serif font-bold tracking-tight tabular-nums" style={{ color: theme.primaryText }}>{optimisticSpeed}</span>
+            <div className="flex items-center justify-between mb-3">
+                 <span className="text-sm font-medium lowercase" style={{ color: theme.primaryText }}>speed (wpm)</span>
+                 <span className="text-xl font-semibold tracking-tight tabular-nums" style={{ color: theme.primaryText }}>{optimisticSpeed}</span>
             </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
                 <button 
                    onClick={() => handleSpeedChange(optimisticSpeed - 25)}
-                   className="w-12 h-12 rounded-full flex items-center justify-center active:scale-95 transition-all"
+                   className="w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all"
                    style={{ backgroundColor: theme.borderColor, color: theme.primaryText }}
                 >
-                    <Minus size={20} />
+                    <Minus size={16} />
                 </button>
 
-                <div className="flex-1 relative h-10 flex items-center">
+                <div className="flex-1 relative h-8 flex items-center">
                     <input 
                         type="range"
                         min={100}
@@ -76,7 +76,7 @@ export const TypeLabView: React.FC = () => {
                         step={25}
                         value={optimisticSpeed}
                         onChange={(e) => handleSpeedChange(parseInt(e.target.value))}
-                        className="w-full h-2 rounded-full appearance-none cursor-pointer focus:outline-none"
+                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer focus:outline-none"
                         style={{ 
                             backgroundColor: theme.borderColor,
                             accentColor: theme.accent
@@ -86,10 +86,10 @@ export const TypeLabView: React.FC = () => {
 
                 <button 
                    onClick={() => handleSpeedChange(optimisticSpeed + 25)}
-                   className="w-12 h-12 rounded-full flex items-center justify-center active:scale-95 transition-all"
+                   className="w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all"
                    style={{ backgroundColor: theme.borderColor, color: theme.primaryText }}
                 >
-                    <Plus size={20} />
+                    <Plus size={16} />
                 </button>
             </div>
         </div>
@@ -98,18 +98,18 @@ export const TypeLabView: React.FC = () => {
       <div className="w-full h-px" style={{ backgroundColor: theme.borderColor }} />
 
       {/* 2. Typography Controls */}
-      <div className="space-y-4">
-        <h3 className="flex items-center gap-2 text-xs font-sans font-bold uppercase tracking-wider opacity-60 px-1 lowercase" style={{ color: theme.secondaryText }}>
-           <Type size={14} /> the vibe
+      <div className="space-y-3">
+        <h3 className="text-[11px] font-medium opacity-50 lowercase flex items-center gap-1.5" style={{ color: theme.secondaryText }}>
+           <Type size={12} /> typography
         </h3>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
             {fonts.map(f => (
                 <button
                    key={f.val}
                    onClick={() => updateSettings({ fontFamily: f.val as any })}
-                   className={`flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border transition-all duration-200 ${
-                       settings.fontFamily === f.val ? 'shadow-md scale-[1.02]' : 'hover:scale-[1.01]'
+                   className={`flex flex-col items-center justify-center gap-1.5 p-5 rounded-2xl border transition-all duration-200 ${
+                       settings.fontFamily === f.val ? 'scale-[1.02]' : 'hover:scale-[1.01]'
                    }`}
                    style={{
                        backgroundColor: settings.fontFamily === f.val ? theme.primaryText : theme.surface,
@@ -117,14 +117,13 @@ export const TypeLabView: React.FC = () => {
                        color: settings.fontFamily === f.val ? theme.surface : theme.primaryText
                    }}
                 >
-                    <span className="text-3xl font-bold mb-1" style={{ fontFamily: getCSSFont(f.val) }}>Aa</span>
+                    <span className="text-2xl font-semibold" style={{ fontFamily: getCSSFont(f.val) }}>Aa</span>
                     <div className="flex flex-col items-center">
-                        <span className="text-sm font-bold">{f.name}</span>
+                        <span className="text-sm font-medium">{f.name}</span>
                         <span 
-                            className="text-[10px] font-bold uppercase tracking-widest"
+                            className="text-[9px] font-medium opacity-50"
                             style={{ 
-                                color: settings.fontFamily === f.val ? theme.surface : theme.secondaryText,
-                                opacity: settings.fontFamily === f.val ? 0.8 : 0.6
+                                color: settings.fontFamily === f.val ? theme.surface : theme.secondaryText
                             }}
                         >
                             {f.label}
@@ -135,7 +134,7 @@ export const TypeLabView: React.FC = () => {
         </div>
 
         <div 
-            className="rounded-2xl p-4 shadow-sm border space-y-6 mt-4"
+            className="rounded-2xl p-4 border space-y-5 mt-3"
             style={{ backgroundColor: theme.surface, borderColor: theme.borderColor }}
         >
             <ControlRow label="size" value={settings.fontSize} min={14} max={40} onChange={v => updateSettings({ fontSize: v })} theme={theme} />
@@ -149,8 +148,8 @@ export const TypeLabView: React.FC = () => {
 };
 
 const ControlRow: React.FC<{ label: string, value: number, min: number, max: number, step?: number, onChange: (v: number) => void, theme: any }> = ({ label, value, min, max, step = 1, onChange, theme }) => (
-    <div className="flex items-center gap-4">
-        <span className="text-xs font-bold w-16 uppercase tracking-wide lowercase" style={{ color: theme.secondaryText }}>{label}</span>
+    <div className="flex items-center gap-3">
+        <span className="text-xs font-medium w-12 lowercase" style={{ color: theme.secondaryText }}>{label}</span>
         <input 
             type="range" 
             min={min} 
@@ -158,13 +157,13 @@ const ControlRow: React.FC<{ label: string, value: number, min: number, max: num
             step={step} 
             value={value} 
             onChange={(e) => onChange(parseFloat(e.target.value))}
-            className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer"
+            className="flex-1 h-1 rounded-full appearance-none cursor-pointer"
             style={{ 
                 backgroundColor: theme.borderColor,
                 accentColor: theme.accent
             }}
         />
-        <span className="text-xs font-bold w-8 text-right tabular-nums" style={{ color: theme.primaryText }}>{value.toFixed(step < 1 ? 1 : 0)}</span>
+        <span className="text-xs font-medium w-8 text-right tabular-nums" style={{ color: theme.primaryText }}>{value.toFixed(step < 1 ? 1 : 0)}</span>
     </div>
 );
 

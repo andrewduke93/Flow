@@ -1,18 +1,15 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Book } from '../types';
 import { TitanReaderView } from './TitanReaderView';
 import { RSVPStageView } from './RSVPStageView'; 
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { ChevronLeft, Rewind, Zap } from 'lucide-react';
-import { RSVPContextBackground } from './RSVPContextBackground'; 
+import { ChevronLeft, Rewind } from 'lucide-react';
 import { MediaCommandCenter } from './MediaCommandCenter';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { SettingsSheet } from './SettingsSheet';
-import { TitanSettingsService } from '../services/configService';
 
 interface ReaderContainerProps {
   book: Book;
@@ -33,21 +30,22 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const [isChromeVisible, setIsChromeVisible] = useState(true);
   const [isRSVP, setIsRSVP] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentProgress, setCurrentProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  const [closingSettings, setClosingSettings] = useState(false);
 
-  // Rewind Gesture State
+  const isHandlingPopState = useRef(false);
+
+  // Rewind Gesture State - Simplified
   const [isRewinding, setIsRewinding] = useState(false);
+  const [holdProgress, setHoldProgress] = useState(0); // 0-1 for visual
   const rewindInterval = useRef<number | null>(null);
-  const holdTimer = useRef<number | null>(null);
+  const holdAnimationRef = useRef<number | null>(null);
+  const holdStartTime = useRef<number>(0);
   const pointerStart = useRef({ x: 0, y: 0 });
   const wasPlayingRef = useRef(false);
-
-  // Speed Gesture State
-  const [isSpeedAdjusting, setIsSpeedAdjusting] = useState(false);
-  const speedStartData = useRef({ y: 0, val: 0 });
-  
-  // WPM Display for HUD (Local state for smooth updates)
-  const [liveWPM, setLiveWPM] = useState(0);
+  const isHolding = useRef(false);
+  const isRewindingRef = useRef(false); // Ref mirror for gesture handlers
 
   // Guard against rapid toggling
   const isTransitioningRef = useRef(false);
@@ -59,6 +57,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     const sync = () => {
         setIsRSVP(engine.isRSVPMode);
         setIsPlaying(conductor.state === RSVPState.PLAYING);
+        setCurrentProgress(engine.currentProgress);
     };
 
     const unsubEngine = engine.subscribe(sync);
@@ -79,6 +78,43 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       };
   }, []);
 
+  // Cleanup gesture state on unmount
+  useEffect(() => {
+      return () => {
+          if (holdAnimationRef.current) cancelAnimationFrame(holdAnimationRef.current);
+          if (rewindInterval.current) clearInterval(rewindInterval.current);
+      };
+  }, []);
+
+  // Browser back button handling
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isHandlingPopState.current) return;
+      isHandlingPopState.current = true;
+      
+      if (showSettings || closingSettings) {
+        handleCloseSettings();
+      } else if (isRSVP) {
+        // Exit RSVP mode on back button - save position first
+        const engine = TitanCore.getInstance();
+        const conductor = RSVPConductor.getInstance();
+        if (engine.isRSVPMode) {
+          conductor.pause();
+          conductor.shutdown(true);
+          engine.isRSVPMode = false;
+          engine.notify();
+          setIsRSVP(false);
+          setIsChromeVisible(true);
+        }
+      }
+      
+      isHandlingPopState.current = false;
+    };
+    
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showSettings, closingSettings, isRSVP]);
+
   // Auto-Hide Chrome
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
@@ -94,6 +130,15 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
           conductor.pause();
       }
   }, [showSettings]);
+
+  // Close Settings with animation
+  const handleCloseSettings = () => {
+      setClosingSettings(true);
+      setTimeout(() => {
+          setShowSettings(false);
+          setClosingSettings(false);
+      }, 400);
+  };
 
   const handleExit = () => {
     let finalIndex = engine.currentBook?.lastTokenIndex ?? (book.lastTokenIndex || 0);
@@ -120,6 +165,17 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const handleModeToggle = async (shouldBeRSVP?: boolean, startOffset?: number, tokenIndex?: number) => {
     if (isTransitioningRef.current) return;
     
+    // If we are ALREADY in RSVP mode and someone triggers a toggle without specific indices,
+    // they probably just want to play/pause the conductor.
+    if (isRSVP && shouldBeRSVP === undefined && startOffset === undefined && tokenIndex === undefined) {
+        if (conductor.state === RSVPState.PLAYING) {
+            conductor.pause();
+        } else {
+            conductor.play();
+        }
+        return;
+    }
+
     const nextState = shouldBeRSVP ?? !engine.isRSVPMode;
     if (nextState === engine.isRSVPMode && startOffset === undefined && tokenIndex === undefined) return;
 
@@ -132,17 +188,20 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
           
           const prepareConfig = {
               offset: startOffset ?? engine.userSelectionOffset ?? undefined,
-              // PRIORITY FIX: If tokenIndex is explicit (from tap), use it. 
-              // Otherwise fallback to existing index logic.
               index: tokenIndex ?? (startOffset === undefined ? (engine.currentBook?.lastTokenIndex ?? undefined) : undefined),
               progress: startOffset === undefined && tokenIndex === undefined ? engine.currentProgress : undefined
           };
 
-          // Prepare engine (Instant if cached)
+          // Prepare engine (Now Instant due to Interface optimization)
           await conductor.prepare(fullText, prepareConfig);
           
           engine.isRSVPMode = true;
           engine.notify();
+          
+          // Push history state for back button support
+          if (!isHandlingPopState.current) {
+            window.history.pushState({ rsvpMode: true }, '', window.location.href);
+          }
           
           conductor.play();
           setIsChromeVisible(false);
@@ -150,8 +209,18 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
           // EXITING RSVP (PAUSE)
           conductor.pause();
           
+          const currentTokenIndex = heartbeat.currentIndex;
+          
           engine.isRSVPMode = false;
-          engine.notify();
+          // Sync core progress immediately so the reader view doesn't jump
+          engine.saveProgress(currentTokenIndex, true); // Mark as user action
+          
+          // Force jump listeners to fire for scroll sync
+          if (engine.totalTokens > 0) {
+              const pct = currentTokenIndex / engine.totalTokens;
+              // Trigger jump listeners directly to ensure scroll view syncs
+              engine.jump(pct);
+          }
           
           setIsChromeVisible(true);
       }
@@ -160,153 +229,200 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
         engine.isRSVPMode = false;
         engine.notify();
     } finally {
-        // Fast release lock
-        setTimeout(() => {
-            isTransitioningRef.current = false;
-        }, 50);
+        isTransitioningRef.current = false;
     }
   };
 
-  // MARK: - Gesture Handling (Rewind & Speed)
+  // MARK: - Gesture Handling (Tap/Hold/Rewind) - Disambiguated
+
+  const TAP_THRESHOLD = 150; // ms - anything shorter is a tap
+  const HOLD_DURATION = 400; // ms to trigger rewind (slightly longer for safety)
+  const DRAG_THRESHOLD = 15; // px movement to cancel gesture
+
+  // Cleanup helper
+  const cleanupGesture = () => {
+      isHolding.current = false;
+      if (holdAnimationRef.current) {
+          cancelAnimationFrame(holdAnimationRef.current);
+          holdAnimationRef.current = null;
+      }
+      if (rewindInterval.current) {
+          clearInterval(rewindInterval.current);
+          rewindInterval.current = null;
+      }
+  };
+
+  // Animate progress (both up and down)
+  const animateHoldProgress = (targetProgress: number, onComplete?: () => void) => {
+      if (holdAnimationRef.current) {
+          cancelAnimationFrame(holdAnimationRef.current);
+      }
+      
+      const animate = () => {
+          setHoldProgress(current => {
+              const diff = targetProgress - current;
+              const step = diff * 0.25; // Smooth easing
+              const next = Math.abs(diff) < 0.01 ? targetProgress : current + step;
+              
+              if (Math.abs(next - targetProgress) < 0.01) {
+                  if (onComplete) onComplete();
+                  return targetProgress;
+              }
+              
+              holdAnimationRef.current = requestAnimationFrame(animate);
+              return next;
+          });
+      };
+      
+      holdAnimationRef.current = requestAnimationFrame(animate);
+  };
 
   const handlePointerDown = (e: React.PointerEvent) => {
       if (!isRSVP) return;
       
-      // Capture start point to distinguish tap vs drag
+      // Capture state
       pointerStart.current = { x: e.clientX, y: e.clientY };
-      
-      // Capture playing state for resume logic
       wasPlayingRef.current = conductor.state === RSVPState.PLAYING;
-
-      const screenW = window.innerWidth;
-
-      if (holdTimer.current) clearTimeout(holdTimer.current);
-
-      holdTimer.current = window.setTimeout(() => {
-          // ZONE 1: REWIND (Left 45%)
-          if (pointerStart.current.x < screenW * 0.45) {
+      isHolding.current = true;
+      holdStartTime.current = Date.now();
+      
+      // Start progress animation loop (only after tap threshold)
+      const updateProgress = () => {
+          if (!isHolding.current) return;
+          
+          const elapsed = Date.now() - holdStartTime.current;
+          
+          // Don't show progress ring during tap window
+          if (elapsed < TAP_THRESHOLD) {
+              holdAnimationRef.current = requestAnimationFrame(updateProgress);
+              return;
+          }
+          
+          // Progress starts after tap threshold
+          const holdElapsed = elapsed - TAP_THRESHOLD;
+          const progress = Math.min(1, holdElapsed / (HOLD_DURATION - TAP_THRESHOLD));
+          setHoldProgress(progress);
+          
+          if (progress >= 1 && !isRewindingRef.current) {
+              // Trigger rewind
+              isRewindingRef.current = true;
               setIsRewinding(true);
-              conductor.pause(); 
+              setHoldProgress(0); // Clear the ring
               
+              // Pause if playing
+              if (conductor.state === RSVPState.PLAYING) {
+                  conductor.pause(true);
+              }
+              
+              // Start rewinding
               rewindInterval.current = window.setInterval(() => {
                   conductor.seekRelative(-1);
-                  if (navigator.vibrate) navigator.vibrate(2); 
-              }, 80); 
-          }
-          // ZONE 2: SPEED (Right 45% -> > 55%)
-          else if (pointerStart.current.x > screenW * 0.55) {
-              setIsSpeedAdjusting(true);
-              setLiveWPM(heartbeat.wpm);
-              // Store initial conditions
-              speedStartData.current = { y: pointerStart.current.y, val: heartbeat.wpm };
+                  if (navigator.vibrate) navigator.vibrate(1);
+              }, 60);
               
-              if (navigator.vibrate) navigator.vibrate(15); 
+              if (navigator.vibrate) navigator.vibrate(15);
+          } else if (progress < 1) {
+              holdAnimationRef.current = requestAnimationFrame(updateProgress);
           }
-      }, 300); // 300ms threshold for hold
+      };
+      
+      holdAnimationRef.current = requestAnimationFrame(updateProgress);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-      // 1. Cancel hold if moved too much before trigger (prevent accidental trigger while scrolling)
-      if (holdTimer.current && !isRewinding && !isSpeedAdjusting) {
-          const dist = Math.hypot(e.clientX - pointerStart.current.x, e.clientY - pointerStart.current.y);
-          if (dist > 20) {
-              clearTimeout(holdTimer.current);
-              holdTimer.current = null;
-          }
-      }
-
-      // 2. Handle Speed Drag
-      if (isSpeedAdjusting) {
-          e.preventDefault(); // Prevent native scroll
-          e.stopPropagation();
-
-          // Drag Up (negative Y delta) = Increase Speed
-          // Drag Down (positive Y delta) = Decrease Speed
-          const deltaY = speedStartData.current.y - e.clientY; 
-          
-          // Sensitivity: 2 WPM per pixel
-          const wpmDelta = Math.round(deltaY * 2);
-          const newWPM = Math.max(50, Math.min(2000, speedStartData.current.val + wpmDelta));
-          
-          if (newWPM !== heartbeat.wpm) {
-              conductor.updateWPM(newWPM);
-              setLiveWPM(newWPM);
-          }
+      if (!isHolding.current || isRewindingRef.current) return;
+      
+      // Cancel if dragged too far (prevents accidental activation while scrolling)
+      const dist = Math.hypot(e.clientX - pointerStart.current.x, e.clientY - pointerStart.current.y);
+      if (dist > DRAG_THRESHOLD) {
+          cleanupGesture();
+          animateHoldProgress(0); // Smoothly animate back to 0
       }
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
       if (!isRSVP) return;
-
-      // Clean up Hold Timer
-      if (holdTimer.current) {
-          clearTimeout(holdTimer.current);
-          holdTimer.current = null;
-      }
-
-      // CLEANUP: REWIND
-      if (isRewinding) {
+      
+      const wasRewinding = isRewindingRef.current;
+      const elapsed = Date.now() - holdStartTime.current;
+      const wasDragging = Math.hypot(e.clientX - pointerStart.current.x, e.clientY - pointerStart.current.y) > DRAG_THRESHOLD;
+      
+      // Stop everything
+      cleanupGesture();
+      
+      if (wasRewinding) {
+          // End rewind state
+          isRewindingRef.current = false;
           setIsRewinding(false);
-          if (rewindInterval.current) {
-              clearInterval(rewindInterval.current);
-              rewindInterval.current = null;
+          
+          // Resume if was playing before
+          if (wasPlayingRef.current && engine.isRSVPMode) {
+              setTimeout(() => conductor.play(), 200);
           }
-          if (wasPlayingRef.current) setTimeout(() => { if (engine.isRSVPMode) conductor.play(); }, 300);
-          e.stopPropagation();
           return;
       }
-
-      // CLEANUP: SPEED
-      if (isSpeedAdjusting) {
-          setIsSpeedAdjusting(false);
-          // Persist the new speed setting
-          TitanSettingsService.getInstance().updateSettings({ rsvpSpeed: heartbeat.wpm, hasCustomSpeed: true });
-          e.stopPropagation();
+      
+      // Animate progress back to 0 smoothly
+      animateHoldProgress(0);
+      
+      // TAP BEHAVIOR:
+      // - If PLAYING: Pause
+      // - If PAUSED: Exit RSVP and return to scroll view (position already synced)
+      if (!wasDragging && elapsed < TAP_THRESHOLD) {
+          if (conductor.state === RSVPState.PLAYING) {
+              conductor.pause();
+          } else {
+              // Exit to scroll view - position is already synced via conductor
+              handleModeToggle(false);
+          }
           return;
       }
-
-      // HANDLE TAP (If not hold, not drag)
-      const dist = Math.hypot(e.clientX - pointerStart.current.x, e.clientY - pointerStart.current.y);
-      if (dist < 10) {
-          handleModeToggle(false);
-      }
+      
+      // ABORTED HOLD: Released after tap threshold but before rewind triggered
+      // Just do nothing - the ring animates back to 0
   };
 
-  const handlePointerCancel = (e: React.PointerEvent) => {
-      if (holdTimer.current) clearTimeout(holdTimer.current);
-      if (rewindInterval.current) clearInterval(rewindInterval.current);
+  const handlePointerCancel = () => {
+      cleanupGesture();
+      isRewindingRef.current = false;
       setIsRewinding(false);
-      setIsSpeedAdjusting(false);
+      animateHoldProgress(0);
   };
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden m-0 p-0"
+    <div 
+      className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden m-0 p-0 animate-fadeIn"
       style={{ 
           backgroundColor: theme.background 
       }}
     >
       {/* LAYER 0 (Z-10): TEXT ENGINE */}
-      <div className="absolute inset-0 z-10 w-full h-full">
-          <RSVPContextBackground active={isRSVP}>
-            <TitanReaderView 
-              book={book} 
-              onToggleChrome={() => setIsChromeVisible(p => !p)} 
-              onRequestRSVP={(offset, index) => handleModeToggle(true, offset, index)}
-            />
-          </RSVPContextBackground>
+      <div 
+        className="absolute inset-0 z-10 w-full h-full will-change-transform transition-opacity duration-300"
+        style={{ 
+          // When RSVP is playing: completely hidden
+          // When RSVP is paused: visible at 40% for reference
+          // When not in RSVP: full visibility
+          opacity: isRSVP ? (isPlaying ? 0 : 0.4) : 1.0,
+          pointerEvents: isRSVP ? 'none' : 'auto'
+        }}
+      >
+          <TitanReaderView 
+            book={book} 
+            onToggleChrome={() => setIsChromeVisible(p => !p)} 
+            onRequestRSVP={(offset, index) => handleModeToggle(true, offset, index)}
+            isActive={!isRSVP || !isPlaying} 
+          />
       </div>
 
       {/* LAYER 1 (Z-20): RSVP STAGE (The Lens) & GESTURE LAYER */}
       <div 
-        className={`absolute inset-0 z-20 flex flex-col items-center justify-center transition-opacity duration-200 ${
-            isRSVP ? 'opacity-100' : 'opacity-0'
+        className={`absolute inset-0 z-20 flex flex-col items-center justify-center transition-all duration-300 will-change-[transform,opacity] ${
+            isRSVP ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
         }`}
         style={{
-            pointerEvents: isRSVP ? 'auto' : 'none'
+            pointerEvents: isRSVP ? 'auto' : 'none',
+            transitionTimingFunction: 'cubic-bezier(0.2, 0, 0, 1)'
         }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -320,70 +436,60 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
              onOpenSettings={() => setShowSettings(true)} 
          />
          
-         {/* AMBIENT HINTS (Subtle Indicators) */}
-         <AnimatePresence>
-            {isRSVP && !isRewinding && !isSpeedAdjusting && !showSettings && (
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ delay: 0.5, duration: 1.0 }}
-                    className="absolute inset-0 pointer-events-none z-25"
-                >
-                    {/* Left Hint: Rewind Handle */}
-                    <div 
-                        className="absolute left-3 top-1/2 -translate-y-1/2 w-1 h-12 rounded-full opacity-10 shadow-sm"
-                        style={{ backgroundColor: theme.primaryText }}
-                    />
-                    
-                    {/* Right Hint: Speed Slider Track */}
-                    <div 
-                        className="absolute right-3 top-1/2 -translate-y-1/2 w-1 h-20 rounded-full opacity-10 flex flex-col items-center justify-between py-1 shadow-sm"
-                        style={{ backgroundColor: theme.primaryText }}
-                    >
-                        {/* Ticks to suggest verticality */}
-                        <div className="w-2 h-[1px] rounded-full opacity-50" style={{ backgroundColor: theme.primaryText }} />
-                        <div className="w-2 h-[1px] rounded-full opacity-50" style={{ backgroundColor: theme.primaryText }} />
-                    </div>
-                </motion.div>
-            )}
-         </AnimatePresence>
+      {/* LAYER 4 (Z-100): GLOBAL OVERLAYS (HUDs, Notifications) */}
+      <div className="absolute inset-0 z-[100] pointer-events-none overflow-hidden font-sans">
+         {/* HOLD PROGRESS INDICATOR - Simple expanding ring */}
+         {isRSVP && holdProgress > 0 && !isRewinding && (
+             <div className="absolute inset-0 flex items-center justify-center">
+                 <div 
+                     className="rounded-full border-2 flex items-center justify-center"
+                     style={{ 
+                         width: 48 + (holdProgress * 16),
+                         height: 48 + (holdProgress * 16),
+                         borderColor: theme.accent,
+                         opacity: 0.3 + (holdProgress * 0.5),
+                         transition: 'opacity 0.1s ease-out'
+                     }}
+                 >
+                     <Rewind 
+                         size={16} 
+                         style={{ 
+                             color: theme.accent,
+                             opacity: holdProgress,
+                             transform: `scale(${0.8 + holdProgress * 0.2})`
+                         }} 
+                     />
+                 </div>
+             </div>
+         )}
 
-         {/* LEFT: REWIND VISUAL FEEDBACK */}
-         <AnimatePresence>
-            {isRewinding && (
-                <motion.div
-                    initial={{ opacity: 0, x: -30, scale: 0.8 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    exit={{ opacity: 0, x: -30, scale: 0.8 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                    className="absolute left-8 top-1/2 -translate-y-1/2 p-6 rounded-full backdrop-blur-md shadow-2xl flex items-center justify-center border border-white/10"
-                    style={{ backgroundColor: theme.surface }}
-                >
-                    <Rewind size={48} className="animate-pulse" style={{ color: theme.accent }} fill="currentColor" />
-                </motion.div>
-            )}
-         </AnimatePresence>
+         {/* REWIND ACTIVE HUD - Minimal pill at top */}
+         {isRewinding && (
+             <div
+                 className="absolute top-10 left-1/2 -translate-x-1/2 flex items-center gap-2.5 px-3 py-1.5 rounded-full shadow-lg"
+                 style={{ 
+                     backgroundColor: `${theme.surface}dd`,
+                     backdropFilter: 'blur(16px)',
+                     WebkitBackdropFilter: 'blur(16px)',
+                     animation: 'fadeSlideIn 0.2s ease-out'
+                 }}
+             >
+                 <Rewind size={14} style={{ color: theme.accent }} fill="currentColor" />
+                 <span className="text-xs font-medium tracking-wide" style={{ color: theme.secondaryText }}>
+                     rewinding
+                 </span>
+             </div>
+         )}
+      </div>
 
-         {/* RIGHT: SPEED VISUAL FEEDBACK */}
-         <AnimatePresence>
-            {isSpeedAdjusting && (
-                <motion.div
-                    initial={{ opacity: 0, x: 30, scale: 0.8 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    exit={{ opacity: 0, x: 30, scale: 0.8 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                    className="absolute right-8 top-1/2 -translate-y-1/2 p-6 rounded-[2rem] backdrop-blur-md shadow-2xl flex flex-col items-center justify-center border border-white/10 min-w-[120px]"
-                    style={{ backgroundColor: theme.surface }}
-                >
-                    <Zap size={32} className="mb-2" style={{ color: theme.accent }} fill="currentColor" />
-                    <div className="flex items-baseline gap-1">
-                        <span className="text-3xl font-black tabular-nums" style={{ color: theme.primaryText }}>{liveWPM}</span>
-                        <span className="text-xs font-bold uppercase" style={{ color: theme.secondaryText }}>wpm</span>
-                    </div>
-                </motion.div>
-            )}
-         </AnimatePresence>
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeSlideIn { 
+            from { opacity: 0; transform: translate(-50%, -8px); } 
+            to { opacity: 1; transform: translate(-50%, 0); } 
+        }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+      `}</style>
       </div>
 
       {/* LAYER 2 (Z-50): UI DOCK (Absolute Bottom Injection) */}
@@ -397,52 +503,63 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             book={book} 
             onToggleRSVP={(startOffset) => handleModeToggle(undefined, startOffset)}
             isRSVPActive={isRSVP} 
-            onSettingsClick={() => setShowSettings(true)}
+              onSettingsClick={() => {
+                if (!isHandlingPopState.current) {
+                  window.history.pushState({ modal: 'settings' }, '', window.location.href);
+                }
+                setShowSettings(true);
+              }}
          />
       </div>
 
       {/* LAYER 3 (Z-60): TOP CHROME */}
       <div 
-        className={`absolute top-0 left-0 right-0 z-[60] transition-transform duration-200 pointer-events-none ${
+        className={`absolute top-0 left-0 right-0 z-[60] transition-transform duration-400 pointer-events-none ${
           isChromeVisible && !isRSVP ? 'translate-y-0' : '-translate-y-full'
         }`}
+        style={{transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)'}}
       >
         <div 
-            className="backdrop-blur-xl border-b pt-safe-top pb-3 px-4 flex items-center justify-between shadow-sm pointer-events-auto"
+            className="backdrop-blur-2xl border-b pt-safe-top py-4 px-5 flex items-center justify-between pointer-events-auto"
             style={{ 
                 backgroundColor: theme.dimmer,
                 borderColor: theme.borderColor
             }}
         >
-          <button onClick={handleExit} className="p-2 -ml-2 rounded-full hover:bg-black/5 flex items-center gap-1" style={{ color: theme.primaryText }}>
-            <ChevronLeft size={24} />
-            <span className="font-medium lowercase">back home</span>
+          <button 
+            onClick={handleExit} 
+            className="w-11 h-11 -ml-1 rounded-full flex items-center justify-center transition-all active:scale-95"
+            style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
+          >
+            <ChevronLeft size={20} />
           </button>
         </div>
       </div>
 
       {/* SETTINGS OVERLAY */}
-      <AnimatePresence>
-        {showSettings && (
-            <>
-                <motion.div 
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-[100]"
-                    style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
-                    onClick={() => setShowSettings(false)}
-                />
-                <motion.div
-                    initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-                    transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                    className="fixed bottom-0 left-0 right-0 z-[101] rounded-t-[32px] h-[70vh] shadow-2xl overflow-hidden"
-                    style={{ backgroundColor: theme.background }}
-                >
-                    <SettingsSheet onClose={() => setShowSettings(false)} />
-                </motion.div>
-            </>
-        )}
-      </AnimatePresence>
+      {(showSettings || closingSettings) && (
+        <>
+            <div 
+                className="fixed inset-0 z-[100]"
+                style={{ 
+                  backgroundColor: 'rgba(0,0,0,0.5)', 
+                  backdropFilter: 'blur(2px)',
+                  animation: closingSettings ? 'fadeOut 0.4s ease-out' : 'fadeIn 0.6s ease-out'
+                }}
+                onClick={handleCloseSettings}
+            />
+            <div
+                className="fixed bottom-0 left-0 right-0 z-[101] rounded-t-[32px] h-[70vh] shadow-2xl overflow-hidden"
+                style={{ 
+                  backgroundColor: theme.background,
+                  animation: closingSettings ? 'slideDown 0.5s cubic-bezier(0.7, 0, 0.84, 0)' : 'slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
+            >
+                <SettingsSheet onClose={handleCloseSettings} />
+            </div>
+        </>
+      )}
 
-    </motion.div>
+    </div>
   );
 }

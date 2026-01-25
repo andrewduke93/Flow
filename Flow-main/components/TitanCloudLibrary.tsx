@@ -14,6 +14,8 @@ interface TitanCloudLibraryProps {
 
 type DownloadState = 'idle' | 'loading' | 'success' | 'error';
 
+const SUGGESTED_GENRES = ["philosophy", "gothic", "sci-fi", "adventure", "poetry", "mystery"];
+
 /**
  * TitanCloudLibrary
  * The "Visit Library" experience.
@@ -32,12 +34,16 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
 
   // Initial Load of Featured
   useEffect(() => {
-      setResults(service.getFeaturedBooks());
+      const featured = service.getFeaturedBooks();
+      console.log('TitanCloudLibrary: Loading featured books', featured.length, featured);
+      setResults(featured);
   }, []);
 
-  const handleSearch = async (e?: React.FormEvent) => {
+  const handleSearch = async (e?: React.FormEvent, overrideQuery?: string) => {
     e?.preventDefault();
-    if (!query.trim()) {
+    const searchVal = overrideQuery !== undefined ? overrideQuery : query;
+    
+    if (!searchVal.trim()) {
         // Restore featured if cleared
         setResults(service.getFeaturedBooks());
         return;
@@ -47,7 +53,7 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
     setResults([]); // Clear previous
 
     try {
-        const books = await service.searchCuratedBooks(query);
+        const books = await service.searchCuratedBooks(searchVal);
         setResults(books);
     } catch (e) {
         console.error(e);
@@ -181,7 +187,7 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
           <form onSubmit={handleSearch} className="relative group">
               <input 
                   type="text"
-                  placeholder="search title, author, or keyword..."
+                  placeholder="search title, author, genre, or keyword..."
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   className="w-full h-14 pl-12 pr-4 rounded-2xl text-lg font-medium outline-none transition-all shadow-sm focus:shadow-md"
@@ -197,6 +203,29 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
                   style={{ color: theme.primaryText }}
               />
           </form>
+
+          {/* Quick Genre Pills */}
+          {!query && (
+              <div className="flex flex-wrap gap-2 mt-3 animate-fadeIn">
+                  {SUGGESTED_GENRES.map(genre => (
+                      <button
+                          key={genre}
+                          onClick={() => {
+                              setQuery(genre);
+                              handleSearch(undefined, genre);
+                          }}
+                          className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border transition-all active:scale-95 opacity-50 hover:opacity-100"
+                          style={{ 
+                              backgroundColor: theme.surface, 
+                              borderColor: theme.borderColor,
+                              color: theme.primaryText 
+                          }}
+                      >
+                          {genre}
+                      </button>
+                  ))}
+              </div>
+          )}
           
           {/* SEARCH LOADING INDICATOR */}
           <AnimatePresence>
@@ -216,8 +245,24 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
       </div>
 
       {/* CONTENT AREA */}
-      <div className="flex-1 overflow-y-auto px-6 pb-20 pt-4 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-6 pb-20 pt-6 custom-scrollbar">
           
+          {/* SEARCH LOADING INDICATOR (Inside Content Area for Stability) */}
+          <AnimatePresence>
+            {isSearching && (
+                 <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex items-center justify-center gap-2 py-4 mb-2 text-sm font-medium"
+                    style={{ color: theme.secondaryText }}
+                 >
+                     <Loader2 className="animate-spin" size={16} />
+                     <span>scanning archives...</span>
+                 </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* COPYRIGHT BANNER (If substituted) */}
           <AnimatePresence>
               {!isSearching && isCopyrightSubstituted && (
@@ -280,7 +325,7 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
                           <motion.div
                               layout
                               key={book.title}
-                              initial={{ opacity: 0, scale: 0.95 }}
+                              initial={false}
                               animate={{ opacity: 1, scale: 1 }}
                               exit={{ opacity: 0, scale: 0.95 }}
                               transition={{ duration: 0.2, delay: i * 0.03 }}
@@ -301,9 +346,35 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
                                       <h3 className="font-serif font-bold text-xl leading-tight mb-1" style={{ color: theme.primaryText }}>
                                           {book.title}
                                       </h3>
-                                      <p className="text-sm font-medium opacity-60 uppercase tracking-wider mb-3" style={{ color: theme.primaryText }}>
+                                      <p className="text-sm font-medium opacity-60 uppercase tracking-wider mb-2" style={{ color: theme.primaryText }}>
                                           {book.author}
                                       </p>
+                                      
+                                      {/* Enhanced Metadata: Genre & Tags */}
+                                      <div className="flex flex-wrap gap-2 mb-4">
+                                          {book.genre && (
+                                              <span 
+                                                  className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter"
+                                                  style={{ 
+                                                      backgroundColor: `${theme.accent}20`, 
+                                                      color: theme.accent,
+                                                      border: `1px solid ${theme.accent}30`
+                                                  }}
+                                              >
+                                                  {book.genre}
+                                              </span>
+                                          )}
+                                          {book.tags?.slice(0, 3).map((tag, i) => (
+                                              <span 
+                                                  key={i}
+                                                  className="px-2 py-0.5 rounded text-[10px] font-medium opacity-50 border border-white/10"
+                                                  style={{ color: theme.primaryText }}
+                                              >
+                                                  {tag.toLowerCase()}
+                                              </span>
+                                          ))}
+                                      </div>
+
                                       <p className="text-sm leading-relaxed opacity-80 line-clamp-2" style={{ color: theme.secondaryText }}>
                                           {book.summary}
                                       </p>

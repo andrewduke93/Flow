@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { AnimatePresence } from 'framer-motion';
 import { TitanLibrary } from './components/TitanLibrary';
 import { ReaderContainer } from './components/ReaderContainer';
@@ -20,6 +21,7 @@ const App: React.FC = () => {
   const theme = useTitanTheme();
   const [books, setBooks] = useState<Book[]>([]);
   const [currentBookId, setCurrentBookId] = useState<string | null>(null);
+  const isHandlingPopState = useRef(false);
   
   // Sync State
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
@@ -27,6 +29,25 @@ const App: React.FC = () => {
 
   // CRITICAL: Keep a ref to books for synchronous access during unload/autosave
   const booksRef = useRef<Book[]>([]);
+
+  // Browser back button handling for closing books
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isHandlingPopState.current || !currentBookId) return;
+      isHandlingPopState.current = true;
+      
+      const book = booksRef.current.find(b => b.id === currentBookId);
+      if (book) {
+        const engine = TitanCore.getInstance();
+        handleCloseReader(currentBookId, engine.currentTokenIndex, engine.currentProgress);
+      }
+      
+      isHandlingPopState.current = false;
+    };
+    
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentBookId]);
 
   // 1. INITIAL LOAD
   useEffect(() => {
@@ -37,47 +58,51 @@ const App: React.FC = () => {
     const syncer = SyncManager.getInstance();
     
     const boot = async () => {
-        // Init Storage
-        await storage.init();
-        
-        // Load Books (Metadata only for speed)
-        let loadedBooks = await storage.getAllMetadata();
-        
-        // First Run Mock Data
-        if (loadedBooks.length === 0) {
-            const mocks = generateMockBooks();
-            for (const b of mocks) {
-                await storage.saveBook(b);
+        try {
+            // Init Storage
+            await storage.init();
+            
+            // Load Books (Metadata only for speed)
+            let loadedBooks = await storage.getAllMetadata();
+            
+            // First Run Mock Data
+            if (loadedBooks.length === 0) {
+                const mocks = generateMockBooks();
+                for (const b of mocks) {
+                    await storage.saveBook(b);
+                }
+                loadedBooks = mocks;
             }
-            loadedBooks = mocks;
+
+            const hydrated = loadedBooks.map(b => ({
+                ...b,
+                lastOpened: new Date(b.lastOpened)
+            }));
+            
+            setBooks(hydrated);
+            booksRef.current = hydrated;
+
+            // Init Sync Subscription
+            syncer.subscribe({
+                onStatusChange: (s) => setSyncStatus(s),
+                onNewBook: (b) => {
+                    setBooks(prev => {
+                         // Check if exists to update or append
+                         const exists = prev.find(existing => existing.id === b.id);
+                         if (exists) return prev.map(p => p.id === b.id ? b : p);
+                         return [b, ...prev];
+                    });
+                },
+                onConflict: (local, remoteProg) => {
+                    setConflictBook({ book: local, remote: remoteProg });
+                }
+            });
+            
+            // Attempt Background Sync (Non-Interactive)
+            syncer.syncNow(false);
+        } catch (error) {
+            console.error('App boot failed:', error);
         }
-
-        const hydrated = loadedBooks.map(b => ({
-            ...b,
-            lastOpened: new Date(b.lastOpened)
-        }));
-        
-        setBooks(hydrated);
-        booksRef.current = hydrated;
-
-        // Init Sync Subscription
-        syncer.subscribe({
-            onStatusChange: (s) => setSyncStatus(s),
-            onNewBook: (b) => {
-                setBooks(prev => {
-                     // Check if exists to update or append
-                     const exists = prev.find(existing => existing.id === b.id);
-                     if (exists) return prev.map(p => p.id === b.id ? b : p);
-                     return [b, ...prev];
-                });
-            },
-            onConflict: (local, remoteProg) => {
-                setConflictBook({ book: local, remote: remoteProg });
-            }
-        });
-        
-        // Attempt Background Sync (Non-Interactive)
-        syncer.syncNow(false);
     };
 
     boot();
@@ -93,8 +118,9 @@ const App: React.FC = () => {
       if (!currentBookId) return;
 
       const engine = TitanCore.getInstance();
+      let lastSyncedProgress = -1; // Deduplication guard
 
-      const syncToLibrary = async () => {
+      const syncToLibrary = async (force: boolean = false) => {
           if (engine.isLoading) return;
 
           // Verify engine is tracking the same book
@@ -103,6 +129,12 @@ const App: React.FC = () => {
               const safeProgress = (isNaN(engine.currentProgress) || !isFinite(engine.currentProgress)) 
                                    ? 0 
                                    : engine.currentProgress;
+
+              // OPTIMIZATION: Skip if progress hasn't changed (unless forced)
+              if (!force && Math.abs(safeProgress - lastSyncedProgress) < 0.001) {
+                  return;
+              }
+              lastSyncedProgress = safeProgress;
 
               // Construct update
               const updatedBook: Book = {
@@ -127,19 +159,28 @@ const App: React.FC = () => {
           }
       };
 
-      const intervalId = setInterval(syncToLibrary, 5000); // Relaxed interval (2s -> 5s)
+      const intervalId = setInterval(() => syncToLibrary(false), 5000);
+      
       const handleBeforeUnload = () => {
-          syncToLibrary();
-          // Force immediate sync on close attempt
+          syncToLibrary(true); // Force save on unload
           SyncManager.getInstance().syncNow(false);
       };
       
+      // OPTIMIZATION: Save immediately when tab goes to background
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'hidden') {
+              syncToLibrary(true); // Force save when backgrounded
+          }
+      };
+      
       window.addEventListener('beforeunload', handleBeforeUnload);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
 
       return () => {
           clearInterval(intervalId);
           window.removeEventListener('beforeunload', handleBeforeUnload);
-          syncToLibrary();
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          syncToLibrary(true); // Final save on cleanup
       };
   }, [currentBookId]); 
 
@@ -149,19 +190,24 @@ const App: React.FC = () => {
     // but current TitanStorage implementation splits it.
     // Let's ensure TitanCore gets the full book.
     
+    // Push history state for back button support
+    if (!isHandlingPopState.current) {
+      window.history.pushState({ bookOpen: true, bookId: book.id }, '', window.location.href);
+    }
+    
     // Check if content is loaded
     if (!book.chapters || book.chapters.length === 0) {
         const fullBook = await TitanStorage.getInstance().getFullBook(book.id);
         if (fullBook) {
+            // CRITICAL FIX: Use flushSync to ensure books state commits synchronously
+            // before setting currentBookId. This prevents race condition where
+            // activeBook is derived from stale books array without chapters.
+            flushSync(() => {
+                setBooks(prev => prev.map(b => b.id === book.id ? fullBook : b));
+            });
             setCurrentBookId(fullBook.id);
-            // We pass the full book to ReaderContainer, but don't necessarily need to update the list state with the heavy object
-            // Just let ReaderContainer fetch it? 
-            // Architecture simplification: ReaderContainer takes 'book' prop.
-            // We'll update the 'activeBook' derivation below.
-            
-            // Temporary hack: update state with full book so it passes down
-            setBooks(prev => prev.map(b => b.id === book.id ? fullBook : b));
         } else {
+            console.error('[App] Failed to load full book from storage:', book.id);
             setCurrentBookId(book.id);
         }
     } else {
@@ -264,7 +310,12 @@ const App: React.FC = () => {
       }}
     >
       {/* LAYER 1: THE LIBRARY (Base) */}
-      <div className={`w-full h-full transition-all duration-500 ${activeBook ? 'scale-95 opacity-50 blur-[2px] pointer-events-none' : 'scale-100 opacity-100 blur-0'}`}>
+      <div 
+        className={`w-full h-full transition-all duration-500 ${activeBook ? 'scale-95 opacity-50 blur-[2px] pointer-events-none' : 'scale-100 opacity-100 blur-0'}`}
+        style={{
+          transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)'
+        }}
+      >
           <TitanLibrary 
             books={books} 
             onBookSelect={handleBookSelect} 
@@ -276,15 +327,20 @@ const App: React.FC = () => {
       </div>
 
       {/* LAYER 2: THE READER (Overlay) */}
-      <AnimatePresence>
-        {activeBook && (
+      {activeBook && (
+          <div
+            key={activeBook.id}
+            style={{
+              animation: 'fadeIn 400ms cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
             <ReaderContainer 
               key={activeBook.id}
               book={activeBook} 
               onClose={handleCloseReader} 
             />
-        )}
-      </AnimatePresence>
+          </div>
+      )}
 
       {/* LAYER 3: SYNC TOASTS */}
       <AnimatePresence>
