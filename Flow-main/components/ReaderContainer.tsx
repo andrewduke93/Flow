@@ -31,6 +31,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const [isChromeVisible, setIsChromeVisible] = useState(true);
   const [isRSVP, setIsRSVP] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isRewinding, setIsRewinding] = useState(false);
   const [currentProgress, setCurrentProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [closingSettings, setClosingSettings] = useState(false);
@@ -151,7 +152,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     // they probably just want to play/pause the conductor.
     if (isRSVP && shouldBeRSVP === undefined && startOffset === undefined && tokenIndex === undefined) {
         if (conductor.state === RSVPState.PLAYING) {
-            conductor.pause();
+            conductor.pause(true); // Skip context rewind for UI-triggered pause
         } else {
             conductor.play();
         }
@@ -220,53 +221,18 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   // Handle tap from teleprompter - toggle play/pause
   const handleTeleprompterTap = () => {
     if (conductor.state === RSVPState.PLAYING) {
-      conductor.pause();
+      conductor.pause(true); // Skip context rewind for quick tap-pause
     } else {
-      // Resume playback when paused
       conductor.play();
     }
   };
 
-  // State for scroll view word selection (press-and-hold when RSVP paused)
-  const scrollViewHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollViewPointerStart = useRef({ x: 0, y: 0, time: 0 });
-  const [isHoldingScrollView, setIsHoldingScrollView] = useState(false);
-  
-  const SCROLL_HOLD_THRESHOLD = 350; // ms to trigger word selection
-  const SCROLL_MOVE_THRESHOLD = 15; // px movement to cancel
-
-  const handleScrollViewPointerDown = (e: React.PointerEvent) => {
-    if (!isRSVP || isPlaying) return; // Only active when RSVP is paused
+  // Handle long press exit from RSVP - exit to scroll view with word highlighted
+  const handleLongPressExit = () => {
+    if (!isRSVP) return;
     
-    scrollViewPointerStart.current = { x: e.clientX, y: e.clientY, time: Date.now() };
-    
-    scrollViewHoldTimer.current = setTimeout(() => {
-      setIsHoldingScrollView(true);
-      RSVPHapticEngine.impactMedium();
-      
-      // Exit RSVP mode - the user can then interact with the scroll view
-      handleModeToggle(false);
-    }, SCROLL_HOLD_THRESHOLD);
-  };
-
-  const handleScrollViewPointerMove = (e: React.PointerEvent) => {
-    if (!scrollViewHoldTimer.current) return;
-    
-    const dx = Math.abs(e.clientX - scrollViewPointerStart.current.x);
-    const dy = Math.abs(e.clientY - scrollViewPointerStart.current.y);
-    
-    if (dx > SCROLL_MOVE_THRESHOLD || dy > SCROLL_MOVE_THRESHOLD) {
-      clearTimeout(scrollViewHoldTimer.current);
-      scrollViewHoldTimer.current = null;
-    }
-  };
-
-  const handleScrollViewPointerUp = () => {
-    if (scrollViewHoldTimer.current) {
-      clearTimeout(scrollViewHoldTimer.current);
-      scrollViewHoldTimer.current = null;
-    }
-    setIsHoldingScrollView(false);
+    // Exit RSVP mode and scroll to current word
+    handleModeToggle(false);
   };
 
   return (
@@ -277,30 +243,20 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       }}
     >
       {/* LAYER 0 (Z-10): TEXT ENGINE */}
-      {/* When RSVP paused: visible at 40%, pointer events enabled for press-and-hold word selection */}
+      {/* When RSVP active: visible at 40% when paused, 0% when playing */}
       <div 
         className="absolute inset-0 z-10 w-full h-full will-change-transform transition-opacity duration-300"
         style={{ 
           opacity: isRSVP ? (isPlaying ? 0 : 0.4) : 1.0,
-          pointerEvents: 'auto' // Always allow interactions
+          pointerEvents: isRSVP ? 'none' : 'auto'
         }}
-        onPointerDown={handleScrollViewPointerDown}
-        onPointerMove={handleScrollViewPointerMove}
-        onPointerUp={handleScrollViewPointerUp}
-        onPointerCancel={handleScrollViewPointerUp}
-        onPointerLeave={handleScrollViewPointerUp}
       >
           <TitanReaderView 
             book={book} 
             onToggleChrome={() => setIsChromeVisible(p => !p)} 
             onRequestRSVP={(offset, index) => handleModeToggle(true, offset, index)}
-            isActive={!isRSVP || !isPlaying} 
+            isActive={!isRSVP} 
           />
-          
-          {/* Hold indicator overlay */}
-          {isHoldingScrollView && (
-            <div className="absolute inset-0 bg-black/10 pointer-events-none z-50" />
-          )}
       </div>
 
       {/* LAYER 1 (Z-20): RSVP TELEPROMPTER (Unified Focus + Cursor) */}
@@ -315,9 +271,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       >
          <RSVPTeleprompter 
              onTap={handleTeleprompterTap}
-             onScrubEnd={(finalIndex) => {
-               console.log('[Teleprompter] Scrub ended at:', finalIndex);
-             }}
+             onLongPressExit={handleLongPressExit}
+             onRewindStateChange={setIsRewinding}
          />
 
       <style>{`
@@ -336,7 +291,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
          <MediaCommandCenter 
             book={book} 
             onToggleRSVP={(startOffset) => handleModeToggle(undefined, startOffset)}
-            isRSVPActive={isRSVP} 
+            isRSVPActive={isRSVP}
+            isRewinding={isRewinding}
             onSettingsClick={() => {
               if (!isHandlingPopState.current) {
                 window.history.pushState({ modal: 'settings' }, '', window.location.href);
@@ -346,10 +302,10 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
          />
       </div>
 
-      {/* LAYER 3 (Z-60): TOP CHROME */}
+      {/* LAYER 3 (Z-60): TOP CHROME - Shows in scroll view AND RSVP (when paused or chrome visible) */}
       <div 
         className={`absolute top-0 left-0 right-0 z-[60] transition-transform duration-400 pointer-events-none ${
-          isChromeVisible && !isRSVP ? 'translate-y-0' : '-translate-y-full'
+          (isChromeVisible || (isRSVP && !isPlaying)) ? 'translate-y-0' : '-translate-y-full'
         }`}
         style={{transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)'}}
       >
@@ -361,12 +317,17 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             }}
         >
           <button 
-            onClick={handleExit} 
+            onClick={isRSVP ? handleLongPressExit : handleExit} 
             className="w-11 h-11 -ml-1 rounded-full flex items-center justify-center transition-all active:scale-95"
             style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
           >
             <ChevronLeft size={20} />
           </button>
+          {isRSVP && (
+            <span className="text-xs font-medium" style={{ color: theme.secondaryText }}>
+              Tap to exit RSVP
+            </span>
+          )}
         </div>
       </div>
 

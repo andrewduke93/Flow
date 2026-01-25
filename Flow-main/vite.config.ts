@@ -5,11 +5,19 @@ import { fileURLToPath } from 'url';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    const isDev = mode === 'development';
+    
     return {
       base: '/Flow/',
       server: {
         port: 3000,
         host: '0.0.0.0',
+        hmr: {
+          // Disable HMR websocket in Codespaces (causes connection errors)
+          // Hot reload still works via polling
+          clientPort: 443,
+          protocol: 'wss',
+        },
       },
       build: {
         outDir: 'dist',

@@ -52,4 +52,14 @@ export class RSVPHapticEngine {
       navigator.vibrate(5); 
     }
   }
+
+  /**
+   * Simulates UISelectionFeedbackGenerator
+   * Used for iOS-style selection changes (like letter picker).
+   */
+  public static selectionChanged() {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(3); // Very light tick
+    }
+  }
 }

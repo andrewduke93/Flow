@@ -93,9 +93,12 @@ export class RSVPHeartbeat {
     this.lastFrameTime = 0; // Reset frame timer
     this.accumulatedTime = 0; // Reset token timer
     
-    // Phase 9-F: Reset Ramp
-    // This triggers the Velocity Ramp logic for the next 3 words.
-    this.rampStep = 0; 
+    // Phase 9-F: Velocity Ramp
+    // Only reset ramp on COLD start (index 0), not on resume
+    // This prevents the slow start feel when pausing and resuming
+    if (this.currentIndex === 0) {
+      this.rampStep = 0; 
+    }
     
     // Start the Game Loop
     this.loop(performance.now());

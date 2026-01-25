@@ -3,7 +3,7 @@ import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { Play, Pause, Plus, Minus, Type, ListMusic, Sparkles } from 'lucide-react';
+import { Play, Pause, Plus, Minus, Type, ListMusic, Sparkles, SkipBack } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
@@ -12,7 +12,8 @@ import { SmartChapterSelector } from './SmartChapterSelector';
 interface MediaCommandCenterProps {
   book: Book;
   onToggleRSVP: (startOffset?: number) => void;
-  isRSVPActive: boolean; 
+  isRSVPActive: boolean;
+  isRewinding?: boolean;
   onSettingsClick: () => void;
 }
 
@@ -21,7 +22,7 @@ interface MediaCommandCenterProps {
  * Identity: Industrial Design.
  * Mission: Perfect center-weighted balance.
  */
-export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, onToggleRSVP, isRSVPActive, onSettingsClick }) => {
+export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, onToggleRSVP, isRSVPActive, isRewinding = false, onSettingsClick }) => {
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
@@ -479,7 +480,9 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
                               boxShadow: `0 6px 24px -4px ${activeColor}66`
                           }}
                       >
-                          {(isRSVPActive && isPlaying) ? (
+                          {isRewinding ? (
+                              <SkipBack size={20} className="fill-white animate-pulse" />
+                          ) : (isRSVPActive && isPlaying) ? (
                               <Pause size={20} className="fill-white" />
                           ) : (
                               <Play size={20} className="fill-white ml-0.5" />

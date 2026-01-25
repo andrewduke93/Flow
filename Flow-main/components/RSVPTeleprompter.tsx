@@ -5,29 +5,30 @@ import { useTitanTheme } from '../services/titanTheme';
 import { useTitanSettings } from '../services/configService';
 import { RSVPToken } from '../types';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
-import { RSVPLens } from './RSVPLens';
 
 interface RSVPTeleprompterProps {
-  /** Callback when user taps (play/pause) */
   onTap?: () => void;
-  /** Callback when scrub gesture ends */
-  onScrubEnd?: (finalIndex: number) => void;
+  onLongPressExit?: () => void;
+  onRewindStateChange?: (isRewinding: boolean) => void;
 }
 
 /**
- * RSVPTeleprompter (Unified Focus + Cursor Scrubbing)
+ * RSVPTeleprompter - Unified Word Stream
  * 
- * Uses RSVPLens for the focus word display, adds cursor scrubbing overlay.
+ * Display modes:
+ * - PLAYING + toggle OFF: Only focus word visible
+ * - PLAYING + toggle ON: Focus word + context words before/after
+ * - PAUSED: Focus word + context words always visible
  * 
- * Gesture model:
- * - TAP: Play/Pause toggle
- * - PRESS+HOLD: Reveal surrounding words inline (cursor mode)
- * - HOLD+SWIPE: Scrub through words like mobile text cursor
- * - RELEASE: Commit to selected position
+ * Gestures:
+ * - TAP on word: Jump to that word
+ * - SWIPE LEFT/RIGHT: Move through words (natural scrubbing)
+ * - LONG PRESS: Exit to scroll view
  */
 export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   onTap,
-  onScrubEnd
+  onLongPressExit,
+  onRewindStateChange
 }) => {
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
@@ -37,51 +38,37 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const ribbonRef = useRef<HTMLDivElement>(null);
   
-  // Core state - mirrors RSVPStageView approach
-  const [currentToken, setCurrentToken] = useState<RSVPToken | null>(null);
+  // State
   const [currentIndex, setCurrentIndex] = useState(0);
   const [tokens, setTokens] = useState<RSVPToken[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
-  const lastIndexRef = useRef<number>(-1);
-  
-  // Cursor/Scrub state
-  const [isCursorActive, setIsCursorActive] = useState(false);
-  const [scrubIndex, setScrubIndex] = useState<number | null>(null);
   const [ribbonOffset, setRibbonOffset] = useState(0);
+  const [isRewinding, setIsRewinding] = useState(false);
   
-  // Gesture tracking
-  const pointerStart = useRef({ x: 0, y: 0, time: 0, index: 0, offset: 0 });
-  const lastHapticIndex = useRef(-1);
+  // Refs
+  const lastIndexRef = useRef(-1);
+  const tokensRef = useRef<RSVPToken[]>([]);
+  const pointerStart = useRef({ x: 0, y: 0, time: 0 });
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isDragging = useRef(false);
-  
-  // Configuration
-  const HOLD_THRESHOLD_MS = 200;
-  const TAP_THRESHOLD_PX = 12;
-  const VISIBLE_WORDS = 12;
-  
-  // Word position cache
+  const rewindIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rewindIndexRef = useRef(0);
   const wordPositions = useRef<Map<number, { left: number, width: number, center: number }>>(new Map());
-
+  
+  // Constants
+  const HOLD_THRESHOLD_MS = 300;
+  const TAP_THRESHOLD_PX = 10;
   const FOCUS_COLOR = '#E25822';
   const RETICLE_POSITION = 35.5;
+  const FONT_SIZE = "clamp(2.5rem, 10vw, 4rem)";
 
-  // Refs for sync comparison (avoid stale closure issues)
-  const tokensRef = useRef<RSVPToken[]>([]);
-  
-  // Sync with heartbeat - using same pattern as RSVPStageView
+  // Sync with heartbeat
   useEffect(() => {
-    // Initialize state
-    setCurrentToken(heartbeat.currentToken);
     setTokens(heartbeat.tokens);
     tokensRef.current = heartbeat.tokens;
     lastIndexRef.current = heartbeat.currentIndex;
     setCurrentIndex(heartbeat.currentIndex);
     setIsPlaying(conductor.state === RSVPState.PLAYING);
 
-    let rafId: number | null = null;
-    let pendingUpdate = false;
-    
     const sync = () => {
       const idx = heartbeat.currentIndex;
       const playing = conductor.state === RSVPState.PLAYING;
@@ -89,75 +76,57 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       
       setIsPlaying(playing);
       
-      // Check if tokens changed (by reference) or index changed
       const tokensChanged = hbTokens !== tokensRef.current;
       const indexChanged = idx !== lastIndexRef.current;
       
-      if (indexChanged || tokensChanged) {
-        if (!pendingUpdate) {
-          pendingUpdate = true;
-          rafId = requestAnimationFrame(() => {
-            lastIndexRef.current = idx;
-            setCurrentToken(heartbeat.currentToken);
-            if (tokensChanged) {
-              setTokens(hbTokens);
-              tokensRef.current = hbTokens;
-            }
-            if (!isCursorActive) {
-              setCurrentIndex(idx);
-            }
-            pendingUpdate = false;
-          });
-        }
+      if (tokensChanged) {
+        setTokens(hbTokens);
+        tokensRef.current = hbTokens;
+      }
+      
+      if (indexChanged) {
+        lastIndexRef.current = idx;
+        setCurrentIndex(idx);
       }
     };
 
     const unsubC = conductor.subscribe(sync);
     const unsubH = heartbeat.subscribe(sync);
-    
-    // IMPORTANT: Also sync immediately in case tokens were set before this mounted
     sync();
     
-    return () => { 
-      unsubC(); 
-      unsubH();
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [isCursorActive]);
+    return () => { unsubC(); unsubH(); };
+  }, []);
 
-  // Display token - use scrubbed token if scrubbing, otherwise current
-  const displayToken = useMemo(() => {
-    if (scrubIndex !== null && tokens[scrubIndex]) {
-      return tokens[scrubIndex];
+  // Focus token - always use current index
+  const focusToken = useMemo(() => tokens[currentIndex] || null, [tokens, currentIndex]);
+
+  // Determine what to show:
+  // - Paused: always show context
+  // - Playing + toggle ON: show context
+  // - Playing + toggle OFF: only focus
+  const showContext = !isPlaying || settings.showGhostPreview;
+  const contextCount = 5;
+
+  // Build token window
+  const streamTokens = useMemo(() => {
+    if (tokens.length === 0) return [];
+    if (!showContext) {
+      // Only focus word
+      return focusToken ? [{ token: focusToken, globalIdx: currentIndex }] : [];
     }
-    return currentToken;
-  }, [currentToken, tokens, scrubIndex]);
+    
+    const start = Math.max(0, currentIndex - contextCount);
+    const end = Math.min(tokens.length - 1, currentIndex + contextCount);
+    
+    return tokens.slice(start, end + 1).map((token, i) => ({
+      token,
+      globalIdx: start + i
+    }));
+  }, [tokens, currentIndex, showContext, contextCount, focusToken]);
 
-  const activeIndex = scrubIndex ?? currentIndex;
-
-  // Context tokens for cursor mode
-  const cursorTokens = useMemo(() => {
-    if (!isCursorActive || tokens.length === 0) return { tokens: [], startIdx: 0 };
-    const start = Math.max(0, activeIndex - VISIBLE_WORDS);
-    const end = Math.min(tokens.length - 1, activeIndex + VISIBLE_WORDS);
-    return { 
-      tokens: tokens.slice(start, end + 1),
-      startIdx: start
-    };
-  }, [tokens, activeIndex, isCursorActive]);
-
-  // Ghost preview tokens (upcoming words during playback)
-  const GHOST_WORD_COUNT = 4;
-  const ghostTokens = useMemo(() => {
-    if (!isPlaying || !settings.showGhostPreview || tokens.length === 0) return [];
-    const startIdx = currentIndex + 1;
-    const endIdx = Math.min(tokens.length, startIdx + GHOST_WORD_COUNT);
-    return tokens.slice(startIdx, endIdx);
-  }, [tokens, currentIndex, isPlaying, settings.showGhostPreview]);
-
-  // Center ribbon on active word
+  // Position ribbon
   useLayoutEffect(() => {
-    if (!ribbonRef.current || !isCursorActive || isDragging.current) return;
+    if (!ribbonRef.current) return;
     
     const ribbon = ribbonRef.current;
     const children = Array.from(ribbon.children) as HTMLElement[];
@@ -171,93 +140,80 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       const rect = child.getBoundingClientRect();
       const ribbonRect = ribbon.getBoundingClientRect();
       const left = rect.left - ribbonRect.left;
-      const width = rect.width;
-      const center = left + width / 2;
-      wordPositions.current.set(idx, { left, width, center });
+      const center = left + rect.width / 2;
+      wordPositions.current.set(idx, { left, width: rect.width, center });
     });
     
-    const activePos = wordPositions.current.get(activeIndex);
+    const activePos = wordPositions.current.get(currentIndex);
     if (activePos) {
       setRibbonOffset(reticleX - activePos.center);
     }
-  }, [cursorTokens, activeIndex, isCursorActive]);
+  }, [streamTokens, currentIndex]);
 
   // Cleanup
   useEffect(() => {
-    return () => {
+    return () => { 
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      if (rewindIntervalRef.current) clearInterval(rewindIntervalRef.current);
     };
   }, []);
 
   // ═══════════════════════════════════════════════════════════════════
-  // GESTURE HANDLERS
+  // PRESS & HOLD TO REWIND (nice and slow)
   // ═══════════════════════════════════════════════════════════════════
 
   const handlePointerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     
+    const target = e.target as HTMLElement;
+    const clickedWordIdx = target.dataset.idx ? parseInt(target.dataset.idx) : null;
+    
+    // If clicked directly on a word - jump to it
+    if (clickedWordIdx !== null) {
+      heartbeat.seek(clickedWordIdx);
+      setCurrentIndex(clickedWordIdx);
+      RSVPHapticEngine.impactMedium();
+      return;
+    }
+    
+    // If paused and tapped empty area - exit to scroll view
+    if (!isPlaying) {
+      onLongPressExit?.();
+      return;
+    }
+    
+    // Otherwise start hold timer for rewind
     pointerStart.current = {
       x: e.clientX,
       y: e.clientY,
-      time: Date.now(),
-      index: currentIndex,
-      offset: ribbonOffset
+      time: Date.now()
     };
-    isDragging.current = false;
     
-    // Start hold timer
     holdTimerRef.current = setTimeout(() => {
-      setIsCursorActive(true);
-      setScrubIndex(currentIndex);
-      RSVPHapticEngine.impactMedium();
+      setIsRewinding(true);
+      RSVPHapticEngine.impactLight();
+      rewindIndexRef.current = currentIndex;
       
-      if (conductor.state === RSVPState.PLAYING) {
-        conductor.pause(true);
-      }
+      // Pause the conductor to prevent it from advancing while rewinding
+      conductor.pause();
+      
+      // Start slow rewind - 1 word every 300ms (nice and slow)
+      rewindIntervalRef.current = setInterval(() => {
+        rewindIndexRef.current = Math.max(0, rewindIndexRef.current - 1);
+        setCurrentIndex(rewindIndexRef.current);
+        RSVPHapticEngine.selectionChanged();
+      }, 300);
     }, HOLD_THRESHOLD_MS);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    const dx = e.clientX - pointerStart.current.x;
-    const dy = Math.abs(e.clientY - pointerStart.current.y);
-    
-    // Cancel hold if moved too much before threshold
-    if (!isCursorActive && (Math.abs(dx) > TAP_THRESHOLD_PX || dy > 30)) {
-      if (holdTimerRef.current) {
-        clearTimeout(holdTimerRef.current);
-        holdTimerRef.current = null;
-      }
-    }
-    
-    // Handle scrubbing in cursor mode
-    if (isCursorActive) {
-      isDragging.current = true;
-      
-      const newOffset = pointerStart.current.offset + dx;
-      setRibbonOffset(newOffset);
-      
-      const containerWidth = containerRef.current?.clientWidth || window.innerWidth;
-      const reticleX = containerWidth * (RETICLE_POSITION / 100);
-      
-      let closestIdx = scrubIndex ?? currentIndex;
-      let closestDist = Infinity;
-      
-      wordPositions.current.forEach((pos, idx) => {
-        const wordScreenCenter = pos.center + newOffset;
-        const dist = Math.abs(wordScreenCenter - reticleX);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closestIdx = idx;
-        }
-      });
-      
-      if (closestIdx !== scrubIndex) {
-        setScrubIndex(closestIdx);
-        if (closestIdx !== lastHapticIndex.current) {
-          RSVPHapticEngine.impactLight();
-          lastHapticIndex.current = closestIdx;
-        }
+    // Cancel rewind if pointer moves significantly away
+    if (isRewinding) {
+      const dx = Math.abs(e.clientX - pointerStart.current.x);
+      const dy = Math.abs(e.clientY - pointerStart.current.y);
+      if (dx > 50 || dy > 50) {
+        stopRewind();
       }
     }
   };
@@ -270,94 +226,158 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       holdTimerRef.current = null;
     }
     
-    const dx = Math.abs(e.clientX - pointerStart.current.x);
-    const elapsed = Date.now() - pointerStart.current.time;
-    
-    if (isCursorActive) {
-      // Commit position
-      const finalIndex = scrubIndex ?? currentIndex;
-      heartbeat.seek(finalIndex);
-      setCurrentIndex(finalIndex);
-      onScrubEnd?.(finalIndex);
-      RSVPHapticEngine.impactMedium();
-      
-      // Snap ribbon
-      const containerWidth = containerRef.current?.clientWidth || window.innerWidth;
-      const reticleX = containerWidth * (RETICLE_POSITION / 100);
-      const activePos = wordPositions.current.get(finalIndex);
-      if (activePos) {
-        setRibbonOffset(reticleX - activePos.center);
-      }
-      
-      setIsCursorActive(false);
-      setScrubIndex(null);
-      isDragging.current = false;
-    } else if (dx < TAP_THRESHOLD_PX && elapsed < HOLD_THRESHOLD_MS) {
-      // TAP
-      onTap?.();
-    }
+    stopRewind();
   };
 
   const handlePointerCancel = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture?.(e.pointerId);
-    
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
     }
-    
-    if (isCursorActive) {
-      heartbeat.seek(pointerStart.current.index);
-      setCurrentIndex(pointerStart.current.index);
-    }
-    
-    setIsCursorActive(false);
-    setScrubIndex(null);
-    isDragging.current = false;
+    stopRewind();
   };
+
+  const stopRewind = () => {
+    if (isRewinding) {
+      if (rewindIntervalRef.current) {
+        clearInterval(rewindIntervalRef.current);
+        rewindIntervalRef.current = null;
+      }
+      setIsRewinding(false);
+      heartbeat.seek(rewindIndexRef.current);
+      // Resume the conductor after rewinding completes
+      conductor.play();
+      RSVPHapticEngine.impactMedium();
+    }
+  };
+
+  // When rewinding state changes, ensure we update from heartbeat
+  useEffect(() => {
+    if (!isRewinding && currentIndex !== heartbeat.currentIndex) {
+      setCurrentIndex(heartbeat.currentIndex);
+    }
+  }, [isRewinding]);
+
+  // Notify parent when rewind state changes so UI can update
+  useEffect(() => {
+    onRewindStateChange?.(isRewinding);
+  }, [isRewinding, onRewindStateChange]);
 
   // ═══════════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════════
 
-  const fluidFontSize = "clamp(3rem, 13vw, 5rem)";
+  if (!focusToken) return null;
+
+  // ORP calculation - FIXED position so red letter doesn't jump
+  // Always highlight the first letter for consistency
+  const getORP = (text: string) => {
+    return 0;  // Always first letter
+  };
+
+  const orpIdx = getORP(focusToken.originalText);
+  const leftPart = focusToken.originalText.slice(0, orpIdx);
+  const orpChar = focusToken.originalText[orpIdx] || '';
+  const rightPart = focusToken.originalText.slice(orpIdx + 1);
 
   return (
     <div 
       ref={containerRef}
       className="absolute inset-0 select-none overflow-hidden touch-none"
+      style={{ backgroundColor: theme.background }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerCancel}
     >
-      {/* Use existing RSVPLens for the focus word - proven to work */}
-      <RSVPLens token={displayToken} />
+      {/* Dark overlay for separation from scroll view */}
+      <div 
+        className="absolute inset-0 pointer-events-none"
+        style={{ backgroundColor: theme.background, opacity: 0.95 }}
+      />
 
-      {/* GHOST PREVIEW - Upcoming words during playback (teleprompter style) */}
-      {isPlaying && settings.showGhostPreview && ghostTokens.length > 0 && (
-        <div 
-          className="absolute top-[42%] -translate-y-1/2 flex items-center gap-3 z-[50] pointer-events-none"
-          style={{ 
-            left: `calc(${RETICLE_POSITION}% + 5rem)`,
-            animation: 'ghostFadeIn 0.2s ease-out'
+      {/* Vignette */}
+      <div 
+        className="absolute inset-0 z-10 pointer-events-none"
+        style={{ 
+          background: `radial-gradient(ellipse 80% 50% at ${RETICLE_POSITION}% 42%, transparent 0%, ${theme.background} 100%)`
+        }}
+      />
+
+      {/* Reticle */}
+      <div 
+        className="absolute top-[20%] bottom-[20%] w-[2px] z-0 pointer-events-none"
+        style={{ 
+          left: `${RETICLE_POSITION}%`, 
+          backgroundColor: FOCUS_COLOR, 
+          opacity: 0.15
+        }}
+      />
+
+      {/* WORD STREAM */}
+      <div className="absolute inset-x-0 top-[42%] -translate-y-1/2 flex items-center justify-start overflow-visible z-20">
+        {/* Edge fades - only when showing context */}
+        {showContext && (
+          <>
+            <div 
+              className="absolute left-0 top-[-50%] bottom-[-50%] w-32 z-30 pointer-events-none"
+              style={{ background: `linear-gradient(to right, ${theme.background}, transparent)` }}
+            />
+            <div 
+              className="absolute right-0 top-[-50%] bottom-[-50%] w-32 z-30 pointer-events-none"
+              style={{ background: `linear-gradient(to left, ${theme.background}, transparent)` }}
+            />
+          </>
+        )}
+
+        {/* Word Ribbon */}
+        <div
+          ref={ribbonRef}
+          className="flex items-baseline gap-5 whitespace-nowrap"
+          style={{
+            transform: `translateX(${ribbonOffset}px)`,
+            transition: isRewinding ? 'transform 0.05s linear' : 'none'
           }}
         >
-          {ghostTokens.map((token, i) => {
-            // Progressive fade: first word more visible, last word nearly invisible
-            const opacity = Math.max(0.08, 0.35 - (i * 0.08));
-            const scale = Math.max(0.75, 0.95 - (i * 0.05));
+          {streamTokens.map(({ token, globalIdx }) => {
+            const isFocus = globalIdx === currentIndex;
+            const distance = Math.abs(globalIdx - currentIndex);
+            
+            // Context word opacity
+            const contextOpacity = Math.max(0.12, 0.55 - (distance * 0.1));
+            
+            if (isFocus) {
+              return (
+                <span
+                  key={token.id}
+                  data-idx={globalIdx}
+                  className="inline-flex items-baseline font-sans font-semibold cursor-pointer transition-opacity hover:opacity-100"
+                  style={{ fontSize: FONT_SIZE }}
+                >
+                  <span style={{ color: theme.primaryText }}>{leftPart}</span>
+                  <span style={{ color: FOCUS_COLOR, textShadow: `0 0 20px ${FOCUS_COLOR}40` }}>{orpChar}</span>
+                  <span style={{ color: theme.primaryText }}>{rightPart}</span>
+                  {token.punctuation && (
+                    <span style={{ color: theme.secondaryText, opacity: 0.5, marginLeft: '1px' }}>
+                      {token.punctuation}
+                    </span>
+                  )}
+                </span>
+              );
+            }
+            
             return (
               <span
                 key={token.id}
-                className="font-sans font-normal whitespace-nowrap"
+                data-idx={globalIdx}
+                className="font-sans cursor-pointer transition-opacity hover:opacity-100"
                 style={{
-                  fontSize: `calc(${fluidFontSize} * 0.5)`,
+                  fontSize: FONT_SIZE,
+                  fontWeight: 400,
                   color: theme.primaryText,
-                  opacity,
-                  transform: `scale(${scale})`,
-                  transition: 'opacity 0.1s ease-out'
+                  opacity: contextOpacity,
                 }}
               >
                 {token.originalText}
@@ -365,108 +385,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
             );
           })}
         </div>
-      )}
-
-      {/* CURSOR MODE OVERLAY - Context words ribbon */}
-      {isCursorActive && cursorTokens.tokens.length > 0 && (
-        <div 
-          className="absolute inset-x-0 top-[42%] -translate-y-1/2 h-20 flex items-center overflow-hidden z-[100] pointer-events-none"
-          style={{ animation: 'cursorFadeIn 0.12s ease-out' }}
-        >
-          {/* Gradient fade edges */}
-          <div 
-            className="absolute left-0 top-0 bottom-0 w-32 z-10"
-            style={{ background: `linear-gradient(to right, ${theme.background}, transparent)` }}
-          />
-          <div 
-            className="absolute right-0 top-0 bottom-0 w-32 z-10"
-            style={{ background: `linear-gradient(to left, ${theme.background}, transparent)` }}
-          />
-
-          {/* Cursor indicator line */}
-          <div 
-            className="absolute top-0 bottom-0 w-[2px] z-20"
-            style={{ 
-              left: `${RETICLE_POSITION}%`,
-              transform: 'translateX(-50%)',
-              backgroundColor: FOCUS_COLOR,
-              opacity: 0.6
-            }}
-          />
-
-          {/* Words ribbon */}
-          <div
-            ref={ribbonRef}
-            className="flex items-center gap-3 whitespace-nowrap"
-            style={{
-              transform: `translateX(${ribbonOffset}px)`,
-              transition: isDragging.current ? 'none' : 'transform 0.12s cubic-bezier(0.2, 0, 0, 1)'
-            }}
-          >
-            {cursorTokens.tokens.map((token, i) => {
-              const globalIdx = cursorTokens.startIdx + i;
-              const isActive = globalIdx === activeIndex;
-              const distance = Math.abs(globalIdx - activeIndex);
-              
-              // Active word faded (shown by RSVPLens above)
-              const opacity = isActive ? 0.15 : Math.max(0.15, 0.7 - (distance * 0.06));
-              const scale = Math.max(0.85, 1 - (distance * 0.02));
-              
-              return (
-                <span
-                  key={token.id}
-                  data-idx={globalIdx}
-                  className="font-sans inline-block"
-                  style={{
-                    fontSize: `calc(${fluidFontSize} * 0.42)`,
-                    fontWeight: isActive ? 600 : 400,
-                    color: isActive ? FOCUS_COLOR : theme.primaryText,
-                    opacity,
-                    transform: `scale(${scale})`,
-                    transition: 'opacity 0.05s'
-                  }}
-                >
-                  {token.originalText}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Position indicator HUD */}
-      {isCursorActive && (
-        <div 
-          className="absolute bottom-[32%] left-0 right-0 flex justify-center z-[101] pointer-events-none"
-          style={{ animation: 'cursorFadeIn 0.15s ease-out' }}
-        >
-          <div 
-            className="px-4 py-1.5 rounded-full backdrop-blur-md border"
-            style={{ 
-              backgroundColor: `${theme.surface}dd`,
-              borderColor: theme.borderColor
-            }}
-          >
-            <span 
-              className="text-xs font-mono tabular-nums"
-              style={{ color: theme.secondaryText }}
-            >
-              {activeIndex + 1} / {tokens.length}
-            </span>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes cursorFadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes ghostFadeIn {
-          from { opacity: 0; transform: translateX(-10px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-      `}</style>
+      </div>
     </div>
   );
 };
