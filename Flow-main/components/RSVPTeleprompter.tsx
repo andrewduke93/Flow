@@ -66,10 +66,15 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   const FOCUS_COLOR = '#E25822';
   const RETICLE_POSITION = 35.5;
 
+  // Refs for sync comparison (avoid stale closure issues)
+  const tokensRef = useRef<RSVPToken[]>([]);
+  
   // Sync with heartbeat - using same pattern as RSVPStageView
   useEffect(() => {
+    // Initialize state
     setCurrentToken(heartbeat.currentToken);
     setTokens(heartbeat.tokens);
+    tokensRef.current = heartbeat.tokens;
     lastIndexRef.current = heartbeat.currentIndex;
     setCurrentIndex(heartbeat.currentIndex);
     setIsPlaying(conductor.state === RSVPState.PLAYING);
@@ -80,15 +85,24 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     const sync = () => {
       const idx = heartbeat.currentIndex;
       const playing = conductor.state === RSVPState.PLAYING;
+      const hbTokens = heartbeat.tokens;
+      
       setIsPlaying(playing);
       
-      if (idx !== lastIndexRef.current || heartbeat.tokens !== tokens) {
+      // Check if tokens changed (by reference) or index changed
+      const tokensChanged = hbTokens !== tokensRef.current;
+      const indexChanged = idx !== lastIndexRef.current;
+      
+      if (indexChanged || tokensChanged) {
         if (!pendingUpdate) {
           pendingUpdate = true;
           rafId = requestAnimationFrame(() => {
             lastIndexRef.current = idx;
             setCurrentToken(heartbeat.currentToken);
-            setTokens(heartbeat.tokens);
+            if (tokensChanged) {
+              setTokens(hbTokens);
+              tokensRef.current = hbTokens;
+            }
             if (!isCursorActive) {
               setCurrentIndex(idx);
             }
@@ -100,6 +114,9 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
 
     const unsubC = conductor.subscribe(sync);
     const unsubH = heartbeat.subscribe(sync);
+    
+    // IMPORTANT: Also sync immediately in case tokens were set before this mounted
+    sync();
     
     return () => { 
       unsubC(); 

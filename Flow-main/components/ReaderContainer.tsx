@@ -217,13 +217,13 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
   // MARK: - Gesture Handling moved to RSVPTeleprompter (unified tap/hold/swipe)
 
-  // Handle tap from teleprompter - toggle play/pause or exit RSVP
+  // Handle tap from teleprompter - toggle play/pause
   const handleTeleprompterTap = () => {
     if (conductor.state === RSVPState.PLAYING) {
       conductor.pause();
     } else {
-      // When paused and tapped, exit to scroll view
-      handleModeToggle(false);
+      // Resume playback when paused
+      conductor.play();
     }
   };
 
