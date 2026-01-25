@@ -39,14 +39,23 @@ export class IngestionService {
 
   public async ingest(file: File): Promise<Book> {
     try {
+      console.log(`[Ingestion] Starting import of: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+      
       this.validateFile(file);
       const arrayBuffer = await file.arrayBuffer();
+      console.log(`[Ingestion] File loaded into memory`);
+      
       const zip = await this.unzip(file);
+      console.log(`[Ingestion] ZIP extracted, files:`, Object.keys(zip.files).length);
       
       const opfPath = await this.parseContainer(zip);
+      console.log(`[Ingestion] OPF path: ${opfPath}`);
+      
       const opfData = await this.parseOPF(zip, opfPath);
+      console.log(`[Ingestion] OPF parsed - Title: "${opfData.metadata.title}", Spine items: ${opfData.spine.length}`);
 
       const book = await this.constructBookFromZip(zip, opfData);
+      console.log(`[Ingestion] Book constructed with ${book.chapters.length} chapters`);
       
       // Universal Cover Fallback
       if (!book.coverUrl) {
@@ -56,6 +65,7 @@ export class IngestionService {
       book.sourceType = 'epub';
       
       await this.persistBook(book, arrayBuffer);
+      console.log(`[Ingestion] Book persisted to storage`);
       return book;
 
     } catch (error) {

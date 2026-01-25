@@ -143,9 +143,23 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
     setIsImporting(true);
     try {
       const newBook = await IngestionService.getInstance().ingest(file);
+      
+      // Validate the book has chapters before accepting it
+      if (!newBook.chapters || newBook.chapters.length === 0) {
+        console.error('[TitanLibrary] Book imported but has 0 chapters:', {
+          title: newBook.title,
+          author: newBook.author,
+          id: newBook.id
+        });
+        alert(`Import failed: "${newBook.title}" was processed but no readable content was found. This might be a DRM-protected or malformed EPUB.`);
+        return;
+      }
+      
+      console.log(`[TitanLibrary] Successfully imported "${newBook.title}" with ${newBook.chapters.length} chapters`);
       onBookImported(newBook);
     } catch (error) {
-      alert("We couldn't read that file. Is it a valid EPUB?");
+      console.error('[TitanLibrary] Import error:', error);
+      alert(`Import failed: ${error instanceof Error ? error.message : 'Unknown error. Is it a valid EPUB?'}`);
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
