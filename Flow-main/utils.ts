@@ -21,6 +21,12 @@ export const formatRelativeDate = (date: Date): string => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
+// Calculate word count (splitting by spaces)
+export const calculateWordCount = (content: string): number => {
+  if (!content) return 0;
+  return (content.match(/([^\s]+)/g) || []).length;
+};
+
 // Calculate generic read progress for the dashboard
 export const getOverallProgress = (book: Book): number => {
   if (book.isFinished) return 100;
@@ -37,15 +43,4 @@ export const getOverallProgress = (book: Book): number => {
   const currentChapterProgress = (book.bookmarkProgress * chapterPart) * 100;
   
   return Math.round(baseProgress + currentChapterProgress);
-};
-
-// Logic: Calculate word count (splitting by spaces)
-export const calculateWordCount = (content: string): number => {
-  if (!content) return 0;
-  return (content.match(/([^\s]+)/g) || []).length;
-};
-
-// Logic: Estimated read time (Words / 250 WPM)
-export const calculateReadTime = (wordCount: number): number => {
-  return Math.ceil(wordCount / 250);
 };
