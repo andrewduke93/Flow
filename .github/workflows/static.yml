@@ -1,5 +1,5 @@
 # Simple workflow for deploying static content to GitHub Pages
-# Updated: 2026-01-25 - Force rebuild
+# Updated: 2026-01-25-v2 - Fix deploy
 name: Deploy static content to Pages
 
 on:
