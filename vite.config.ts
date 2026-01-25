@@ -14,7 +14,8 @@ export default defineConfig(({ mode }) => {
       plugins: [
         react(),
         VitePWA({
-          registerType: 'prompt',
+          // Auto-update: new SW activates immediately without user prompt
+          registerType: 'autoUpdate',
           includeAssets: ['favicon.ico', 'icons/*'],
           manifest: {
             name: 'Flow',
@@ -29,8 +30,34 @@ export default defineConfig(({ mode }) => {
             ]
           },
           workbox: {
+            // Delete old caches on activate
             cleanupOutdatedCaches: true,
-            navigateFallback: '/Flow/index.html'
+            // Skip waiting and claim clients immediately
+            skipWaiting: true,
+            clientsClaim: true,
+            // DON'T cache index.html - always fetch fresh to get new bundle references
+            navigateFallback: null,
+            // Only precache JS/CSS assets, not HTML
+            globPatterns: ['**/*.{js,css,png,svg,ico,woff,woff2}'],
+            // Runtime caching for navigation requests (network-first)
+            runtimeCaching: [
+              {
+                urlPattern: /^https:\/\/andrewduke93\.github\.io\/Flow\/$/,
+                handler: 'NetworkFirst',
+                options: {
+                  cacheName: 'html-cache',
+                  expiration: { maxEntries: 1, maxAgeSeconds: 60 }
+                }
+              },
+              {
+                urlPattern: /\/Flow\/index\.html$/,
+                handler: 'NetworkFirst', 
+                options: {
+                  cacheName: 'html-cache',
+                  expiration: { maxEntries: 1, maxAgeSeconds: 60 }
+                }
+              }
+            ]
           }
         })
       ],
