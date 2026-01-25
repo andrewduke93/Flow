@@ -10,6 +10,7 @@ import { MediaCommandCenter } from './MediaCommandCenter';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { SettingsSheet } from './SettingsSheet';
+import { RSVPHapticEngine } from '../services/rsvpHaptics';
 
 interface ReaderContainerProps {
   book: Book;
@@ -226,6 +227,48 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     }
   };
 
+  // State for scroll view word selection (press-and-hold when RSVP paused)
+  const scrollViewHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollViewPointerStart = useRef({ x: 0, y: 0, time: 0 });
+  const [isHoldingScrollView, setIsHoldingScrollView] = useState(false);
+  
+  const SCROLL_HOLD_THRESHOLD = 350; // ms to trigger word selection
+  const SCROLL_MOVE_THRESHOLD = 15; // px movement to cancel
+
+  const handleScrollViewPointerDown = (e: React.PointerEvent) => {
+    if (!isRSVP || isPlaying) return; // Only active when RSVP is paused
+    
+    scrollViewPointerStart.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+    
+    scrollViewHoldTimer.current = setTimeout(() => {
+      setIsHoldingScrollView(true);
+      RSVPHapticEngine.impactMedium();
+      
+      // Exit RSVP mode - the user can then interact with the scroll view
+      handleModeToggle(false);
+    }, SCROLL_HOLD_THRESHOLD);
+  };
+
+  const handleScrollViewPointerMove = (e: React.PointerEvent) => {
+    if (!scrollViewHoldTimer.current) return;
+    
+    const dx = Math.abs(e.clientX - scrollViewPointerStart.current.x);
+    const dy = Math.abs(e.clientY - scrollViewPointerStart.current.y);
+    
+    if (dx > SCROLL_MOVE_THRESHOLD || dy > SCROLL_MOVE_THRESHOLD) {
+      clearTimeout(scrollViewHoldTimer.current);
+      scrollViewHoldTimer.current = null;
+    }
+  };
+
+  const handleScrollViewPointerUp = () => {
+    if (scrollViewHoldTimer.current) {
+      clearTimeout(scrollViewHoldTimer.current);
+      scrollViewHoldTimer.current = null;
+    }
+    setIsHoldingScrollView(false);
+  };
+
   return (
     <div 
       className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden m-0 p-0 animate-fadeIn"
@@ -234,15 +277,18 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       }}
     >
       {/* LAYER 0 (Z-10): TEXT ENGINE */}
+      {/* When RSVP paused: visible at 40%, pointer events enabled for press-and-hold word selection */}
       <div 
         className="absolute inset-0 z-10 w-full h-full will-change-transform transition-opacity duration-300"
         style={{ 
-          // When RSVP is playing: completely hidden
-          // When RSVP is paused: visible at 40% for reference
-          // When not in RSVP: full visibility
           opacity: isRSVP ? (isPlaying ? 0 : 0.4) : 1.0,
-          pointerEvents: isRSVP ? 'none' : 'auto'
+          pointerEvents: 'auto' // Always allow interactions
         }}
+        onPointerDown={handleScrollViewPointerDown}
+        onPointerMove={handleScrollViewPointerMove}
+        onPointerUp={handleScrollViewPointerUp}
+        onPointerCancel={handleScrollViewPointerUp}
+        onPointerLeave={handleScrollViewPointerUp}
       >
           <TitanReaderView 
             book={book} 
@@ -250,6 +296,11 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             onRequestRSVP={(offset, index) => handleModeToggle(true, offset, index)}
             isActive={!isRSVP || !isPlaying} 
           />
+          
+          {/* Hold indicator overlay */}
+          {isHoldingScrollView && (
+            <div className="absolute inset-0 bg-black/10 pointer-events-none z-50" />
+          )}
       </div>
 
       {/* LAYER 1 (Z-20): RSVP TELEPROMPTER (Unified Focus + Cursor) */}
