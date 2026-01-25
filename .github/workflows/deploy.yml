@@ -23,6 +23,7 @@ jobs:
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
+        working-directory: ./Flow-main
         with:
           node-version: '18'
           cache: 'npm'
