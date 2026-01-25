@@ -71,15 +71,20 @@ export class TitanThemeService {
   private static instance: TitanThemeService;
   private listeners: Set<() => void> = new Set();
   
-  private _mode: TitanThemeMode = 'Modern'; // Default to Modern for friendliness
+  private _mode: TitanThemeMode = 'Modern'; // Always default to Modern
 
   private constructor() {
     try {
       const stored = localStorage.getItem('titan_theme_mode');
       if (stored && Object.keys(THEMES).concat(['System']).includes(stored)) {
         this._mode = stored as TitanThemeMode;
+      } else {
+        this._mode = 'Modern';
+        localStorage.setItem('titan_theme_mode', 'Modern');
       }
     } catch (e) {
+      this._mode = 'Modern';
+      localStorage.setItem('titan_theme_mode', 'Modern');
       console.warn('[TitanTheme] Failed to load theme preference', e);
     }
   }
@@ -96,11 +101,16 @@ export class TitanThemeService {
   }
 
   public setMode(mode: TitanThemeMode) {
-    this._mode = mode;
-    try {
-      localStorage.setItem('titan_theme_mode', mode);
-    } catch (e) {
-      console.warn('[TitanTheme] Failed to save theme preference', e);
+    if (!Object.keys(THEMES).concat(['System']).includes(mode)) {
+      this._mode = 'Modern';
+      localStorage.setItem('titan_theme_mode', 'Modern');
+    } else {
+      this._mode = mode;
+      try {
+        localStorage.setItem('titan_theme_mode', mode);
+      } catch (e) {
+        console.warn('[TitanTheme] Failed to save theme preference', e);
+      }
     }
     this.notify();
   }
