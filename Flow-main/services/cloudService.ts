@@ -236,6 +236,7 @@ export class CloudService {
         const id = cloudBook.gutenbergId;
 
         // Step 1: Find the GITenberg Repo via GitHub API
+        // We search for repositories belonging to user 'GITenberg' with the ID in the name.
         const searchUrl = `https://api.github.com/search/repositories?q=${id}+in:name+user:GITenberg`;
         console.log(`[CloudService] Locating repo: ${searchUrl}`);
         
@@ -252,42 +253,25 @@ export class CloudService {
         const defaultBranch = repo.default_branch || 'master';
         const repoName = repo.name;
 
-        // Step 2: Try multiple possible file locations
-        // Pattern variations: [ID].txt, [ID]_utf8.txt, maybe in a cache folder
-        const possiblePaths = [
-            `${id}.txt`,
-            `${id}_utf8.txt`,
-            `${id}_utf-8.txt`,
-            `cache/epub/${id}/${id}-0.txt`,
-            `cache/epub/${id}/pg${id}.txt`,
-            `pg${id}.txt`
-        ];
+        // Step 2: Construct Raw URL
+        // Pattern: https://raw.githubusercontent.com/GITenberg/[RepoName]/[Branch]/[ID].txt
+        const rawUrl = `https://raw.githubusercontent.com/GITenberg/${repoName}/${defaultBranch}/${id}.txt`;
+        console.log(`[CloudService] Fetching raw text from: ${rawUrl}`);
 
-        let textContent = "";
-        let successPath = "";
-
-        for (const path of possiblePaths) {
-            const rawUrl = `https://raw.githubusercontent.com/GITenberg/${repoName}/${defaultBranch}/${path}`;
-            try {
-                const textResponse = await fetch(rawUrl);
-                if (textResponse.ok) {
-                    const content = await textResponse.text();
-                    // Accept if not an HTML error page and has reasonable content
-                    if (!content.trim().startsWith("<!DOCTYPE html>") && !content.trim().startsWith("<") && content.length > 1000) {
-                        textContent = content;
-                        successPath = path;
-                        console.log(`[CloudService] Successfully fetched from: ${rawUrl}`);
-                        break;
-                    }
-                }
-            } catch (e) {
-                // Continue to next path
-                continue;
-            }
+        // Step 3: Fetch Content
+        const textResponse = await fetch(rawUrl);
+        if (!textResponse.ok) {
+            // Fallback: Try with 'master' if main failed or vice versa, or try without extension?
+            // Usually 404 means structure is slightly different (e.g. inside a folder), 
+            // but 99% of GITenberg repos follow root structure.
+            throw new Error("Failed to retrieve text content from archive.");
         }
+        
+        const textContent = await textResponse.text();
 
-        if (!textContent) {
-            throw new Error("Could not retrieve text content from any known location in the archive.");
+        // Validation: Ensure we didn't get a 404 HTML page or empty file
+        if (textContent.trim().startsWith("<!DOCTYPE html>") || textContent.length < 500) {
+             throw new Error("Downloaded content appears invalid.");
         }
 
         // Step 4: Ingest

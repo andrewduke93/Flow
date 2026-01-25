@@ -256,7 +256,7 @@ export class RSVPConductor {
       this.heartbeat.updateWPM(wpm);
   }
 
-  // Internal Logic
+  // MARK: - Internal Logic
 
   private async requestWakeLock() {
       if ('wakeLock' in navigator) {
@@ -281,6 +281,14 @@ export class RSVPConductor {
           this.state = RSVPState.PAUSED;
           this.releaseWakeLock();
       }
+
+      // Haptics removed for playback as requested.
+      /*
+      const token = this.heartbeat.currentToken;
+      if (token && this.state === RSVPState.PLAYING) {
+         RSVPHapticEngine.pulse(token);
+      }
+      */
 
       // Sync less frequently during playback to save resources, but sync often enough for scrubbing
       const currentIndex = this.heartbeat.currentIndex;
@@ -307,7 +315,7 @@ export class RSVPConductor {
       }
   }
 
-  // React Observability
+  // MARK: - React Observability
 
   public subscribe(callback: () => void): () => void {
     this.listeners.add(callback);

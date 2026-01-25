@@ -317,7 +317,7 @@ export class SyncManager {
       }
   }
 
-  // Helpers
+  // MARK: - Helpers
 
   private async applyRemoteUpdate(localBook: Book, remoteData: any) {
       // Only update if actually different
