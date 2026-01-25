@@ -3,7 +3,7 @@ import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { Play, Pause, Plus, Minus, Type, ListMusic } from 'lucide-react';
+import { Play, Pause, Plus, Minus, Type, ListMusic, Sparkles } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
@@ -487,19 +487,42 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
                       </button>
                   </div>
 
-                  {/* TYPE SPOT (Settings Button) */}
-                  <button 
-                    className="flex items-center justify-center h-11 gap-2 rounded-xl border hover:bg-white/5 active:scale-95 transition-all outline-none px-3"
-                    style={{ borderColor: theme.borderColor, backgroundColor: `${theme.primaryText}05` }}
-                    onClick={(e) => { e.stopPropagation(); onSettingsClick(); }}
-                  >
-                     <Type size={16} style={{ color: theme.secondaryText }} />
-                     <div className="w-px h-4" style={{ backgroundColor: theme.borderColor }} />
-                     <div className="flex items-baseline gap-0.5 opacity-60">
-                         <Type size={14} style={{ color: theme.secondaryText }} />
-                         <Type size={10} style={{ color: theme.secondaryText }} />
-                     </div>
-                  </button>
+                  {/* RIGHT CONTROLS: Ghost Preview + Settings */}
+                  <div className="flex items-center gap-2">
+                      {/* GHOST PREVIEW TOGGLE - Shows upcoming words during RSVP playback */}
+                      {isRSVPActive && (
+                          <button 
+                            className="flex items-center justify-center w-11 h-11 rounded-xl border transition-all outline-none active:scale-95"
+                            style={{ 
+                                borderColor: settings.showGhostPreview ? theme.accent + '40' : theme.borderColor, 
+                                backgroundColor: settings.showGhostPreview ? `${theme.accent}15` : `${theme.primaryText}05`,
+                                color: settings.showGhostPreview ? theme.accent : theme.secondaryText
+                            }}
+                            onClick={(e) => { 
+                                e.stopPropagation(); 
+                                RSVPHapticEngine.impactLight();
+                                updateSettings({ showGhostPreview: !settings.showGhostPreview }); 
+                            }}
+                            title={settings.showGhostPreview ? "Hide word preview" : "Show word preview"}
+                          >
+                             <Sparkles size={16} className={settings.showGhostPreview ? 'fill-current' : ''} />
+                          </button>
+                      )}
+                      
+                      {/* TYPE SPOT (Settings Button) */}
+                      <button 
+                        className="flex items-center justify-center h-11 gap-2 rounded-xl border hover:bg-white/5 active:scale-95 transition-all outline-none px-3"
+                        style={{ borderColor: theme.borderColor, backgroundColor: `${theme.primaryText}05` }}
+                        onClick={(e) => { e.stopPropagation(); onSettingsClick(); }}
+                      >
+                         <Type size={16} style={{ color: theme.secondaryText }} />
+                         <div className="w-px h-4" style={{ backgroundColor: theme.borderColor }} />
+                         <div className="flex items-baseline gap-0.5 opacity-60">
+                             <Type size={14} style={{ color: theme.secondaryText }} />
+                             <Type size={10} style={{ color: theme.secondaryText }} />
+                         </div>
+                      </button>
+                  </div>
               </div>
           </div>
     </div>

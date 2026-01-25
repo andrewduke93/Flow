@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo, useLayoutEffect } from 're
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { useTitanTheme } from '../services/titanTheme';
+import { useTitanSettings } from '../services/configService';
 import { RSVPToken } from '../types';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { RSVPLens } from './RSVPLens';
@@ -31,6 +32,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
   const theme = useTitanTheme();
+  const { settings } = useTitanSettings();
   
   const containerRef = useRef<HTMLDivElement>(null);
   const ribbonRef = useRef<HTMLDivElement>(null);
@@ -39,6 +41,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   const [currentToken, setCurrentToken] = useState<RSVPToken | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [tokens, setTokens] = useState<RSVPToken[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
   const lastIndexRef = useRef<number>(-1);
   
   // Cursor/Scrub state
@@ -69,12 +72,16 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     setTokens(heartbeat.tokens);
     lastIndexRef.current = heartbeat.currentIndex;
     setCurrentIndex(heartbeat.currentIndex);
+    setIsPlaying(conductor.state === RSVPState.PLAYING);
 
     let rafId: number | null = null;
     let pendingUpdate = false;
     
     const sync = () => {
       const idx = heartbeat.currentIndex;
+      const playing = conductor.state === RSVPState.PLAYING;
+      setIsPlaying(playing);
+      
       if (idx !== lastIndexRef.current || heartbeat.tokens !== tokens) {
         if (!pendingUpdate) {
           pendingUpdate = true;
@@ -121,6 +128,15 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       startIdx: start
     };
   }, [tokens, activeIndex, isCursorActive]);
+
+  // Ghost preview tokens (upcoming words during playback)
+  const GHOST_WORD_COUNT = 4;
+  const ghostTokens = useMemo(() => {
+    if (!isPlaying || !settings.showGhostPreview || tokens.length === 0) return [];
+    const startIdx = currentIndex + 1;
+    const endIdx = Math.min(tokens.length, startIdx + GHOST_WORD_COUNT);
+    return tokens.slice(startIdx, endIdx);
+  }, [tokens, currentIndex, isPlaying, settings.showGhostPreview]);
 
   // Center ribbon on active word
   useLayoutEffect(() => {
@@ -302,6 +318,38 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       {/* Use existing RSVPLens for the focus word - proven to work */}
       <RSVPLens token={displayToken} />
 
+      {/* GHOST PREVIEW - Upcoming words during playback (teleprompter style) */}
+      {isPlaying && settings.showGhostPreview && ghostTokens.length > 0 && (
+        <div 
+          className="absolute top-[42%] -translate-y-1/2 flex items-center gap-3 z-[50] pointer-events-none"
+          style={{ 
+            left: `calc(${RETICLE_POSITION}% + 5rem)`,
+            animation: 'ghostFadeIn 0.2s ease-out'
+          }}
+        >
+          {ghostTokens.map((token, i) => {
+            // Progressive fade: first word more visible, last word nearly invisible
+            const opacity = Math.max(0.08, 0.35 - (i * 0.08));
+            const scale = Math.max(0.75, 0.95 - (i * 0.05));
+            return (
+              <span
+                key={token.id}
+                className="font-sans font-normal whitespace-nowrap"
+                style={{
+                  fontSize: `calc(${fluidFontSize} * 0.5)`,
+                  color: theme.primaryText,
+                  opacity,
+                  transform: `scale(${scale})`,
+                  transition: 'opacity 0.1s ease-out'
+                }}
+              >
+                {token.originalText}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* CURSOR MODE OVERLAY - Context words ribbon */}
       {isCursorActive && cursorTokens.tokens.length > 0 && (
         <div 
@@ -396,6 +444,10 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
         @keyframes cursorFadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
+        }
+        @keyframes ghostFadeIn {
+          from { opacity: 0; transform: translateX(-10px); }
+          to { opacity: 1; transform: translateX(0); }
         }
       `}</style>
     </div>
