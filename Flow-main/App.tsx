@@ -72,6 +72,28 @@ const App: React.FC = () => {
                     await storage.saveBook(b);
                 }
                 loadedBooks = mocks;
+            } else {
+                // REPAIR: Check if the welcome book exists but has missing content
+                // This can happen if a previous version corrupted the data
+                const welcomeBookId = 'guide-book-v1';
+                const welcomeBookMeta = loadedBooks.find(b => b.id === welcomeBookId);
+                if (welcomeBookMeta) {
+                    const fullWelcome = await storage.getFullBook(welcomeBookId);
+                    if (!fullWelcome || !fullWelcome.chapters || fullWelcome.chapters.length === 0) {
+                        console.warn('[App] Welcome book content missing, repairing...');
+                        const mocks = generateMockBooks();
+                        const freshWelcome = mocks.find(b => b.id === welcomeBookId);
+                        if (freshWelcome) {
+                            // Preserve user's progress if any
+                            freshWelcome.bookmarkProgress = welcomeBookMeta.bookmarkProgress || 0;
+                            freshWelcome.lastTokenIndex = welcomeBookMeta.lastTokenIndex;
+                            freshWelcome.lastOpened = welcomeBookMeta.lastOpened;
+                            await storage.saveBook(freshWelcome);
+                            // Update loaded metadata list
+                            loadedBooks = loadedBooks.map(b => b.id === welcomeBookId ? freshWelcome : b);
+                        }
+                    }
+                }
             }
 
             const hydrated = loadedBooks.map(b => ({
@@ -197,8 +219,23 @@ const App: React.FC = () => {
     
     // Check if content is loaded
     if (!book.chapters || book.chapters.length === 0) {
-        const fullBook = await TitanStorage.getInstance().getFullBook(book.id);
-        if (fullBook) {
+        let fullBook = await TitanStorage.getInstance().getFullBook(book.id);
+        
+        // REPAIR: If full book is missing or corrupted, try to regenerate welcome book
+        if ((!fullBook || !fullBook.chapters || fullBook.chapters.length === 0) && book.id === 'guide-book-v1') {
+            console.warn('[App] Welcome book content missing on open, regenerating...');
+            const mocks = generateMockBooks();
+            const freshWelcome = mocks.find(b => b.id === 'guide-book-v1');
+            if (freshWelcome) {
+                freshWelcome.bookmarkProgress = book.bookmarkProgress || 0;
+                freshWelcome.lastTokenIndex = book.lastTokenIndex;
+                freshWelcome.lastOpened = book.lastOpened;
+                await TitanStorage.getInstance().saveBook(freshWelcome);
+                fullBook = freshWelcome;
+            }
+        }
+        
+        if (fullBook && fullBook.chapters && fullBook.chapters.length > 0) {
             // CRITICAL FIX: Use flushSync to ensure books state commits synchronously
             // before setting currentBookId. This prevents race condition where
             // activeBook is derived from stale books array without chapters.

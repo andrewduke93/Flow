@@ -14,23 +14,28 @@
     
     <title>Flow</title>
     
-    <!-- PWA Manifest (optional in dev) -->
-    <!-- <link rel="manifest" href="./manifest.json"> -->
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/Flow/manifest.json">
     
-    <link rel="icon" href="./icon.svg" type="image/svg+xml">
+    <link rel="icon" type="image/png" href="/Flow/favicon.png">
+    <link rel="apple-touch-icon" href="/Flow/icons/apple-touch-icon-180x180.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap" rel="stylesheet">
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
-      // Disable service worker in development
+      // Register the Service Worker for PWA functionality
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          for(let registration of registrations) {
-            registration.unregister()
-          }
-        })
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/Flow/sw.js', { scope: '/Flow/' })
+            .then(registration => {
+              console.log('Flow Service Worker registered:', registration);
+            })
+            .catch(err => {
+              console.error('Flow Service Worker registration failed:', err);
+            });
+        });
       }
       
       tailwind.config = {
