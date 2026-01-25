@@ -42,10 +42,18 @@ export class IngestionService {
       console.log(`[Ingestion] Starting import of: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
       
       this.validateFile(file);
-      const arrayBuffer = await file.arrayBuffer();
-      console.log(`[Ingestion] File loaded into memory`);
       
-      const zip = await this.unzip(file);
+      // Read file as ArrayBuffer once for better mobile compatibility
+      let arrayBuffer: ArrayBuffer;
+      try {
+        arrayBuffer = await file.arrayBuffer();
+        console.log(`[Ingestion] File loaded into memory: ${arrayBuffer.byteLength} bytes`);
+      } catch (e) {
+        console.error('[Ingestion] Failed to read file:', e);
+        throw new IngestionError(IngestionErrorType.UNKNOWN, `Failed to read file: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+      
+      const zip = await this.unzipFromBuffer(arrayBuffer);
       console.log(`[Ingestion] ZIP extracted, files:`, Object.keys(zip.files).length);
       
       const opfPath = await this.parseContainer(zip);
@@ -69,9 +77,9 @@ export class IngestionService {
       return book;
 
     } catch (error) {
-      console.error(error);
+      console.error('[Ingestion] Import failed:', error);
       if (error instanceof IngestionError) throw error;
-      throw new IngestionError(IngestionErrorType.UNKNOWN, (error as Error).message);
+      throw new IngestionError(IngestionErrorType.UNKNOWN, (error as Error).message || 'Unknown import error');
     }
   }
 
@@ -365,13 +373,23 @@ export class IngestionService {
     }
   }
 
-  private async unzip(file: File): Promise<JSZip> {
+  private async unzipFromBuffer(buffer: ArrayBuffer): Promise<JSZip> {
     try {
       const zip = new JSZip();
-      return await zip.loadAsync(file);
-    } catch {
-      throw new IngestionError(IngestionErrorType.CORRUPTION, "Corrupted archive.");
+      console.log(`[Ingestion] Loading ZIP from ArrayBuffer (${buffer.byteLength} bytes)...`);
+      const result = await zip.loadAsync(buffer);
+      console.log(`[Ingestion] ZIP loaded successfully`);
+      return result;
+    } catch (e) {
+      console.error('[Ingestion] ZIP extraction failed:', e);
+      throw new IngestionError(IngestionErrorType.CORRUPTION, `Corrupted archive: ${e instanceof Error ? e.message : 'Unknown error'}`);
     }
+  }
+
+  // Keep old method for compatibility
+  private async unzip(file: File): Promise<JSZip> {
+    const buffer = await file.arrayBuffer();
+    return this.unzipFromBuffer(buffer);
   }
 
   private async parseContainer(zip: JSZip): Promise<string> {
