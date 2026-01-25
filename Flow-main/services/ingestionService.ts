@@ -214,6 +214,8 @@ export class IngestionService {
     const chapters: Chapter[] = [];
     const BATCH_SIZE = 20; 
 
+    console.log(`[Ingestion] Processing ${data.spine.length} spine items for "${data.metadata.title}"`);
+
     // Optimized parallel processing
     for (let i = 0; i < data.spine.length; i += BATCH_SIZE) {
         const batchPaths = data.spine.slice(i, i + BATCH_SIZE);
@@ -226,6 +228,18 @@ export class IngestionService {
         if (i + BATCH_SIZE < data.spine.length) await new Promise(r => setTimeout(r, 0));
     }
 
+    console.log(`[Ingestion] Extracted ${chapters.length} chapters from "${data.metadata.title}"`);
+    
+    // FALLBACK: If no chapters extracted, try less aggressive filtering
+    if (chapters.length === 0 && data.spine.length > 0) {
+        console.warn(`[Ingestion] No chapters extracted, trying without front-matter filter...`);
+        for (let i = 0; i < data.spine.length; i++) {
+            const chapter = await this.processEpubChapterPermissive(zip, data.spine[i], i);
+            if (chapter) chapters.push(chapter);
+        }
+        console.log(`[Ingestion] Permissive mode extracted ${chapters.length} chapters`);
+    }
+
     return {
       id: bookId,
       title: data.metadata.title,
@@ -236,6 +250,32 @@ export class IngestionService {
       bookmarkProgress: 0,
       chapters: chapters
     };
+  }
+
+  // Permissive chapter processor - less aggressive filtering
+  private async processEpubChapterPermissive(zip: JSZip, path: string, index: number): Promise<Chapter | null> {
+      const file = zip.file(path);
+      if (!file) {
+          console.warn(`[Ingestion] File not found: ${path}`);
+          return null;
+      }
+
+      const rawBytes = await file.async('uint8array');
+      const cleanHtml = this.cleanTextAggressive(rawBytes);
+      const plainText = cleanHtml.replace(/<[^>]+>/g, ' ').trim();
+      const wordCount = calculateWordCount(plainText);
+      
+      // Only skip truly empty content
+      if (wordCount < 3) return null;
+
+      return {
+          id: crypto.randomUUID(),
+          title: `Section ${index + 1}`,
+          content: cleanHtml,
+          sortOrder: index,
+          wordCount,
+          estimatedReadTime: Math.ceil(wordCount / 250)
+      };
   }
 
   private async processEpubChapter(zip: JSZip, path: string, index: number): Promise<Chapter | null> {
@@ -338,23 +378,50 @@ export class IngestionService {
     if (!file) throw new IngestionError(IngestionErrorType.MISSING_MANIFEST, "Missing OPF");
     const text = await file.async("string");
     
-    const title = text.match(/<dc:title[^>]*>(.*?)<\/dc:title>/i)?.[1]?.trim() || "Unknown";
-    const author = text.match(/<dc:creator[^>]*>(.*?)<\/dc:creator>/i)?.[1]?.trim() || "Unknown";
+    const title = text.match(/<dc:title[^>]*>(.*?)<\/dc:title>/is)?.[1]?.trim() || "Unknown";
+    const author = text.match(/<dc:creator[^>]*>(.*?)<\/dc:creator>/is)?.[1]?.trim() || "Unknown";
     
-    // Manifest parsing
+    // Manifest parsing - handle both single and double quotes, and various attribute orders
     const manifestMap = new Map<string, string>();
-    const manifestRegex = /<item\s+[^>]*id=["']([^"']+)["'][^>]*href=["']([^"']+)["']/gi;
+    // Match items with id and href in any order - handle self-closing tags with />
+    const manifestRegex = /<item\s+([^>]+?)\s*\/?>/gi;
     let match;
     while ((match = manifestRegex.exec(text)) !== null) {
-        manifestMap.set(match[1], match[2]);
+        const attrs = match[1];
+        const idMatch = attrs.match(/id=["']([^"']+)["']/i);
+        const hrefMatch = attrs.match(/href=["']([^"']+)["']/i);
+        if (idMatch && hrefMatch) {
+            manifestMap.set(idMatch[1], hrefMatch[1]);
+        }
     }
+    
+    console.log(`[Ingestion] Manifest has ${manifestMap.size} items`);
 
-    // Spine parsing
+    // Spine parsing - handle self-closing tags
     const spineHrefs: string[] = [];
-    const spineRegex = /<itemref\s+[^>]*idref=["']([^"']+)["']/gi;
-    while ((match = spineRegex.exec(text)) !== null) {
-        const href = manifestMap.get(match[1]);
-        if (href) spineHrefs.push(this.resolvePath(opfPath, href));
+    const spineRegex = /<itemref\s+[^>]*idref=["']([^"']+)["'][^>]*\/?>/gi;
+    let spineMatch;
+    while ((spineMatch = spineRegex.exec(text)) !== null) {
+        const idref = spineMatch[1];
+        const href = manifestMap.get(idref);
+        if (href) {
+            spineHrefs.push(this.resolvePath(opfPath, href));
+        }
+    }
+    
+    console.log(`[Ingestion] Spine has ${spineHrefs.length} items`);
+    
+    // FALLBACK: If spine is empty, try to find HTML/XHTML files from manifest
+    if (spineHrefs.length === 0) {
+        console.warn(`[Ingestion] Empty spine, falling back to manifest HTML files`);
+        for (const [id, href] of manifestMap) {
+            if (/\.(x?html?|htm)$/i.test(href)) {
+                spineHrefs.push(this.resolvePath(opfPath, href));
+            }
+        }
+        // Sort by filename to maintain some order
+        spineHrefs.sort();
+        console.log(`[Ingestion] Fallback found ${spineHrefs.length} HTML files`);
     }
 
     // Cover
