@@ -151,7 +151,38 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
           author: newBook.author,
           id: newBook.id
         });
-        alert(`Import failed: "${newBook.title}" was processed but no readable content was found. This might be a DRM-protected or malformed EPUB.`);
+                // Create a diagnostic payload so users without remote-debugging can share useful info
+                const diag = [
+                    `Date: ${new Date().toISOString()}`,
+                    `UserAgent: ${navigator.userAgent}`,
+                    `Platform: ${navigator.platform}`,
+                    `File: ${file.name}`,
+                    `BookTitle: ${newBook.title}`,
+                    `BookAuthor: ${newBook.author}`,
+                    `BookId: ${newBook.id}`,
+                    `ChaptersLength: ${newBook.chapters ? newBook.chapters.length : 'undefined'}`,
+                    '',
+                    'Notes: Import produced zero chapters. Attach this file when reporting.'
+                ].join('\n');
+
+                const downloadDiagnostics = (content: string, filename = `flow-diagnostics-${Date.now()}.txt`) => {
+                    try {
+                        const blob = new Blob([content], { type: 'text/plain' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        setTimeout(() => URL.revokeObjectURL(url), 1500);
+                    } catch (e) {
+                        console.error('Failed to create diagnostics download', e);
+                    }
+                };
+
+                downloadDiagnostics(diag);
+                alert(`Import failed: "${newBook.title}" was processed but no readable content was found. A diagnostic file has been downloaded to help with reporting.`);
         return;
       }
       
@@ -159,7 +190,33 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
       onBookImported(newBook);
     } catch (error) {
       console.error('[TitanLibrary] Import error:', error);
-      alert(`Import failed: ${error instanceof Error ? error.message : 'Unknown error. Is it a valid EPUB?'}`);
+            // Save diagnostics for the user (useful on mobile where remote debugging isn't available)
+            try {
+                const diag = [
+                    `Date: ${new Date().toISOString()}`,
+                    `UserAgent: ${navigator.userAgent}`,
+                    `Platform: ${navigator.platform}`,
+                    `File: ${file ? file.name : 'unknown'}`,
+                    `Error: ${error instanceof Error ? error.message : String(error)}`,
+                    `Stack: ${error instanceof Error && error.stack ? error.stack : 'no-stack'}`,
+                    '',
+                    'Notes: Import threw an exception. Attach this file when reporting.'
+                ].join('\n');
+
+                const blob = new Blob([diag], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `flow-import-error-${Date.now()}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1500);
+            } catch (e) {
+                console.error('Failed to create diagnostics download', e);
+            }
+
+            alert(`Import failed: ${error instanceof Error ? error.message : 'Unknown error. A diagnostic file has been downloaded.'}`);
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

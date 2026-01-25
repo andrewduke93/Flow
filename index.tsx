@@ -2,6 +2,31 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './Flow-main/App';
+// Service worker update handler (vite-plugin-pwa)
+// `registerSW` is provided by the plugin at build time via virtual:pwa-register
+// it returns an `update` function you can call to skipWaiting and apply the new SW.
+let updateServiceWorker: (reloadPage?: boolean) => Promise<void> | undefined;
+// Dynamically import the virtual register helper provided by vite-plugin-pwa
+import('virtual:pwa-register')
+  .then(({ registerSW }) => {
+    updateServiceWorker = registerSW({
+      onNeedRefresh() {
+        try {
+          const should = window.confirm('A new version of Flow is available. Update now?');
+          if (should && updateServiceWorker) updateServiceWorker(true);
+        } catch (e) {
+          console.warn('Update prompt failed', e);
+        }
+      },
+      onOfflineReady() {
+        console.log('App is ready to work offline');
+      }
+    });
+  })
+  .catch((e) => {
+    // If plugin not installed during dev, import will fail — ignore silently.
+    console.debug('PWA register not available', e);
+  });
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
