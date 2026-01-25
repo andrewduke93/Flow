@@ -1,113 +1,20 @@
 import { RSVPToken } from '../types';
+import { GRAMMAR_AWARE_WORKER_CODE } from './rsvpGrammarEngine';
 
 /**
  * Worker Logic String
- * THE ZUNE PULSE ALGORITHM (v2.4 - Optimized)
+ * THE ZUNE PULSE ALGORITHM (v3.0 - Grammar Aware)
+ * 
+ * Now incorporates linguistic intelligence for natural reading rhythm:
+ * - Function words (the, a, is) flash faster
+ * - Emphasis words (never, always, suddenly) get attention
+ * - Clause boundaries create natural pauses
+ * - Dialogue flows conversationally
+ * - Rich punctuation handling (em-dashes, ellipses, semicolons)
+ * 
  * Optimized for long ebooks (Zero-Allocation-ish strategy where possible).
  */
-const WORKER_CODE = `
-self.onmessage = function(e) {
-    const { text, startingIndex } = e.data;
-    const tokens = [];
-    let currentTokenIndex = startingIndex;
-    
-    // Chunk configuration
-    // Increased chunk size for fewer postMessage overheads on massive texts
-    const CHUNK_SIZE = 10000; 
-    let match;
-    // Pre-compile Regex
-    const regex = /([^\\s]+)(\\s*)/g;
-    const punctuationRegex = /^(.+?)([.,;:!?"')\\]}]+)?$/;
-    const endSentenceRegex = /[.?!]/;
-    const paragraphRegex = /\\n/;
-    
-    // ORP: Optimal Recognition Point
-    // Inlined for performance
-    function calculateORP(len) {
-        if (len <= 1) return 0;
-        if (len >= 2 && len <= 5) return 1;
-        if (len >= 6 && len <= 10) return 2;
-        return 3;
-    }
-
-    // Processing Loop with Batching
-    function processChunk() {
-        let count = 0;
-        const startTime = performance.now();
-
-        // Safety break if we take too long (15ms budget)
-        while (count < CHUNK_SIZE) {
-            match = regex.exec(text);
-            if (!match) break;
-
-            const fullChunk = match[1];
-            const trailingSpace = match[2];
-            const matchIndex = match.index;
-
-            // Fast Split
-            const separationMatch = fullChunk.match(punctuationRegex);
-            let wordContent = fullChunk;
-            let punctuationStr = "";
-
-            if (separationMatch) {
-                wordContent = separationMatch[1];
-                punctuationStr = separationMatch[2] || "";
-            }
-
-            const len = wordContent.length;
-            const orpIndex = (len <= 10) ? calculateORP(len) : 3; // Fast path
-            
-            // Substring is generally fast in modern JS engines (ropes)
-            const leftSegment = wordContent.slice(0, orpIndex);
-            const centerCharacter = wordContent[orpIndex] || "";
-            const rightSegment = wordContent.slice(orpIndex + 1);
-
-            // ZUNE PULSE TIMING LOGIC
-            let duration = 1.0;
-
-            // Semantic Weighting (Simplified)
-            if (len > 10) duration = 1.4;
-            else if (len < 3) duration = 0.8;
-
-            // Punctuation Pauses
-            if (punctuationStr.length > 0) {
-                 if (punctuationStr.indexOf(',') !== -1) duration += 0.4;
-                 if (endSentenceRegex.test(punctuationStr)) duration += 1.2;
-            }
-            
-            // Paragraph Break
-            const isParagraphEnd = trailingSpace.indexOf('\\n') !== -1;
-            if (isParagraphEnd) duration += 2.0;
-
-            tokens.push({
-                id: 't-' + currentTokenIndex, 
-                originalText: fullChunk,
-                leftSegment,
-                centerCharacter,
-                rightSegment,
-                punctuation: punctuationStr || undefined,
-                durationMultiplier: duration,
-                isSentenceEnd: endSentenceRegex.test(punctuationStr),
-                isParagraphEnd,
-                globalIndex: currentTokenIndex,
-                startOffset: matchIndex
-            });
-            currentTokenIndex++;
-            count++;
-        }
-
-        if (!match) {
-            // Done
-            self.postMessage(tokens);
-        } else {
-             // Yield
-             setTimeout(processChunk, 0);
-        }
-    }
-
-    processChunk();
-};
-`;
+const WORKER_CODE = GRAMMAR_AWARE_WORKER_CODE;
 
 /**
  * RSVPProcessor
