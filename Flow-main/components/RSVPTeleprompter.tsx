@@ -245,8 +245,13 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
         rewindIntervalRef.current = null;
       }
       setIsRewinding(false);
-      heartbeat.seek(rewindIndexRef.current);
-      // Resume the conductor after rewinding completes
+      
+      // Seek without auto-playing (seek will resume if was playing, but we'll handle that)
+      heartbeat.pause(); // Explicitly pause first
+      heartbeat.currentIndex = Math.max(0, Math.min(rewindIndexRef.current, heartbeat.tokens.length - 1));
+      heartbeat.notify();
+      
+      // Resume via conductor (handles state machine correctly)
       conductor.play();
       RSVPHapticEngine.impactMedium();
     }
@@ -306,13 +311,14 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
         }}
       />
 
-      {/* Reticle */}
+      {/* Reticle - Glows during rewind */}
       <div 
-        className="absolute top-[20%] bottom-[20%] w-[2px] z-0 pointer-events-none"
+        className="absolute top-[20%] bottom-[20%] w-[2px] z-0 pointer-events-none transition-all duration-200"
         style={{ 
           left: `${RETICLE_POSITION}%`, 
           backgroundColor: FOCUS_COLOR, 
-          opacity: 0.15
+          opacity: isRewinding ? 0.6 : 0.15,
+          boxShadow: isRewinding ? `0 0 30px ${FOCUS_COLOR}80` : 'none'
         }}
       />
 
@@ -338,7 +344,8 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
           className="flex items-baseline gap-5 whitespace-nowrap"
           style={{
             transform: `translateX(${ribbonOffset}px)`,
-            transition: isRewinding ? 'transform 0.05s linear' : 'none'
+            transition: isRewinding ? 'transform 0.05s linear' : 'none',
+            opacity: isRewinding ? 0.85 : 1
           }}
         >
           {streamTokens.map(({ token, globalIdx }) => {
@@ -357,7 +364,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
                   style={{ fontSize: FONT_SIZE }}
                 >
                   <span style={{ color: theme.primaryText }}>{leftPart}</span>
-                  <span style={{ color: FOCUS_COLOR, textShadow: `0 0 20px ${FOCUS_COLOR}40` }}>{orpChar}</span>
+                  <span style={{ color: FOCUS_COLOR, textShadow: isRewinding ? `0 0 10px ${FOCUS_COLOR}60` : `0 0 20px ${FOCUS_COLOR}40` }}>{orpChar}</span>
                   <span style={{ color: theme.primaryText }}>{rightPart}</span>
                   {token.punctuation && (
                     <span style={{ color: theme.secondaryText, opacity: 0.5, marginLeft: '1px' }}>
