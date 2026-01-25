@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Book } from '../types';
 import { TitanReaderView } from './TitanReaderView';
 import { RSVPStageView } from './RSVPStageView'; 
+import { RSVPWordScrubber } from './RSVPWordScrubber';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { ChevronLeft, Rewind } from 'lucide-react';
@@ -434,6 +435,24 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
              onToggleHUD={() => {}} 
              onExit={() => handleModeToggle(false)}
              onOpenSettings={() => setShowSettings(true)} 
+         />
+         
+         {/* WORD SCRUBBER - Shows when paused, allows tap/drag word selection */}
+         <RSVPWordScrubber 
+           onWordSelect={(index) => {
+             // Word selected via tap - could auto-play or just highlight
+             console.log('[WordScrubber] Selected word:', index);
+           }}
+           onScrubStart={() => {
+             // User started scrubbing - pause if needed
+             if (conductor.state === RSVPState.PLAYING) {
+               conductor.pause(true);
+             }
+           }}
+           onScrubEnd={(finalIndex) => {
+             // User finished scrubbing
+             console.log('[WordScrubber] Scrub ended at:', finalIndex);
+           }}
          />
          
       {/* LAYER 4 (Z-100): GLOBAL OVERLAYS (HUDs, Notifications) */}
