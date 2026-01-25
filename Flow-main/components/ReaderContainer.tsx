@@ -2,8 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Book } from '../types';
 import { TitanReaderView } from './TitanReaderView';
-import { RSVPStageView } from './RSVPStageView'; 
-import { RSVPWordScrubber } from './RSVPWordScrubber';
+import { RSVPTeleprompter } from './RSVPTeleprompter'; 
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { ChevronLeft, Rewind } from 'lucide-react';
@@ -11,6 +10,7 @@ import { MediaCommandCenter } from './MediaCommandCenter';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { SettingsSheet } from './SettingsSheet';
+import { useTitanSettings } from '../services/configService';
 
 interface ReaderContainerProps {
   book: Book;
@@ -27,6 +27,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
   const theme = useTitanTheme();
+  const { settings, updateSettings } = useTitanSettings();
   
   const [isChromeVisible, setIsChromeVisible] = useState(true);
   const [isRSVP, setIsRSVP] = useState(false);
@@ -34,6 +35,9 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const [currentProgress, setCurrentProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [closingSettings, setClosingSettings] = useState(false);
+  
+  // Ghost preview setting (persisted)
+  const showGhostPreview = settings.showGhostPreview ?? true;
 
   const isHandlingPopState = useRef(false);
 
@@ -431,28 +435,21 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
         onPointerLeave={handlePointerCancel}
         onPointerCancel={handlePointerCancel}
       >
-         <RSVPStageView 
-             onToggleHUD={() => {}} 
-             onExit={() => handleModeToggle(false)}
-             onOpenSettings={() => setShowSettings(true)} 
-         />
-         
-         {/* WORD SCRUBBER - Shows when paused, allows tap/drag word selection */}
-         <RSVPWordScrubber 
-           onWordSelect={(index) => {
-             // Word selected via tap - could auto-play or just highlight
-             console.log('[WordScrubber] Selected word:', index);
-           }}
-           onScrubStart={() => {
-             // User started scrubbing - pause if needed
-             if (conductor.state === RSVPState.PLAYING) {
-               conductor.pause(true);
-             }
-           }}
-           onScrubEnd={(finalIndex) => {
-             // User finished scrubbing
-             console.log('[WordScrubber] Scrub ended at:', finalIndex);
-           }}
+         <RSVPTeleprompter 
+             showGhostPreview={showGhostPreview}
+             ghostWordCount={4}
+             onWordSelect={(index) => {
+               console.log('[Teleprompter] Selected word:', index);
+             }}
+             onScrubStart={() => {
+               // User started scrubbing - pause if needed
+               if (conductor.state === RSVPState.PLAYING) {
+                 conductor.pause(true);
+               }
+             }}
+             onScrubEnd={(finalIndex) => {
+               console.log('[Teleprompter] Scrub ended at:', finalIndex);
+             }}
          />
          
       {/* LAYER 4 (Z-100): GLOBAL OVERLAYS (HUDs, Notifications) */}
@@ -522,12 +519,14 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             book={book} 
             onToggleRSVP={(startOffset) => handleModeToggle(undefined, startOffset)}
             isRSVPActive={isRSVP} 
-              onSettingsClick={() => {
-                if (!isHandlingPopState.current) {
-                  window.history.pushState({ modal: 'settings' }, '', window.location.href);
-                }
-                setShowSettings(true);
-              }}
+            onSettingsClick={() => {
+              if (!isHandlingPopState.current) {
+                window.history.pushState({ modal: 'settings' }, '', window.location.href);
+              }
+              setShowSettings(true);
+            }}
+            showGhostPreview={showGhostPreview}
+            onToggleGhostPreview={() => updateSettings({ showGhostPreview: !showGhostPreview })}
          />
       </div>
 

@@ -3,7 +3,7 @@ import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { Play, Pause, Plus, Minus, Type, ListMusic, ChevronUp } from 'lucide-react';
+import { Play, Pause, Plus, Minus, Type, ListMusic, ChevronUp, Eye, EyeOff } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
@@ -14,6 +14,8 @@ interface MediaCommandCenterProps {
   onToggleRSVP: (startOffset?: number) => void;
   isRSVPActive: boolean; 
   onSettingsClick: () => void;
+  showGhostPreview?: boolean;
+  onToggleGhostPreview?: () => void;
 }
 
 /**
@@ -21,7 +23,7 @@ interface MediaCommandCenterProps {
  * Identity: Industrial Design.
  * Mission: Perfect center-weighted balance.
  */
-export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, onToggleRSVP, isRSVPActive, onSettingsClick }) => {
+export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, onToggleRSVP, isRSVPActive, onSettingsClick, showGhostPreview = true, onToggleGhostPreview }) => {
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
@@ -488,18 +490,43 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
                   </div>
 
                   {/* TYPE SPOT (Matching Speed Spot Dimensions) */}
-                  <button 
-                    className="flex items-center justify-center h-11 gap-2 rounded-xl border hover:bg-white/5 active:scale-95 transition-all outline-none px-3"
-                    style={{ borderColor: theme.borderColor, backgroundColor: `${theme.primaryText}05` }}
-                    onClick={(e) => { e.stopPropagation(); onSettingsClick(); }}
-                  >
-                     <Type size={16} style={{ color: theme.secondaryText }} />
-                     <div className="w-px h-4" style={{ backgroundColor: theme.borderColor }} />
-                     <div className="flex items-baseline gap-0.5 opacity-60">
-                         <Type size={14} style={{ color: theme.secondaryText }} />
-                         <Type size={10} style={{ color: theme.secondaryText }} />
-                     </div>
-                  </button>
+                  <div className="flex items-center gap-2 justify-end">
+                      {/* Ghost Preview Toggle - Only show during RSVP */}
+                      {isRSVPActive && onToggleGhostPreview && (
+                          <button 
+                            className={`flex items-center justify-center w-11 h-11 rounded-xl border transition-all outline-none ${
+                                showGhostPreview ? 'bg-white/10' : ''
+                            }`}
+                            style={{ 
+                                borderColor: theme.borderColor, 
+                                backgroundColor: showGhostPreview ? `${theme.accent}15` : `${theme.primaryText}05`,
+                                color: showGhostPreview ? theme.accent : theme.secondaryText
+                            }}
+                            onClick={(e) => { 
+                                e.stopPropagation(); 
+                                RSVPHapticEngine.impactLight();
+                                onToggleGhostPreview(); 
+                            }}
+                            title={showGhostPreview ? "Hide word preview" : "Show word preview"}
+                          >
+                             {showGhostPreview ? <Eye size={16} /> : <EyeOff size={16} />}
+                          </button>
+                      )}
+                      
+                      {/* Settings Button */}
+                      <button 
+                        className="flex items-center justify-center h-11 gap-2 rounded-xl border hover:bg-white/5 active:scale-95 transition-all outline-none px-3"
+                        style={{ borderColor: theme.borderColor, backgroundColor: `${theme.primaryText}05` }}
+                        onClick={(e) => { e.stopPropagation(); onSettingsClick(); }}
+                      >
+                         <Type size={16} style={{ color: theme.secondaryText }} />
+                         <div className="w-px h-4" style={{ backgroundColor: theme.borderColor }} />
+                         <div className="flex items-baseline gap-0.5 opacity-60">
+                             <Type size={14} style={{ color: theme.secondaryText }} />
+                             <Type size={10} style={{ color: theme.secondaryText }} />
+                         </div>
+                      </button>
+                  </div>
               </div>
           </div>
     </div>

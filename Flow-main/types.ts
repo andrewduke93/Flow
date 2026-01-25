@@ -89,6 +89,7 @@ export interface ReaderConfig {
   rsvpChunkSize: number; // Words at once, Default: 1
   isRSVPContextEnabled: boolean; // Ghost Ribbon, Default: true
   rsvpColorHighlight: string; // Hex code, Default: "FF3B30"
+  showGhostPreview?: boolean; // Teleprompter-style word preview during playback
 
   // -- Sync Flow --
   isSyncEnabled?: boolean;
