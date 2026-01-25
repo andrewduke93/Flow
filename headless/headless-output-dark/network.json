@@ -1,0 +1,108 @@
+[
+  {
+    "id": 0,
+    "type": "request",
+    "url": "https://andrewduke93.github.io/Flow/",
+    "method": "GET",
+    "resourceType": "document"
+  },
+  {
+    "id": 1,
+    "type": "response",
+    "url": "https://andrewduke93.github.io/Flow/",
+    "status": 200,
+    "headers": {
+      "accept-ranges": "bytes",
+      "access-control-allow-origin": "*",
+      "age": "164",
+      "cache-control": "max-age=600",
+      "content-encoding": "gzip",
+      "content-length": "322",
+      "content-type": "text/html; charset=utf-8",
+      "date": "Sun, 25 Jan 2026 09:36:52 GMT",
+      "etag": "W/\"6975e297-205\"",
+      "expires": "Sun, 25 Jan 2026 09:43:28 GMT",
+      "last-modified": "Sun, 25 Jan 2026 09:29:59 GMT",
+      "server": "GitHub.com",
+      "strict-transport-security": "max-age=31556952",
+      "vary": "Accept-Encoding",
+      "via": "1.1 varnish",
+      "x-cache": "HIT",
+      "x-cache-hits": "0",
+      "x-fastly-request-id": "6e3fc760eccda53f0daf70d068fe26ed49fe5e89",
+      "x-github-request-id": "F8FE:1DFA19:359B754:394F48C:6975E35D",
+      "x-proxy-cache": "MISS",
+      "x-served-by": "cache-iad-kcgs7200129-IAD",
+      "x-timer": "S1769333812.437305,VS0,VE1"
+    }
+  },
+  {
+    "id": 2,
+    "type": "request",
+    "url": "https://andrewduke93.github.io/Flow/assets/index-DZ0cBiMb.js",
+    "method": "GET",
+    "resourceType": "script"
+  },
+  {
+    "id": 3,
+    "type": "response",
+    "url": "https://andrewduke93.github.io/Flow/assets/index-DZ0cBiMb.js",
+    "status": 200,
+    "headers": {
+      "x-fastly-request-id": "95994a521e03e1f87bead33aa973645d62b5b32b",
+      "content-encoding": "gzip",
+      "etag": "W/\"6975e297-870e1\"",
+      "age": "164",
+      "x-github-request-id": "CBCC:271E8D:29980FF:2E2B471:6975E367",
+      "expires": "Sun, 25 Jan 2026 09:43:28 GMT",
+      "x-proxy-cache": "MISS",
+      "x-cache": "HIT",
+      "date": "Sun, 25 Jan 2026 09:36:52 GMT",
+      "content-type": "application/javascript; charset=utf-8",
+      "last-modified": "Sun, 25 Jan 2026 09:29:59 GMT",
+      "x-served-by": "cache-iad-kcgs7200129-IAD",
+      "x-cache-hits": "0",
+      "vary": "Accept-Encoding",
+      "strict-transport-security": "max-age=31556952",
+      "cache-control": "max-age=600",
+      "x-timer": "S1769333812.463209,VS0,VE1",
+      "via": "1.1 varnish",
+      "accept-ranges": "bytes",
+      "access-control-allow-origin": "*",
+      "content-length": "171445",
+      "server": "GitHub.com"
+    }
+  },
+  {
+    "id": 4,
+    "type": "request",
+    "url": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?q=80&w=1000&auto=format&fit=crop",
+    "method": "GET",
+    "resourceType": "image"
+  },
+  {
+    "id": 5,
+    "type": "response",
+    "url": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?q=80&w=1000&auto=format&fit=crop",
+    "status": 200,
+    "headers": {
+      "age": "846018",
+      "x-content-type-options": "nosniff",
+      "alt-svc": "h3=\":443\";ma=86400,h3-29=\":443\";ma=86400,h3-27=\":443\";ma=86400",
+      "x-cache": "HIT, HIT",
+      "date": "Sun, 25 Jan 2026 09:36:52 GMT",
+      "last-modified": "Thu, 15 Jan 2026 14:36:35 GMT",
+      "x-served-by": "cache-chi-klot8100132-CHI, cache-iad-kiad7000073-IAD",
+      "vary": "Accept, User-Agent",
+      "content-type": "image/avif",
+      "cache-control": "public, max-age=31536000",
+      "timing-allow-origin": "*",
+      "cross-origin-resource-policy": "cross-origin",
+      "accept-ranges": "bytes",
+      "access-control-allow-origin": "*",
+      "content-length": "32896",
+      "server": "imgix",
+      "x-imgix-id": "c1a345e50ca5a651c304e05433e7f6f1bfa143e7"
+    }
+  }
+]

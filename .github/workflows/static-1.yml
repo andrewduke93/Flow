@@ -33,6 +33,18 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        working-directory: ./Flow-main
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install dependencies
+        working-directory: ./Flow-main
+        run: npm install --legacy-peer-deps
+      - name: Build
+        working-directory: ./Flow-main
+        run: npm run build
       - name: Upload artifact (Flow-main/dist)
         uses: actions/upload-pages-artifact@v3
         with:
