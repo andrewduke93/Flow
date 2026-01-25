@@ -124,7 +124,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     }));
   }, [tokens, currentIndex, showContext, contextCount, focusToken]);
 
-  // Position ribbon
+  // Position ribbon - align focus letter precisely with reticle
   useLayoutEffect(() => {
     if (!ribbonRef.current) return;
     
@@ -140,15 +140,32 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       const rect = child.getBoundingClientRect();
       const ribbonRect = ribbon.getBoundingClientRect();
       const left = rect.left - ribbonRect.left;
-      const center = left + rect.width / 2;
-      wordPositions.current.set(idx, { left, width: rect.width, center });
+      
+      // Calculate the pixel position of the focus letter (center character)
+      // by measuring the character width and position within the word
+      let focusLetterPos = left + rect.width / 2;
+      
+      // If this is the focus word, we need to find exact position of center letter
+      if (idx === currentIndex && focusToken) {
+        const text = focusToken.originalText;
+        const focusCharIdx = Math.floor(text.length / 2);
+        
+        // Estimate letter width based on word width and length
+        // This accounts for variable character widths
+        const estimatedCharWidth = rect.width / text.length;
+        const charOffset = focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
+        focusLetterPos = left + charOffset;
+      }
+      
+      wordPositions.current.set(idx, { left, width: rect.width, center: focusLetterPos });
     });
     
     const activePos = wordPositions.current.get(currentIndex);
     if (activePos) {
+      // Align the focus letter position with the reticle
       setRibbonOffset(reticleX - activePos.center);
     }
-  }, [streamTokens, currentIndex]);
+  }, [streamTokens, currentIndex, focusToken]);
 
   // Cleanup
   useEffect(() => {
