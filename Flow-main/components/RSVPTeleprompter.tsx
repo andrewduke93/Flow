@@ -275,10 +275,10 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
 
   if (!focusToken) return null;
 
-  // ORP calculation - FIXED position so red letter doesn't jump
-  // Always highlight the first letter for consistency
+  // ORP calculation - Center of word for natural focal point
+  // Centers each word on the reticle line, eye-friendly positioning
   const getORP = (text: string) => {
-    return 0;  // Always first letter
+    return Math.floor(text.length / 2);  // Center letter of word
   };
 
   const orpIdx = getORP(focusToken.originalText);
