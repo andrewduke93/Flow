@@ -34,19 +34,22 @@ jobs:
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
+        working-directory: ./Flow-main
         with:
           node-version: '20'
           cache: 'npm'
       
       - name: Install dependencies
+        working-directory: ./Flow-main
         run: npm install --legacy-peer-deps
       
       - name: Build
+        working-directory: ./Flow-main
         run: npm run build
       
       - name: Deploy dist to gh-pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
+          publish_dir: ./Flow-main/dist
           cname: andrewduke93.github.io
