@@ -573,7 +573,7 @@ self.onmessage = function(e) {
     // PROCESSING LOOP
     // ═════════════════════════════════════════════════════════════════════════
     
-    const CHUNK_SIZE = 10000;
+    const CHUNK_SIZE = 400;
     let match;
     const regex = /([^\\s]+)(\\s*)/g;
     const punctuationRegex = /^(.+?)([.,;:!?"')\\]}\\u201C\\u201D\\u2018\\u2019\\u00BB\\u203A\\u2026\\u2014\\u2013-]+)?$/;
