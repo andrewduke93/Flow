@@ -19,11 +19,20 @@ export class NewRSVPEngine {
       this.worker.onmessage = (e: MessageEvent) => {
         const data = e.data;
         if (!data) return;
-        if (data.type === 'prepared') {
+        if (data.type === 'chunk') {
+          const incoming = (data.tokens || []).map((t: any) => ({ index: t.index, text: t.text, duration: t.duration }));
+          // Append chunk in-order
+          this.tokens = this.tokens.concat(incoming);
+          this.notify();
+        } else if (data.type === 'progress') {
+          // Could surface progress if needed; ignore for now
+        } else if (data.type === 'prepared') {
           this.tokens = (data.tokens || []).map((t: any) => ({ index: t.index, text: t.text, duration: t.duration }));
           this.currentIndex = 0;
           this.playing = false;
           this.notify();
+        } else if (data.type === 'error') {
+          console.error('newRsvpWorker error:', data.message);
         }
       };
     } catch (e) {
@@ -44,20 +53,27 @@ export class NewRSVPEngine {
         return;
       }
 
+      // Reset tokens and post prepare; resolve when final 'prepared' arrives
+      let finished = false;
       const onPrepared = (ev: MessageEvent) => {
         const d = ev.data;
-        if (d && d.type === 'prepared') {
+        if (!d) return;
+        if (d.type === 'prepared') {
+          finished = true;
           this.worker!.removeEventListener('message', onPrepared);
           this.tokens = (d.tokens || []).map((t: any) => ({ index: t.index, text: t.text, duration: t.duration }));
           this.currentIndex = 0;
           this.notify();
           resolve();
-        } else if (d && d.type === 'error') {
+        } else if (d.type === 'error') {
+          finished = true;
           this.worker!.removeEventListener('message', onPrepared);
           reject(new Error(d.message || 'Worker error'));
         }
       };
 
+      // Clear any staging tokens
+      this.tokens = [];
       this.worker.addEventListener('message', onPrepared);
       this.worker.postMessage({ type: 'prepare', content, wpm, chunkSize });
     });
