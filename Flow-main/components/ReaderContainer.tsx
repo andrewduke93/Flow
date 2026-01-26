@@ -5,6 +5,7 @@ import { TitanReaderView } from './TitanReaderView';
 import { RSVPTeleprompter } from './RSVPTeleprompter'; 
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
+import { newRsvpEngine } from '../services/newRsvpEngine';
 import { ChevronLeft } from 'lucide-react';
 import { MediaCommandCenter } from './MediaCommandCenter';
 import { useTitanTheme } from '../services/titanTheme';
@@ -53,6 +54,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
     const unsubEngine = engine.subscribe(sync);
     const unsubConductor = conductor.subscribe(sync);
+    const unsubNew = newRsvpEngine.subscribe(({ isPlaying }) => setIsPlaying(isPlaying));
     
     sync();
     return () => { unsubEngine(); unsubConductor(); };
@@ -110,7 +112,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   // PAUSE ON SETTINGS OPEN
   useEffect(() => {
       if (showSettings && conductor.state === RSVPState.PLAYING) {
-          conductor.pause();
+        conductor.pause();
+        newRsvpEngine.pause();
       }
   }, [showSettings]);
 
@@ -165,7 +168,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     isTransitioningRef.current = true;
 
     try {
-        if (nextState) {
+      if (nextState) {
           // ENTERING RSVP (PLAY)
           const fullText = engine.contentStorage.string;
           
@@ -175,8 +178,13 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
               progress: startOffset === undefined && tokenIndex === undefined ? engine.currentProgress : undefined
           };
 
-          // Prepare engine (Now Instant due to Interface optimization)
-          await conductor.prepare(fullText, prepareConfig);
+          // Prepare engine (new worker-based engine)
+          try {
+            await newRsvpEngine.prepare(fullText, engine.userSettings?.rsvpSpeed ?? 350, engine.userSettings?.rsvpChunkSize ?? 1);
+          } catch (e) {
+            // Fallback to legacy conductor if new engine fails
+            await conductor.prepare(fullText, prepareConfig as any);
+          }
           
           engine.isRSVPMode = true;
           engine.notify();
@@ -186,10 +194,13 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             window.history.pushState({ rsvpMode: true }, '', window.location.href);
           }
           
-          conductor.play();
+          // Start playback (prefer new engine)
+          try { newRsvpEngine.play(); } catch (e) { conductor.play(); }
           setIsChromeVisible(false);
         } else {
           // EXITING RSVP (PAUSE)
+          // Pause both engines to ensure state is stable
+          try { newRsvpEngine.pause(); } catch (e) {}
           conductor.pause();
           
           const currentTokenIndex = heartbeat.currentIndex;
@@ -205,7 +216,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
               engine.jump(pct);
           }
           
-          setIsChromeVisible(true);
+            setIsChromeVisible(true);
       }
     } catch (e) {
         console.error("Toggle failed", e);
