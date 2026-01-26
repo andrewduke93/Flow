@@ -139,6 +139,39 @@ export class RSVPConductor {
             // Try new engine preparation first (worker-based)
             try {
                 await newRsvpEngine.prepare(content, this.heartbeat.wpm);
+                // Map engine tokens into RSVPHeartbeat token shape for legacy consumers
+                try {
+                    const raw = newRsvpEngine.getTokensRaw();
+                    if (raw && raw.length > 0) {
+                        const baseDuration = 60000 / Math.max(1, this.heartbeat.wpm);
+                        const mapped = raw.map((t: any) => {
+                            const txt: string = t.text || '';
+                            const len = txt.length || 0;
+                            const orpIdx = Math.max(0, Math.floor(len / 2));
+                            const left = txt.slice(0, orpIdx);
+                            const center = txt.charAt(orpIdx) || '';
+                            const right = txt.slice(orpIdx + 1);
+                            const punctMatch = txt.match(/[.!?,;:]+$/);
+                            const durationMultiplier = t.duration ? (t.duration / baseDuration) : 1.0;
+                            return {
+                                id: `e-${t.index}`,
+                                originalText: txt,
+                                leftSegment: left,
+                                centerCharacter: center,
+                                rightSegment: right,
+                                punctuation: punctMatch ? punctMatch[0] : undefined,
+                                durationMultiplier,
+                                isSentenceEnd: !!punctMatch && /[.!?]/.test(punctMatch[0]),
+                                isParagraphEnd: false,
+                                globalIndex: t.index,
+                                startOffset: -1
+                            } as any;
+                        });
+                        this.heartbeat.setTokens(mapped as any);
+                    }
+                } catch (mapErr) {
+                    console.warn('RSVPConductor: failed to map engine tokens to heartbeat', mapErr);
+                }
                 this.lastContentRef = content;
             } catch (e) {
                 // Fallback to legacy processor if new engine fails

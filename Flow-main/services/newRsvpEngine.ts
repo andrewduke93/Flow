@@ -141,6 +141,11 @@ export class NewRSVPEngine {
     return () => this.subscribers.delete(cb);
   }
 
+  // Expose raw token data for migration purposes
+  public getTokensRaw(): { index: number; text: string; duration: number }[] {
+    return this.tokens.map(t => ({ index: (t as any).index ?? 0, text: (t as any).text ?? '', duration: (t as any).duration ?? 0 }));
+  }
+
   private notify() {
     const token = this.getCurrent();
     this.subscribers.forEach((s) => s({ index: this.currentIndex, token, isPlaying: this.playing }));
