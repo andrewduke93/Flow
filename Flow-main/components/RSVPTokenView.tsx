@@ -15,14 +15,27 @@ interface RSVPTokenViewProps {
 export const RSVPTokenView: React.FC<RSVPTokenViewProps> = ({ token, screenCenter }) => {
   const theme = useTitanTheme();
 
+
+  // Dynamic font size and spacing based on word length/type
+  const fullWord = token ? (token.leftSegment + token.centerCharacter + token.rightSegment) : '';
+  const wordLen = fullWord.length;
+  let fontSize = 48;
+  let letterSpacing = 0;
+  if (wordLen <= 3) fontSize = 54;
+  else if (wordLen <= 5) fontSize = 50;
+  else if (wordLen >= 10) fontSize = 44;
+  else if (wordLen >= 14) fontSize = 40;
+  if (wordLen >= 12) letterSpacing = 0.5;
+  if (wordLen <= 3) letterSpacing = 0.1;
+
   const layoutConfig = useMemo(() => ({
     fontFamily: 'serif',
-    fontSize: 48,
+    fontSize,
     leftWeight: 500,
     centerWeight: 700,
-    letterSpacing: 0,
+    letterSpacing,
     screenCenter
-  }), [screenCenter]);
+  }), [screenCenter, fontSize, letterSpacing]);
 
   const xOffset = useMemo(() => {
     if (!token || screenCenter === 0) return 0;
@@ -37,39 +50,71 @@ export const RSVPTokenView: React.FC<RSVPTokenViewProps> = ({ token, screenCente
   // Enforce Ember Red for the focus character in ribbons as well
   const emberColor = '#E25822'; 
 
+  // Adaptive ORP: highlight the most visually stable character
+  let orpIdx = 0;
+  if (token) {
+    const full = token.leftSegment + token.centerCharacter + token.rightSegment;
+    orpIdx = RSVPAligner.getAdaptiveORP(full);
+  }
+
   return (
-    <div 
+    <div
       className="flex items-baseline justify-start whitespace-nowrap will-change-transform backface-hidden"
       style={{
         transform: `translateX(${screenCenter + xOffset}px)`,
-        transition: 'none', 
+        transition: 'none',
       }}
     >
-      <span 
-          className="font-serif text-[48px] font-medium leading-none"
-          style={{ color: primaryColor }}
+      {/* Left segment */}
+      <span
+        className="font-serif leading-none"
+        style={{
+          color: primaryColor,
+          fontSize,
+          fontWeight: 500,
+          letterSpacing: letterSpacing,
+        }}
       >
-        {token.leftSegment}
+        {token && (token.leftSegment || '')}
       </span>
 
-      <span 
-          className="font-serif text-[48px] font-bold leading-none"
-          style={{ color: emberColor }}
+      {/* Focus (ORP) character with micro-kerning and highlight */}
+      <span
+        className="font-serif leading-none"
+        style={{
+          color: emberColor,
+          fontSize,
+          fontWeight: 700,
+          letterSpacing: '0.02em',
+          textShadow: '0 1px 8px #E2582240',
+        }}
       >
-        {token.centerCharacter}
+        {token && (token.centerCharacter || '')}
       </span>
 
-      <span 
-          className="font-serif text-[48px] font-medium leading-none"
-          style={{ color: primaryColor }}
+      {/* Right segment */}
+      <span
+        className="font-serif leading-none"
+        style={{
+          color: primaryColor,
+          fontSize,
+          fontWeight: 500,
+          letterSpacing: letterSpacing,
+        }}
       >
-        {token.rightSegment}
+        {token && (token.rightSegment || '')}
       </span>
 
-      {token.punctuation && (
-        <span 
-          className="font-serif text-[48px] font-light leading-none"
-          style={{ color: secondaryColor }}
+      {/* Punctuation */}
+      {token && token.punctuation && (
+        <span
+          className="font-serif leading-none"
+          style={{
+            color: secondaryColor,
+            fontSize,
+            fontWeight: 300,
+            opacity: 0.7,
+          }}
         >
           {token.punctuation}
         </span>
