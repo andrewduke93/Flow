@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPToken } from '../types';
 
@@ -36,7 +37,12 @@ export const RSVPSemanticScrubber: React.FC = () => {
   useEffect(() => {
     const sync = () => {
       setIsVisible(conductor.state === RSVPState.PAUSED || conductor.state === RSVPState.IDLE);
-      setTokens(heartbeat.tokens);
+      if (heartbeat.tokens && heartbeat.tokens.length > 0) {
+        setTokens(heartbeat.tokens);
+      } else {
+        const raw = newRsvpEngine.getTokensRaw();
+        if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, heartbeat.wpm));
+      }
       setCurrentIndex(heartbeat.currentIndex);
     };
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { newRsvpEngine } from '../services/newRsvpEngine';
+import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
 import { RSVPTokenView } from './RSVPTokenView';
 import { RSVPToken } from '../types';
 
@@ -20,24 +20,33 @@ export const RSVPGhostRibbon: React.FC<RSVPGhostRibbonProps> = ({ screenCenter }
   const [currentIndex, setCurrentIndex] = useState(0);
   const [tokens, setTokens] = useState<RSVPToken[]>([]);
 
-  // 2. DATA LOGIC: Sync with Heartbeat
+  // 2. DATA LOGIC: Sync with Heartbeat (prefer engine tokens when heartbeat empty)
   useEffect(() => {
     // Sync initial state
-    setTokens(heartbeat.tokens);
+    if (heartbeat.tokens && heartbeat.tokens.length > 0) {
+      setTokens(heartbeat.tokens);
+    } else {
+      const raw = newRsvpEngine.getTokensRaw();
+      if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, heartbeat.wpm));
+    }
     setCurrentIndex(heartbeat.currentIndex);
 
     const unsubscribe = heartbeat.subscribe(() => {
         // High-frequency update
         setCurrentIndex(heartbeat.currentIndex);
         // Handle playlist changes (e.g., chapter swap)
-        if (heartbeat.tokens !== undefined) {
+        if (heartbeat.tokens && heartbeat.tokens.length > 0) {
             setTokens(heartbeat.tokens);
         }
     });
 
     const unsubNew = newRsvpEngine.subscribe(({ index, token }) => {
       if (typeof index === 'number') setCurrentIndex(index);
-      if (heartbeat.tokens.length === 0 && token) setTokens([token as RSVPToken]);
+      if ((!heartbeat.tokens || heartbeat.tokens.length === 0)) {
+        const raw = newRsvpEngine.getTokensRaw();
+        if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, heartbeat.wpm));
+        else if (token) setTokens([token as RSVPToken]);
+      }
     });
 
     return () => { unsubscribe(); unsubNew(); };

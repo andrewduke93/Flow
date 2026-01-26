@@ -34,7 +34,11 @@ export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCen
     const sync = () => {
       // Only sync if not interacting to prevent fighting the user
       if (!isDragging) {
-        setTokens(heartbeat.tokens);
+        if (heartbeat.tokens.length > 0) setTokens(heartbeat.tokens);
+        else {
+          const raw = newRsvpEngine.getTokensRaw();
+          if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, heartbeat.wpm));
+        }
         setCurrentIndex(heartbeat.currentIndex);
         setIsExpanded(conductor.state === RSVPState.PAUSED || conductor.state === RSVPState.IDLE);
       }
@@ -45,7 +49,11 @@ export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCen
     const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
       if (!isDragging) {
         if (typeof index === 'number') setCurrentIndex(index);
-        if (heartbeat.tokens.length === 0 && token) setTokens([token as RSVPToken]);
+        if (heartbeat.tokens.length === 0) {
+          const raw = newRsvpEngine.getTokensRaw();
+          if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, heartbeat.wpm));
+          else if (token) setTokens([token as RSVPToken]);
+        }
         setIsExpanded(!isPlaying);
       }
     });

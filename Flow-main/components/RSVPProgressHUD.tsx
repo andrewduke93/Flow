@@ -49,6 +49,7 @@ export const RSVPProgressHUD: React.FC = () => {
       
       setIsPlaying(conductor.state === RSVPState.PLAYING);
 
+
       if (heartbeat.wpm !== prevWpmRef.current) {
         setWpm(heartbeat.wpm);
         prevWpmRef.current = heartbeat.wpm;
@@ -58,11 +59,18 @@ export const RSVPProgressHUD: React.FC = () => {
 
     const unsubConductor = conductor.subscribe(sync);
     const unsubHeartbeat = heartbeat.subscribe(sync); 
+    const unsubNew = newRsvpEngine.subscribe(({ index, isPlaying, token }) => {
+      // Prefer new engine's playing state
+      setIsPlaying(!!isPlaying);
+      if (typeof index === 'number') setCurrentIndex(index);
+      if (heartbeat.tokens.length === 0 && token) setTotalTokens(1);
+    });
     sync();
 
     return () => {
       unsubConductor();
       unsubHeartbeat();
+      unsubNew();
     };
   }, []);
 
@@ -127,7 +135,7 @@ export const RSVPProgressHUD: React.FC = () => {
   // 4. SCRUBBER LOGIC
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsScrubbing(true);
-    conductor.pause();
+    try { newRsvpEngine.pause(); } catch (e) { conductor.pause(); }
     updateScrub(e);
     (e.target as Element).setPointerCapture(e.pointerId);
   };

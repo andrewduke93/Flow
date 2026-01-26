@@ -154,3 +154,31 @@ export class NewRSVPEngine {
 
 // Export a shared instance for simple integration
 export const newRsvpEngine = new NewRSVPEngine();
+
+// Helper: Map raw engine tokens into RSVPToken shape for UI migration
+export function mapRawToRSVPTokens(raw: { index: number; text: string; duration: number }[], wpm: number): RSVPToken[] {
+  const baseDuration = 60000 / Math.max(1, wpm);
+  return (raw || []).map(r => {
+    const txt = (r.text || '').trim();
+    const len = txt.length;
+    const orpIdx = Math.max(0, Math.floor(len / 2));
+    const left = txt.slice(0, orpIdx);
+    const center = txt.charAt(orpIdx) || '';
+    const right = txt.slice(orpIdx + 1);
+    const punctMatch = txt.match(/[.!?,;:]+$/);
+    const durationMultiplier = r.duration ? (r.duration / baseDuration) : 1.0;
+    return {
+      id: `e-${r.index}`,
+      originalText: txt,
+      leftSegment: left,
+      centerCharacter: center,
+      rightSegment: right,
+      punctuation: punctMatch ? punctMatch[0] : undefined,
+      durationMultiplier,
+      isSentenceEnd: !!punctMatch && /[.!?]/.test(punctMatch[0]),
+      isParagraphEnd: false,
+      globalIndex: r.index,
+      startOffset: -1
+    } as RSVPToken;
+  });
+}

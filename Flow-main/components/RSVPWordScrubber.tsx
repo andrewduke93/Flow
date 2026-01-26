@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { newRsvpEngine } from '../services/newRsvpEngine';
+import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPToken } from '../types';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
@@ -61,10 +61,14 @@ export const RSVPWordScrubber: React.FC<RSVPWordScrubberProps> = ({
     const sync = () => {
       const isPaused = conductor.state === RSVPState.PAUSED;
       const hasTokens = heartbeat.tokens.length > 0;
-      
+
       setIsVisible(isPaused && hasTokens);
-      setTokens(heartbeat.tokens);
-      
+      if (heartbeat.tokens.length > 0) setTokens(heartbeat.tokens);
+      else {
+        const raw = newRsvpEngine.getTokensRaw();
+        if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, heartbeat.wpm));
+      }
+
       // Only update currentIndex if not actively scrubbing
       if (!isScrubbing) {
         setCurrentIndex(heartbeat.currentIndex);
