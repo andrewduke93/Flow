@@ -42,12 +42,20 @@ export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCen
     
     const unsubConductor = conductor.subscribe(sync);
     const unsubHeartbeat = heartbeat.subscribe(sync);
+    const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+      if (!isDragging) {
+        if (typeof index === 'number') setCurrentIndex(index);
+        if (heartbeat.tokens.length === 0 && token) setTokens([token as RSVPToken]);
+        setIsExpanded(!isPlaying);
+      }
+    });
     
     sync();
 
     return () => {
         unsubConductor();
         unsubHeartbeat();
+        unsubNew();
     };
   }, [isDragging]); // Re-subscribe when drag state changes
 
@@ -66,6 +74,9 @@ export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCen
     
     // Capture pointer for smooth dragging even if mouse leaves div
     (e.target as Element).setPointerCapture(e.pointerId);
+
+    // Pause playback while dragging (prefer new engine)
+    try { newRsvpEngine.pause(); } catch (err) { conductor.pause(); }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -98,8 +109,8 @@ export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCen
 
     // Commit to Engine (Seek)
     try { newRsvpEngine.seek(finalIndex); } catch (e) { heartbeat.seek(finalIndex); }
-    // Ensure we stay paused
-    conductor.pause();
+    // Ensure we stay paused (prefer new engine)
+    try { newRsvpEngine.pause(); } catch (err) { conductor.pause(); }
   };
 
   // MARK: - Rendering Logic

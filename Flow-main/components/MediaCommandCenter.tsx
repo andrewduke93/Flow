@@ -208,7 +208,9 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
       }
 
       wasPlayingRef.current = conductor.state === RSVPState.PLAYING;
-      if (wasPlayingRef.current) conductor.pause();
+      if (wasPlayingRef.current) {
+          try { newRsvpEngine.pause(); } catch (err) { conductor.pause(); }
+      }
 
       updateScrubLogic(e.clientX, e.clientY, false);
       (e.target as Element).setPointerCapture(e.pointerId);
@@ -237,7 +239,9 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
           commitScrub(finalPct);
       }
 
-      if (wasPlayingRef.current) conductor.play();
+      if (wasPlayingRef.current) {
+          try { newRsvpEngine.play(); } catch (err) { conductor.play(); }
+      }
   };
 
   const updateScrubLogic = (clientX: number, clientY: number, useFriction: boolean) => {

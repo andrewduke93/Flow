@@ -61,7 +61,7 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
       setIsPlaying(isPlaying);
       if (token) setCurrentToken(token as any);
      });
-    return () => { unsubC(); unsubH(); };
+    return () => { unsubC(); unsubH(); unsubNew(); };
   }, []);
 
   useLayoutEffect(() => {
@@ -111,19 +111,16 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
             
             if (selectedWord.length > 0) {
                console.log("Selected:", selectedWord);
-               // Trigger RSVP at this approximate location
-               // We pass the global percentage instead of absolute index for safety
-               // unless we map perfectly.
                const clickY = e.clientY;
                const totalHeight = scrollContainerRef.current?.scrollHeight || 1;
                const scrollTop = scrollContainerRef.current?.scrollTop || 0;
                const approxProgress = (scrollTop + clickY) / totalHeight;
-               
-               // Better: Find the word index in the full content
                try {
-                 await newRsvpEngine.prepare(content, settings.rsvpSpeed || 350);
-                 setIsLensActive(true);
-                 newRsvpEngine.play();
+                 (async () => {
+                   await newRsvpEngine.prepare(content, settings.rsvpSpeed || 350);
+                   setIsLensActive(true);
+                   newRsvpEngine.play();
+                 })();
                } catch (err) {
                  // Fallback to legacy conductor
                  conductor.prepare(content, { progress: core.currentProgress }); // Re-align to view
