@@ -1,4 +1,17 @@
 {
-  "consoleMsgs": [],
+  "consoleMsgs": [
+    {
+      "type": "warning",
+      "text": "cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation"
+    },
+    {
+      "type": "error",
+      "text": "A bad HTTP response code (404) was received when fetching the script."
+    },
+    {
+      "type": "error",
+      "text": "Flow Service Worker registration failed: TypeError: Failed to register a ServiceWorker for scope ('https://andrewduke93.github.io/Flow/') with script ('https://andrewduke93.github.io/Flow/sw.js'): A bad HTTP response code (404) was received when fetching the script."
+    }
+  ],
   "pageErrors": []
 }

@@ -191,14 +191,8 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       // Align the focus letter position with the reticle
       const delta = reticleX - activePos.center;
 
-      // Expose a CSS variable and dev-only debug output so we can fine-tune visually
       try {
         document.documentElement.style.setProperty('--rsvp-center-delta', `${delta.toFixed(2)}px`);
-        // Only noisy in development
-        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.MODE === 'development') {
-          // eslint-disable-next-line no-console
-          console.debug('[RSVPTeleprompter] center delta (px):', delta);
-        }
       } catch (e) {
         /* ignore */
       }
@@ -219,43 +213,28 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   // PRESS & HOLD TO REWIND (nice and slow)
   // ═══════════════════════════════════════════════════════════════════
 
+  // Clean, unified tap/hold: tap toggles pause/play, hold rewinds, tap-through on pause exits RSVP
   const handlePointerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    
-    const target = e.target as HTMLElement;
-    const clickedWordIdx = target.dataset.idx ? parseInt(target.dataset.idx) : null;
-    
-    // If clicked directly on a word - jump to it
-    if (clickedWordIdx !== null) {
-      heartbeat.seek(clickedWordIdx);
-      setCurrentIndex(clickedWordIdx);
-      RSVPHapticEngine.impactMedium();
-      return;
-    }
-    
-    // If paused and tapped empty area - exit to scroll view
+
+    // If paused, any tap exits RSVP (return to scroll view)
     if (!isPlaying) {
       onLongPressExit?.();
       return;
     }
-    
-    // Otherwise start hold timer for rewind
+
+    // Hold to rewind
     pointerStart.current = {
       x: e.clientX,
       y: e.clientY,
       time: Date.now()
     };
-    
     holdTimerRef.current = setTimeout(() => {
       setIsRewinding(true);
       RSVPHapticEngine.impactLight();
       rewindIndexRef.current = currentIndex;
-      
-      // Pause the conductor to prevent it from advancing while rewinding
       conductor.pause();
-      
-      // Start slow rewind - 1 word every 300ms (nice and slow)
       rewindIntervalRef.current = setInterval(() => {
         rewindIndexRef.current = Math.max(0, rewindIndexRef.current - 1);
         setCurrentIndex(rewindIndexRef.current);
@@ -277,12 +256,18 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
 
   const handlePointerUp = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture?.(e.pointerId);
-    
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
+      // If pointer up before hold threshold, treat as tap: toggle pause/play
+      if (isPlaying) {
+        if (conductor.state === RSVPState.PLAYING) {
+          conductor.pause(true);
+        } else {
+          conductor.play();
+        }
+      }
     }
-    
     stopRewind();
   };
 
@@ -306,7 +291,11 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       // Seek without auto-playing (seek will resume if was playing, but we'll handle that)
       heartbeat.pause(); // Explicitly pause first
       heartbeat.currentIndex = Math.max(0, Math.min(rewindIndexRef.current, heartbeat.tokens.length - 1));
-      heartbeat.notify();
+      // Use public method to trigger update if available
+      if (typeof heartbeat['subscribe'] === 'function') {
+        // Hack: force update by seeking to current index
+        heartbeat.seek(heartbeat.currentIndex);
+      }
       
       // Resume via conductor (handles state machine correctly)
       conductor.play();
@@ -354,21 +343,21 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerCancel}
     >
-      {/* Dark overlay for separation from scroll view */}
+      {/* Faded background text visible on pause, tap-through to exit RSVP */}
+      {!isPlaying && (
+        <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-auto" style={{ opacity: 0.18, fontSize: '2.5rem', color: theme.primaryText, userSelect: 'none' }}>
+          <span>{tokens.slice(Math.max(0, currentIndex - 20), currentIndex + 20).map(t => t.originalText).join(' ')}</span>
+        </div>
+      )}
+      {/* ...existing code for vignette, reticle, word stream... */}
       <div 
         className="absolute inset-0 pointer-events-none"
         style={{ backgroundColor: theme.background, opacity: 0.95 }}
       />
-
-      {/* Vignette */}
       <div 
         className="absolute inset-0 z-10 pointer-events-none"
-        style={{ 
-          background: `radial-gradient(ellipse 80% 50% at ${RETICLE_POSITION}% 42%, transparent 0%, ${theme.background} 100%)`
-        }}
+        style={{ background: `radial-gradient(ellipse 80% 50% at ${RETICLE_POSITION}% 42%, transparent 0%, ${theme.background} 100%)` }}
       />
-
-      {/* Reticle - Glows during rewind */}
       <div 
         className="absolute top-[20%] bottom-[20%] w-[2px] z-0 pointer-events-none transition-all duration-200"
         style={{ 
@@ -378,12 +367,14 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
           boxShadow: isRewinding ? `0 0 30px ${FOCUS_COLOR}80` : 'none'
         }}
       />
+<<<<<<< HEAD
+=======
 
 
 
       {/* WORD STREAM */}
+>>>>>>> origin/main
       <div className="absolute inset-x-0 top-[42%] -translate-y-1/2 flex items-center justify-start overflow-visible z-20">
-        {/* Edge fades - only when showing context */}
         {showContext && (
           <>
             <div 
@@ -396,8 +387,6 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
             />
           </>
         )}
-
-        {/* Word Ribbon */}
         <div
           ref={ribbonRef}
           className="flex items-baseline gap-5 whitespace-nowrap"
@@ -410,10 +399,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
           {streamTokens.map(({ token, globalIdx }) => {
             const isFocus = globalIdx === currentIndex;
             const distance = Math.abs(globalIdx - currentIndex);
-            
-            // Context word opacity
             const contextOpacity = Math.max(0.12, 0.55 - (distance * 0.1));
-            
             if (isFocus) {
               return (
                 <span
@@ -433,7 +419,6 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
                 </span>
               );
             }
-            
             return (
               <span
                 key={token.id}
