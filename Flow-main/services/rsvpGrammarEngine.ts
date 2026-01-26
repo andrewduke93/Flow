@@ -12,9 +12,12 @@
  * @version 1.0
  */
 
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// PACING CATEGORIES
+// PACING CATEGORIES & FREQUENCY
 // ═══════════════════════════════════════════════════════════════════════════════
+
+import { getWordFrequencyRank } from './wordFrequency';
 
 /**
  * Function Words (Grammatical Glue)
@@ -164,6 +167,19 @@ export function calculateGrammarDuration(
   const pauseScale = Math.max(0.75, Math.min(1.6, 1 + (200 - Math.max(50, Math.min(1200, wpm))) / 600));
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // LAYER 0: Word Frequency (NEW)
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Slow down for rare/complex words, speed up for common words
+  const freqRank = getWordFrequencyRank(word);
+  if (freqRank > 50) {
+    // Rare word: slow down
+    duration *= 1.18;
+  } else if (freqRank <= 5) {
+    // Very common word: speed up
+    duration *= 0.92;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // LAYER 1: Base Word Complexity
   // ─────────────────────────────────────────────────────────────────────────────
   
@@ -201,23 +217,31 @@ export function calculateGrammarDuration(
   }
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // LAYER 3: Clause & Sentence Structure
+  // LAYER 3: Clause & Sentence Structure + "Breath" Pauses (NEW)
   // ─────────────────────────────────────────────────────────────────────────────
-  
   // Sentence-initial words need a moment (topic establishment)
   if (context.sentencePosition === 0) {
     duration *= 1.18;
+    // Add a subtle "breath" pause at the start of a sentence
+    duration += 0.18 * pauseScale;
   }
-  
   // Clause starters create natural break points
   if (CLAUSE_STARTERS.has(lowerWord)) {
     duration *= 1.12;
+    duration += 0.08 * pauseScale;
   }
-  
   // After a coordinating conjunction following punctuation = new clause
   // Example: "..., and" or "...; but"
   if (context.prevPunctuation && COORD_CONJUNCTIONS.has(lowerWord)) {
     duration *= 1.06;
+    duration += 0.04 * pauseScale;
+  }
+  // Add a "breath" pause before/after dialogue boundaries
+  if (context.prevPunctuation && (context.prevPunctuation.includes('"') || context.prevPunctuation.includes("'"))) {
+    duration += 0.22 * pauseScale;
+  }
+  if (punctuation && (punctuation.includes('"') || punctuation.includes("'"))) {
+    duration += 0.22 * pauseScale;
   }
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -501,24 +525,57 @@ self.onmessage = function(e) {
     // DURATION CALCULATOR (Inlined)
     // ═════════════════════════════════════════════════════════════════════════
     
+    // Minimal inlined frequency set (top 100 English words)
+    const COMMON_WORDS = new Set([
+      'the','be','to','of','and','a','in','that','have','i','it','for','not','on','with','he','as','you','do','at','this','but','his','by','from','they','we','say','her','she','or','an','will','my','one','all','would','there','their','what','so','up','out','if','about','who','get','which','go','me','when','make','can','like','time','no','just','him','know','take','people','into','year','your','good','some','could','them','see','other','than','then','now','look','only','come','its','over','think','also','back','after','use','two','how','our','work','first','well','way','even','new','want','because','any','these','give','day','most','us'
+    ]);
+    function getWordFrequencyRank(word) {
+      return COMMON_WORDS.has(word.toLowerCase()) ? 1 : 100;
+    }
+
     function calcDuration(word, punct, prevPunct, sentPos, isDialogue) {
         const lowerWord = word.toLowerCase();
         const len = word.length;
         let dur = 1.0;
-        
+        // ─────────────────────────────────────────────
+        // LAYER 0: Word Frequency (NEW)
+        // ─────────────────────────────────────────────
+        const freqRank = getWordFrequencyRank(word);
+        if (freqRank > 50) {
+          dur *= 1.18;
+        } else if (freqRank <= 5) {
+          dur *= 0.92;
+        }
         // Syllable estimate for robustness
         const syllables = estimateSyllables(word);
         if (syllables <= 1) dur *= 0.82;
         else if (syllables === 2) dur *= 1.0;
         else if (syllables >= 3) dur *= (1.0 + (syllables - 2) * 0.22);
-        
         // Function vs content words
         if (FUNCTION_WORDS.has(lowerWord)) dur *= 0.8;
         else if (len >= 8) dur *= 1 + Math.min(0.25, (len - 7) * 0.03);
         if (EMPHASIS_WORDS.has(lowerWord)) dur *= 1.2;
-        if (sentPos === 0) dur *= 1.12;
-        if (CLAUSE_STARTERS.has(lowerWord)) dur *= 1.08;
-        
+        // ─────────────────────────────────────────────
+        // LAYER 3: Clause & Sentence Structure + "Breath" Pauses (NEW)
+        // ─────────────────────────────────────────────
+        if (sentPos === 0) {
+          dur *= 1.12;
+          dur += 0.18 * pauseScale;
+        }
+        if (CLAUSE_STARTERS.has(lowerWord)) {
+          dur *= 1.08;
+          dur += 0.08 * pauseScale;
+        }
+        if (prevPunct && ['and','or','but','nor','so','yet','for'].includes(lowerWord)) {
+          dur *= 1.04;
+          dur += 0.04 * pauseScale;
+        }
+        if (prevPunct && (prevPunct.includes('"') || prevPunct.includes("'"))) {
+          dur += 0.22 * pauseScale;
+        }
+        if (punct && (punct.includes('"') || punct.includes("'"))) {
+          dur += 0.22 * pauseScale;
+        }
         // Punctuation (now WPM-adaptive via pauseScale)
         if (punct) {
             let pPause = 0;
@@ -528,16 +585,13 @@ self.onmessage = function(e) {
             if (punct.includes('...') || punct.includes('\u2026')) pPause = Math.max(pPause, 3.0 * pauseScale);
             dur += Math.min(pPause, 4.0);
         }
-        
         // Dialogue
         if (isDialogue) dur *= 0.93;
-        
         // Special patterns
         if (/\d/.test(word)) dur *= 1.3;
         if (word === word.toUpperCase() && len > 1 && /[A-Z]/.test(word)) dur *= 1.15;
         if (word.includes('-') && len > 5) dur *= 1.08;
         if (word.includes("'") && len < 8) dur *= 0.88;
-        
         // Clamp (allow longer breathing pauses)
         return Math.max(0.45, Math.min(6.0, dur));
     }
