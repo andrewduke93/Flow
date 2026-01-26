@@ -5,8 +5,9 @@
   "main": "capture.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "check:center": "node check-rsvp-center.js --threshold=1 http://127.0.0.1:3000/Flow/ https://andrewduke93.github.io/Flow/"
-  ,
+    "check:center": "node check-rsvp-center.js --threshold=1 http://127.0.0.1:3000/Flow/ https://andrewduke93.github.io/Flow/",
+    "check:pacing": "node check-rsvp-pacing.js http://127.0.0.1:3000/Flow/"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
