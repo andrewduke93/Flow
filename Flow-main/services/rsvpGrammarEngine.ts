@@ -166,6 +166,7 @@ export function calculateGrammarDuration(
   // WPM-adaptive pause scale (slower WPM -> relatively larger pauses)
   const pauseScale = Math.max(0.75, Math.min(1.6, 1 + (200 - Math.max(50, Math.min(1200, wpm))) / 600));
 
+<<<<<<< HEAD
   // ─────────────────────────────────────────────────────────────────────────────
   // LAYER 0: Word Frequency (NEW)
   // ─────────────────────────────────────────────────────────────────────────────
@@ -179,6 +180,8 @@ export function calculateGrammarDuration(
     duration *= 0.92;
   }
 
+=======
+>>>>>>> origin/main
   // ─────────────────────────────────────────────────────────────────────────────
   // LAYER 1: Base Word Complexity
   // ─────────────────────────────────────────────────────────────────────────────
@@ -222,18 +225,25 @@ export function calculateGrammarDuration(
   // Sentence-initial words need a moment (topic establishment)
   if (context.sentencePosition === 0) {
     duration *= 1.18;
+<<<<<<< HEAD
     // Add a subtle "breath" pause at the start of a sentence
     duration += 0.18 * pauseScale;
+=======
+>>>>>>> origin/main
   }
   // Clause starters create natural break points
   if (CLAUSE_STARTERS.has(lowerWord)) {
     duration *= 1.12;
+<<<<<<< HEAD
     duration += 0.08 * pauseScale;
+=======
+>>>>>>> origin/main
   }
   // After a coordinating conjunction following punctuation = new clause
   // Example: "..., and" or "...; but"
   if (context.prevPunctuation && COORD_CONJUNCTIONS.has(lowerWord)) {
     duration *= 1.06;
+<<<<<<< HEAD
     duration += 0.04 * pauseScale;
   }
   // Add a "breath" pause before/after dialogue boundaries
@@ -242,6 +252,8 @@ export function calculateGrammarDuration(
   }
   if (punctuation && (punctuation.includes('"') || punctuation.includes("'"))) {
     duration += 0.22 * pauseScale;
+=======
+>>>>>>> origin/main
   }
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -537,6 +549,7 @@ self.onmessage = function(e) {
         const lowerWord = word.toLowerCase();
         const len = word.length;
         let dur = 1.0;
+<<<<<<< HEAD
         // ─────────────────────────────────────────────
         // LAYER 0: Word Frequency (NEW)
         // ─────────────────────────────────────────────
@@ -546,15 +559,23 @@ self.onmessage = function(e) {
         } else if (freqRank <= 5) {
           dur *= 0.92;
         }
+=======
+        
+>>>>>>> origin/main
         // Syllable estimate for robustness
         const syllables = estimateSyllables(word);
         if (syllables <= 1) dur *= 0.82;
         else if (syllables === 2) dur *= 1.0;
         else if (syllables >= 3) dur *= (1.0 + (syllables - 2) * 0.22);
+<<<<<<< HEAD
+=======
+        
+>>>>>>> origin/main
         // Function vs content words
         if (FUNCTION_WORDS.has(lowerWord)) dur *= 0.8;
         else if (len >= 8) dur *= 1 + Math.min(0.25, (len - 7) * 0.03);
         if (EMPHASIS_WORDS.has(lowerWord)) dur *= 1.2;
+<<<<<<< HEAD
         // ─────────────────────────────────────────────
         // LAYER 3: Clause & Sentence Structure + "Breath" Pauses (NEW)
         // ─────────────────────────────────────────────
@@ -576,6 +597,11 @@ self.onmessage = function(e) {
         if (punct && (punct.includes('"') || punct.includes("'"))) {
           dur += 0.22 * pauseScale;
         }
+=======
+        if (sentPos === 0) dur *= 1.12;
+        if (CLAUSE_STARTERS.has(lowerWord)) dur *= 1.08;
+        
+>>>>>>> origin/main
         // Punctuation (now WPM-adaptive via pauseScale)
         if (punct) {
             let pPause = 0;
@@ -585,13 +611,24 @@ self.onmessage = function(e) {
             if (punct.includes('...') || punct.includes('\u2026')) pPause = Math.max(pPause, 3.0 * pauseScale);
             dur += Math.min(pPause, 4.0);
         }
+<<<<<<< HEAD
         // Dialogue
         if (isDialogue) dur *= 0.93;
+=======
+        
+        // Dialogue
+        if (isDialogue) dur *= 0.93;
+        
+>>>>>>> origin/main
         // Special patterns
         if (/\d/.test(word)) dur *= 1.3;
         if (word === word.toUpperCase() && len > 1 && /[A-Z]/.test(word)) dur *= 1.15;
         if (word.includes('-') && len > 5) dur *= 1.08;
         if (word.includes("'") && len < 8) dur *= 0.88;
+<<<<<<< HEAD
+=======
+        
+>>>>>>> origin/main
         // Clamp (allow longer breathing pauses)
         return Math.max(0.45, Math.min(6.0, dur));
     }
@@ -627,7 +664,11 @@ self.onmessage = function(e) {
     // PROCESSING LOOP
     // ═════════════════════════════════════════════════════════════════════════
     
+<<<<<<< HEAD
     const CHUNK_SIZE = 100;
+=======
+    const CHUNK_SIZE = 400;
+>>>>>>> origin/main
     let match;
     const regex = /([^\\s]+)(\\s*)/g;
     const punctuationRegex = /^(.+?)([.,;:!?"')\\]}\\u201C\\u201D\\u2018\\u2019\\u00BB\\u203A\\u2026\\u2014\\u2013-]+)?$/;

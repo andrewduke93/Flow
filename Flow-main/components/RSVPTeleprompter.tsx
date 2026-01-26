@@ -191,11 +191,8 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       // Align the focus letter position with the reticle
       const delta = reticleX - activePos.center;
 
-      // Expose a CSS variable and dev-only debug output so we can fine-tune visually
       try {
         document.documentElement.style.setProperty('--rsvp-center-delta', `${delta.toFixed(2)}px`);
-        // Only noisy in development
-        // Debug output removed for production safety
       } catch (e) {
         /* ignore */
       }
@@ -370,6 +367,13 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
           boxShadow: isRewinding ? `0 0 30px ${FOCUS_COLOR}80` : 'none'
         }}
       />
+<<<<<<< HEAD
+=======
+
+
+
+      {/* WORD STREAM */}
+>>>>>>> origin/main
       <div className="absolute inset-x-0 top-[42%] -translate-y-1/2 flex items-center justify-start overflow-visible z-20">
         {showContext && (
           <>

@@ -27,6 +27,19 @@ export class RSVPAligner {
    * Adaptive ORP: For each word, select the most visually stable character as the focus (not just the middle).
    * For short words, bias to the first consonant; for long, bias to a stable center.
    */
+<<<<<<< HEAD
+  /**
+   * RSVP Standard ORP: 35% through the word (rounded down), not just the center.
+   * See: https://en.wikipedia.org/wiki/Rapid_serial_visual_presentation
+   */
+  public static getAdaptiveORP(text: string): number {
+    if (text.length <= 1) return 0;
+    // Classic RSVP: focus letter is at Math.floor(0.35 * word.length)
+    return Math.floor(0.35 * text.length);
+=======
+  public static getAdaptiveORP(text: string): number {
+    if (text.length <= 1) return 0;
+    if (text.length <= 4) {
   /**
    * RSVP Standard ORP: 35% through the word (rounded down), not just the center.
    * See: https://en.wikipedia.org/wiki/Rapid_serial_visual_presentation
@@ -36,8 +49,6 @@ export class RSVPAligner {
     // Classic RSVP: focus letter is at Math.floor(0.35 * word.length)
     return Math.floor(0.35 * text.length);
   }
-
-  public static calculateOffset(token: RSVPToken, config: RSVPLayoutConfig): number {
     const cacheKey = `${token.id}-${config.fontFamily}-${config.fontSize}-${config.leftWeight}-${config.centerWeight}-${config.letterSpacing}-${config.screenCenter}`;
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey)!;
