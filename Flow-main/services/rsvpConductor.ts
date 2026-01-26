@@ -1,4 +1,5 @@
 import { RSVPHeartbeat } from './rsvpHeartbeat';
+import { newRsvpEngine } from './newRsvpEngine';
 import { RSVPProcessor } from './rsvpProcessor';
 import { TitanCore } from './titanCore';
 import { RSVPHapticEngine } from './rsvpHaptics'; 
@@ -48,12 +49,33 @@ export class RSVPConductor {
     this.heartbeat = RSVPHeartbeat.getInstance();
     this.core = TitanCore.getInstance();
     
-    this.heartbeat.subscribe(() => this.handleHeartbeatUpdate());
-    this.heartbeat.onComplete(() => {
-        this.state = RSVPState.FINISHED;
-        this.releaseWakeLock(); // Release lock on finish
-        this.notify();
-    });
+        this.heartbeat.subscribe(() => this.handleHeartbeatUpdate());
+        this.heartbeat.onComplete(() => {
+                this.state = RSVPState.FINISHED;
+                this.releaseWakeLock(); // Release lock on finish
+                this.notify();
+        });
+
+        // Subscribe to newRsvpEngine for gradual migration; keep legacy heartbeat as fallback
+        try {
+            newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+                // Mirror behavior of heartbeat-based updates
+                if (!isPlaying && this.state === RSVPState.PLAYING) {
+                    this.state = RSVPState.PAUSED;
+                    this.releaseWakeLock();
+                }
+
+                // Periodic sync to core for progress persistence
+                if (typeof index === 'number' && Math.abs(index - this.lastSavedIndex) >= 100) {
+                    this.syncProgressToCore(true, index, token);
+                    this.lastSavedIndex = index;
+                }
+
+                this.notify();
+            });
+        } catch (e) {
+            // ignore
+        }
 
     const settingsService = TitanSettingsService.getInstance();
     const initialWPM = settingsService.getSettings().rsvpSpeed;
@@ -114,10 +136,16 @@ export class RSVPConductor {
     // We wrap this in an IIFE-style promise assignment to track it
     this.preparationPromise = (async () => {
         try {
-            // Generate Tokens (Async) — forward current WPM so worker can scale punctuation pauses
-            const tokens = await RSVPProcessor.process(content, 0, this.heartbeat.wpm);
-            this.heartbeat.setTokens(tokens);
-            this.lastContentRef = content;
+            // Try new engine preparation first (worker-based)
+            try {
+                await newRsvpEngine.prepare(content, this.heartbeat.wpm);
+                this.lastContentRef = content;
+            } catch (e) {
+                // Fallback to legacy processor if new engine fails
+                const tokens = await RSVPProcessor.process(content, 0, this.heartbeat.wpm);
+                this.heartbeat.setTokens(tokens);
+                this.lastContentRef = content;
+            }
         } finally {
             this.preparationPromise = null;
         }
@@ -184,15 +212,15 @@ export class RSVPConductor {
         return; 
     }
 
-    this.state = RSVPState.PLAYING;
-    this.heartbeat.play();
-    this.requestWakeLock(); // Lock screen
-    this.notify();
+        this.state = RSVPState.PLAYING;
+        try { newRsvpEngine.play(); } catch (e) { this.heartbeat.play(); }
+        this.requestWakeLock(); // Lock screen
+        this.notify();
   }
 
   public pause(skipContextRewind: boolean = false) {
     this.state = RSVPState.PAUSED;
-    this.heartbeat.pause();
+        try { newRsvpEngine.pause(); } catch (e) { this.heartbeat.pause(); }
     this.releaseWakeLock(); // Release lock
     
     // Context Rewind: Move back slightly to give context upon resume
@@ -208,7 +236,7 @@ export class RSVPConductor {
     }
     
     // CRITICAL: Force sync to core so ReaderView can snap to this exact location
-    this.syncProgressToCore(true);
+        this.syncProgressToCore(true);
     this.notify();
   }
 
@@ -224,7 +252,7 @@ export class RSVPConductor {
           if (this.state === RSVPState.PLAYING) {
              this.pause(true); // Don't do context rewind when manually seeking
           }
-          this.heartbeat.seek(target);
+          try { newRsvpEngine.seek(target); } catch (e) { this.heartbeat.seek(target); }
           this.syncProgressToCore(true); // Ensure Core is updated so UI reflects change
       }
   }
@@ -240,7 +268,7 @@ export class RSVPConductor {
     }
     
     // 2. STOP
-    this.heartbeat.stop();
+    try { newRsvpEngine.pause(); } catch (e) { this.heartbeat.stop(); }
     this.state = RSVPState.IDLE;
     this.releaseWakeLock();
     
@@ -299,21 +327,22 @@ export class RSVPConductor {
       this.notify();
   }
 
-  private syncProgressToCore(forceSave: boolean = false) {
-      const totalTokens = this.heartbeat.tokens.length;
-      if (totalTokens === 0) return;
+    private syncProgressToCore(forceSave: boolean = false, index?: number, token?: RSVPToken) {
+            // Prefer explicit index/token if provided (from new engine subscription)
+            const currentIndex = typeof index === 'number' ? index : this.heartbeat.currentIndex;
+            const currentToken = token ?? this.heartbeat.currentToken;
 
-      const currentToken = this.heartbeat.currentToken;
-      const currentIndex = this.heartbeat.currentIndex;
-      
-      if (currentToken) {
-        this.core.syncFromRSVP(currentToken.startOffset, currentIndex);
-      } else {
-        if (currentIndex > 0) {
-            this.core.saveProgress(currentIndex);
-        }
-      }
-  }
+            const totalTokens = (this.heartbeat.tokens && this.heartbeat.tokens.length) || (this.core.totalTokens || 0);
+            if (totalTokens === 0) return;
+
+            if (currentToken && (currentToken as any).startOffset !== undefined) {
+                this.core.syncFromRSVP((currentToken as any).startOffset, currentIndex);
+            } else {
+                if (currentIndex > 0) {
+                        this.core.saveProgress(currentIndex);
+                }
+            }
+    }
 
   // MARK: - React Observability
 

@@ -1,4 +1,5 @@
 import { RSVPToken } from '../types';
+import { newRsvpEngine } from './newRsvpEngine';
 
 /**
  * RSVPHeartbeat (Phase 7-D)
@@ -37,7 +38,28 @@ export class RSVPHeartbeat {
   // PERFORMANCE: Batched notification
   private notifyScheduled: boolean = false;
 
-  private constructor() {}
+  private constructor() {
+    this.initCompatibility();
+  }
+
+  // Subscribe to newRsvpEngine for compatibility if available
+  private initCompatibility() {
+    try {
+      newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+        // Map tokens: ensure token list is present
+        // newRsvpEngine does not expose full token list; preserve existing tokens if present
+        if (token && (!this.tokens || this.tokens.length === 0)) {
+          // seed with current token only
+          this.tokens = [token as RSVPToken];
+        }
+        this.currentIndex = index;
+        this._isPlaying = isPlaying;
+        this.notify();
+      });
+    } catch (e) {
+      // ignore if compatibility not possible
+    }
+  }
 
   public static getInstance(): RSVPHeartbeat {
     if (!RSVPHeartbeat.instance) {
