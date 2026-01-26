@@ -53,3 +53,57 @@ self.addEventListener('message', (ev: MessageEvent) => {
     (self as any).postMessage({ type: 'error', message: String(e) });
   }
 });
+
+// Try to load Reedy scripts into worker global scope so `reedy` becomes available.
+async function loadReedyIntoWorker(): Promise<boolean> {
+  try {
+    // Expose window alias for scripts that expect `window`
+    try {
+      (self as any).window = self;
+    } catch (e) {
+      // ignore
+    }
+
+    const base = (self as any).location && (self as any).location.origin
+      ? (self as any).location.origin + '/packages/reedy-core/js/content/'
+      : '/packages/reedy-core/js/content/';
+
+    const files = [
+      'content.js',
+      'Parser.js',
+      'Sequencer.js',
+      'Reader.js',
+      'View.js',
+      'ContentSelector.js'
+    ];
+
+    for (const f of files) {
+      const url = base + f;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const code = await res.text();
+        // Evaluate in global scope
+        (0, eval)(code);
+      } catch (e) {
+        // If any file fails, abort loading and return false
+        (self as any).postMessage({ type: 'reedy-load-error', file: f, message: String(e) });
+        return false;
+      }
+    }
+
+    if ((globalThis as any).reedy) {
+      (self as any).postMessage({ type: 'reedy-loaded' });
+      return true;
+    }
+
+    (self as any).postMessage({ type: 'reedy-load-error', message: 'reedy global not found after load' });
+    return false;
+  } catch (e) {
+    (self as any).postMessage({ type: 'reedy-load-error', message: String(e) });
+    return false;
+  }
+}
+
+// Start load but don't block worker message handling
+loadReedyIntoWorker().catch(() => {});
