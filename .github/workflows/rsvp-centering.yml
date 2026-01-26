@@ -1,0 +1,51 @@
+name: RSVP centering smoke test
+
+on:
+  pull_request:
+    paths:
+      - 'Flow-main/**'
+      - 'headless/**'
+
+jobs:
+  center-check:
+    name: Build site and run RSVP centering check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install Flow-main deps
+        run: |
+          cd Flow-main
+          npm ci --legacy-peer-deps
+
+      - name: Build Flow-main
+        run: |
+          cd Flow-main
+          npm run build
+
+      - name: Install headless deps
+        run: npm ci --prefix headless --legacy-peer-deps
+
+      - name: Serve built dist (vite preview)
+        run: |
+          cd Flow-main
+          npx vite preview --port 5173 > /tmp/preview.log 2>&1 &
+          # wait for server
+          for i in {1..12}; do
+            grep -q "Local:.*5173" /tmp/preview.log && break || sleep 1
+          done
+          tail -n +1 /tmp/preview.log | sed -n '1,120p'
+
+      - name: Run RSVP centering check
+        run: |
+          node headless/check-rsvp-center.js http://127.0.0.1:5173/Flow/ --threshold=1
+        env:
+          CI: true
