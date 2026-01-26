@@ -166,22 +166,6 @@ export function calculateGrammarDuration(
   // WPM-adaptive pause scale (slower WPM -> relatively larger pauses)
   const pauseScale = Math.max(0.75, Math.min(1.6, 1 + (200 - Math.max(50, Math.min(1200, wpm))) / 600));
 
-<<<<<<< HEAD
-  // ─────────────────────────────────────────────────────────────────────────────
-  // LAYER 0: Word Frequency (NEW)
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Slow down for rare/complex words, speed up for common words
-  const freqRank = getWordFrequencyRank(word);
-  if (freqRank > 50) {
-    // Rare word: slow down
-    duration *= 1.18;
-  } else if (freqRank <= 5) {
-    // Very common word: speed up
-    duration *= 0.92;
-  }
-
-=======
->>>>>>> origin/main
   // ─────────────────────────────────────────────────────────────────────────────
   // LAYER 0: Word Frequency (NEW)
   // ─────────────────────────────────────────────────────────────────────────────
@@ -237,37 +221,18 @@ export function calculateGrammarDuration(
   // Sentence-initial words need a moment (topic establishment)
   if (context.sentencePosition === 0) {
     duration *= 1.18;
-<<<<<<< HEAD
-<<<<<<< HEAD
     // Add a subtle "breath" pause at the start of a sentence
     duration += 0.18 * pauseScale;
-=======
->>>>>>> origin/main
-=======
-  // Add a subtle "breath" pause at the start of a sentence
-  duration += 0.18 * pauseScale;
->>>>>>> test/rsvp-centering
   }
   // Clause starters create natural break points
   if (CLAUSE_STARTERS.has(lowerWord)) {
     duration *= 1.12;
-<<<<<<< HEAD
-<<<<<<< HEAD
     duration += 0.08 * pauseScale;
-=======
->>>>>>> origin/main
-=======
-  duration += 0.08 * pauseScale;
->>>>>>> test/rsvp-centering
   }
   // After a coordinating conjunction following punctuation = new clause
   // Example: "..., and" or "...; but"
   if (context.prevPunctuation && COORD_CONJUNCTIONS.has(lowerWord)) {
     duration *= 1.06;
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> test/rsvp-centering
     duration += 0.04 * pauseScale;
   }
   // Add a "breath" pause before/after dialogue boundaries
@@ -276,13 +241,7 @@ export function calculateGrammarDuration(
   }
   if (punctuation && (punctuation.includes('"') || punctuation.includes("'"))) {
     duration += 0.22 * pauseScale;
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
-=======
->>>>>>> test/rsvp-centering
-  }
-  
+
   // ─────────────────────────────────────────────────────────────────────────────
   // LAYER 4: Punctuation Pauses
   // ─────────────────────────────────────────────────────────────────────────────
@@ -330,7 +289,11 @@ export function calculateGrammarDuration(
   }
   
   // ALL CAPS words (shouting/emphasis in text)
-    const PUNCT_PAUSES = {
+    // finalize and return computed duration
+    return Math.max(0.45, Math.min(6.0, duration));
+  }
+
+  const PUNCT_PAUSES = {
       '.': 2.2, '?': 2.3, '!': 2.0, ';': 1.2, ':': 1.0, ',': 0.65,
       '\\u2014': 1.1, '\\u2013': 0.7, '-': 0.12, '"': 0.45, "'": 0.25, '\\u201C': 0.45,
       '\\u201D': 0.45, '\\u2018': 0.25, '\\u2019': 0.25, '(': 0.35, ')': 0.5, '\\u2026': 3.0,
@@ -361,7 +324,7 @@ export function calculateGrammarDuration(
         const lowerWord = word.toLowerCase();
         const len = word.length;
         let dur = 1.0;
-<<<<<<< HEAD
+
         // ─────────────────────────────────────────────
         // LAYER 0: Word Frequency (NEW)
         // ─────────────────────────────────────────────
@@ -371,49 +334,40 @@ export function calculateGrammarDuration(
         } else if (freqRank <= 5) {
           dur *= 0.92;
         }
-=======
-        
->>>>>>> origin/main
+
         // Syllable estimate for robustness
         const syllables = estimateSyllables(word);
         if (syllables <= 1) dur *= 0.82;
         else if (syllables === 2) dur *= 1.0;
         else if (syllables >= 3) dur *= (1.0 + (syllables - 2) * 0.22);
-<<<<<<< HEAD
-=======
-        
->>>>>>> origin/main
+
         // Function vs content words
         if (FUNCTION_WORDS.has(lowerWord)) dur *= 0.8;
         else if (len >= 8) dur *= 1 + Math.min(0.25, (len - 7) * 0.03);
         if (EMPHASIS_WORDS.has(lowerWord)) dur *= 1.2;
-<<<<<<< HEAD
+
         // ─────────────────────────────────────────────
         // LAYER 3: Clause & Sentence Structure + "Breath" Pauses (NEW)
         // ─────────────────────────────────────────────
         if (sentPos === 0) {
-          dur *= 1.12;
+          dur *= 1.18;
+          // subtle "breath" pause at sentence start
           dur += 0.18 * pauseScale;
         }
         if (CLAUSE_STARTERS.has(lowerWord)) {
-          dur *= 1.08;
+          dur *= 1.12;
           dur += 0.08 * pauseScale;
         }
         if (prevPunct && ['and','or','but','nor','so','yet','for'].includes(lowerWord)) {
-          dur *= 1.04;
-          dur += 0.04 * pauseScale;
+          dur *= 1.06;
         }
+        dur += 0.04 * pauseScale;
         if (prevPunct && (prevPunct.includes('"') || prevPunct.includes("'"))) {
           dur += 0.22 * pauseScale;
         }
         if (punct && (punct.includes('"') || punct.includes("'"))) {
           dur += 0.22 * pauseScale;
         }
-=======
-        if (sentPos === 0) dur *= 1.12;
-        if (CLAUSE_STARTERS.has(lowerWord)) dur *= 1.08;
-        
->>>>>>> origin/main
         // Punctuation (now WPM-adaptive via pauseScale)
         if (punct) {
             let pPause = 0;
@@ -423,24 +377,14 @@ export function calculateGrammarDuration(
             if (punct.includes('...') || punct.includes('\u2026')) pPause = Math.max(pPause, 3.0 * pauseScale);
             dur += Math.min(pPause, 4.0);
         }
-<<<<<<< HEAD
         // Dialogue
         if (isDialogue) dur *= 0.93;
-=======
-        
-        // Dialogue
-        if (isDialogue) dur *= 0.93;
-        
->>>>>>> origin/main
         // Special patterns
         if (/\d/.test(word)) dur *= 1.3;
         if (word === word.toUpperCase() && len > 1 && /[A-Z]/.test(word)) dur *= 1.15;
         if (word.includes('-') && len > 5) dur *= 1.08;
         if (word.includes("'") && len < 8) dur *= 0.88;
-<<<<<<< HEAD
-=======
-        
->>>>>>> origin/main
+
         // Clamp (allow longer breathing pauses)
         return Math.max(0.45, Math.min(6.0, dur));
     }
@@ -476,11 +420,10 @@ export function calculateGrammarDuration(
     // PROCESSING LOOP
     // ═════════════════════════════════════════════════════════════════════════
     
-<<<<<<< HEAD
-    const CHUNK_SIZE = 100;
-=======
     const CHUNK_SIZE = 400;
->>>>>>> origin/main
+}
+
+export const GRAMMAR_AWARE_WORKER_CODE = `
     let match;
     const regex = /([^\\s]+)(\\s*)/g;
     const punctuationRegex = /^(.+?)([.,;:!?"')\\]}\\u201C\\u201D\\u2018\\u2019\\u00BB\\u203A\\u2026\\u2014\\u2013-]+)?$/;

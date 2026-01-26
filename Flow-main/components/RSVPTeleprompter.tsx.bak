@@ -354,7 +354,9 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       />
 
 
+
       {/* WORD STREAM */}
+  {/* WORD STREAM */}
       <div className="absolute inset-x-0 top-[42%] -translate-y-1/2 flex items-center justify-start overflow-visible z-20">
         {showContext && (
           <>

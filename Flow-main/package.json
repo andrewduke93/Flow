@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:conflicts": "node ./scripts/check-conflicts.js",
+    "ci": "npm run check:conflicts && npm run build",
+    "prepare": "husky install"
   },
   "dependencies": {
     "react": "^19.2.3",
@@ -14,12 +17,14 @@
     "lucide-react": "^0.562.0",
     "jszip": "3.10.1",
     "framer-motion": "11.1.7",
-    "@google/genai": "^1.38.0"
+    "@google/genai": "^1.38.0",
+    "react-window": "^1.8.8"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "husky": "^8.0.0"
   }
 }

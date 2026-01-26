@@ -1,42 +1,25 @@
 
-<<<<<<< HEAD
-=======
-# Run and deploy your AI Studio app
+# Flow — The Next‑Gen Speed‑Reading App
 
-This contains everything you need to run your app locally.
+Welcome to **Flow** — a modern, open-source speed-reading platform for focus, comprehension, and enjoyment. Flow pairs a grammar-aware RSVP engine with a virtualized reader, strong accessibility defaults, and a PWA-ready UI so you can read faster on any device.
 
-View your app in AI Studio: https://ai.studio/apps/drive/16EhXmUbjWn5Ovpv00wh2vu8T5x1SLQbd
+Highlights
+- Grammar-aware RSVP teleprompter with natural pauses and a focus reticle
+- Virtualization for instant rendering of very large books
+- Custom themes, cloud sync (optional), and PWA installability
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   # Flow: The Next-Gen Speed Reading App
-
-   Welcome to **Flow** — a modern, open-source speed reading platform designed for deep focus, comprehension, and joy. Flow brings together cutting-edge RSVP (Rapid Serial Visual Presentation), beautiful design, and powerful customization to help you read more, remember more, and enjoy every page.
-
-   ---
-
-   ## 🚀 Features
-
-   - **RSVP Teleprompter**: Read at your pace with a word-by-word teleprompter, complete with natural pauses, grammar-aware timing, and a focus reticle for effortless eye tracking.
-   - **Virtualized Reader**: Handles even massive books with instant loading and smooth scrolling. No more DOM bloat or lag.
-   - **Smart Chapter & Book Navigation**: Jump between chapters, books, or sections with a tap. Your place is always saved.
-   - **Performance Logging**: Built-in analytics to help you optimize your reading speed and comprehension.
-   - **Custom Themes**: Light, dark, and everything in between. Tune colors, fonts, and layouts to your taste.
-   - **Cloud Sync**: (Optional) Save your progress and settings across devices with Google Drive integration.
-   - **Mobile-First, PWA**: Install on any device. Works offline, syncs when you’re back online.
-   - **Open EPUB Support**: Bring your own books. Flow works with standard EPUB files.
-
-   ---
-
-   ## ✨ Why Flow?
-
-   - **For Readers, By Readers**: Flow is built by people who love books and want to read more, better, and happier.
+Quick start
+1. Clone and install:
+   ```sh
+   git clone https://github.com/andrewduke93/Flow.git
+   cd Flow/Flow-main
    npm install
    ```
+2. Run locally:
+   ```sh
+   npm run dev
+   ```
+
 ## 🛠️ Getting Started
 
 1. **Clone the repo:**

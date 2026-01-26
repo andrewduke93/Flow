@@ -24,23 +24,6 @@ export class RSVPAligner {
    * Uses a segmented measurement approach to better simulate browser text layout.
    */
   /**
-   * Adaptive ORP: For each word, select the most visually stable character as the focus (not just the middle).
-   * For short words, bias to the first consonant; for long, bias to a stable center.
-   */
-<<<<<<< HEAD
-  /**
-   * RSVP Standard ORP: 35% through the word (rounded down), not just the center.
-   * See: https://en.wikipedia.org/wiki/Rapid_serial_visual_presentation
-   */
-  public static getAdaptiveORP(text: string): number {
-    if (text.length <= 1) return 0;
-    // Classic RSVP: focus letter is at Math.floor(0.35 * word.length)
-    return Math.floor(0.35 * text.length);
-=======
-  public static getAdaptiveORP(text: string): number {
-    if (text.length <= 1) return 0;
-    if (text.length <= 4) {
-  /**
    * RSVP Standard ORP: 35% through the word (rounded down), not just the center.
    * See: https://en.wikipedia.org/wiki/Rapid_serial_visual_presentation
    */
@@ -49,12 +32,16 @@ export class RSVPAligner {
     // Classic RSVP: focus letter is at Math.floor(0.35 * word.length)
     return Math.floor(0.35 * text.length);
   }
-    const cacheKey = `${token.id}-${config.fontFamily}-${config.fontSize}-${config.leftWeight}-${config.centerWeight}-${config.letterSpacing}-${config.screenCenter}`;
-    if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey)!;
-    }
 
-    // Use DOM measurement if available
+  /**
+   * Calculate horizontal shift to align the token's ORP to the visual center.
+   * Uses a DOM-measurement path when available and a canvas fallback otherwise.
+   */
+  public static calculateOffset(token: RSVPToken, config: RSVPLayoutConfig): number {
+    const cacheKey = `${token.id}-${config.fontFamily}-${config.fontSize}-${config.leftWeight}-${config.centerWeight}-${config.letterSpacing}-${config.screenCenter}`;
+    if (this.cache.has(cacheKey)) return this.cache.get(cacheKey)!;
+
+    // Use DOM measurement when running in a browser (more accurate)
     if (typeof document !== 'undefined' && document.body) {
       try {
         const container = document.createElement('div');
@@ -63,17 +50,14 @@ export class RSVPAligner {
         container.style.whiteSpace = 'nowrap';
         container.style.font = `${config.leftWeight} ${config.fontSize}px ${config.fontFamily}`;
 
-        // Adaptive ORP
         const full = (token.leftSegment || '') + (token.centerCharacter || '') + (token.rightSegment || '');
         const orpIdx = RSVPAligner.getAdaptiveORP(full);
 
-        // Build spans
         const leftSpan = document.createElement('span');
         leftSpan.textContent = full.slice(0, orpIdx);
         const centerSpan = document.createElement('span');
         centerSpan.style.font = `${config.centerWeight} ${config.fontSize}px ${config.fontFamily}`;
         centerSpan.textContent = full[orpIdx] || '';
-        // Micro-kerning: add letterSpacing for focus char
         centerSpan.style.letterSpacing = '0.02em';
         const rightSpan = document.createElement('span');
         rightSpan.textContent = full.slice(orpIdx + 1);
@@ -83,20 +67,17 @@ export class RSVPAligner {
         container.appendChild(rightSpan);
         document.body.appendChild(container);
 
-        // Measure left width and center char width
         const measure = document.createElement('span');
         measure.style.visibility = 'hidden';
         measure.style.position = 'absolute';
         measure.style.whiteSpace = 'nowrap';
         measure.style.font = window.getComputedStyle(leftSpan).font || `${config.leftWeight} ${config.fontSize}px ${config.fontFamily}`;
 
-        // up to inclusive
         measure.textContent = full.substring(0, orpIdx + 1);
         container.appendChild(measure);
         const uptoInclusive = measure.getBoundingClientRect().width;
         container.removeChild(measure);
 
-        // up to exclusive
         measure.textContent = full.substring(0, orpIdx);
         container.appendChild(measure);
         const uptoExclusive = measure.getBoundingClientRect().width;
@@ -112,11 +93,11 @@ export class RSVPAligner {
         this.cache.set(cacheKey, shift);
         return shift;
       } catch (e) {
-        // fallback to canvas
+        // fallback to canvas measurement below
       }
     }
 
-    // Canvas fallback
+    // Canvas fallback (server / worker-safe)
     const ctx = this.getContext();
     const full = (token.leftSegment || '') + (token.centerCharacter || '') + (token.rightSegment || '');
     const orpIdx = RSVPAligner.getAdaptiveORP(full);

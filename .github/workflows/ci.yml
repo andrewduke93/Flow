@@ -1,0 +1,44 @@
+name: CI — build & safety checks
+
+on:
+  pull_request:
+    branches: [ 'main' ]
+  push:
+    branches: [ 'main' ]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Flow-main/package-lock.json
+
+      - name: Install dependencies
+        working-directory: Flow-main
+        run: npm ci --legacy-peer-deps
+
+      - name: Conflict-marker check
+        working-directory: Flow-main
+        run: npm run check:conflicts
+
+      - name: Type check & build
+        working-directory: Flow-main
+        run: |
+          npm run build
+
+      - name: Upload build (debug)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-dist
+          path: Flow-main/dist
