@@ -233,7 +233,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       setIsRewinding(true);
       RSVPHapticEngine.impactLight();
       rewindIndexRef.current = currentIndex;
-      conductor.pause();
+      try { newRsvpEngine.pause(); } catch (e) { conductor.pause(); }
       rewindIntervalRef.current = setInterval(() => {
         rewindIndexRef.current = Math.max(0, rewindIndexRef.current - 1);
         setCurrentIndex(rewindIndexRef.current);
@@ -260,10 +260,16 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       holdTimerRef.current = null;
       // If pointer up before hold threshold, treat as tap: toggle pause/play
       if (isPlaying) {
-        if (conductor.state === RSVPState.PLAYING) {
-          conductor.pause(true);
-        } else {
-          conductor.play();
+        try {
+          // Prefer new engine control
+          if (isPlaying) newRsvpEngine.pause();
+          else newRsvpEngine.play();
+        } catch (e) {
+          if (conductor.state === RSVPState.PLAYING) {
+            conductor.pause(true);
+          } else {
+            conductor.play();
+          }
         }
       }
     }
@@ -288,12 +294,12 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       setIsRewinding(false);
       
       // Seek without auto-playing (seek will resume if was playing, but we'll handle that)
-      try { newRsvpEngine.pause(); } catch (e) { heartbeat.pause(); }
-      const target = Math.max(0, Math.min(rewindIndexRef.current, heartbeat.tokens.length - 1));
-      try { newRsvpEngine.seek(target); } catch (e) { heartbeat.seek(target); }
+        try { newRsvpEngine.pause(); } catch (e) { heartbeat.pause(); }
+        const target = Math.max(0, Math.min(rewindIndexRef.current, heartbeat.tokens.length - 1));
+        try { newRsvpEngine.seek(target); } catch (e) { heartbeat.seek(target); }
 
-      // Resume via conductor (handles state machine correctly)
-      conductor.play();
+        // Resume playback preferring new engine
+        try { newRsvpEngine.play(); } catch (e) { conductor.play(); }
       RSVPHapticEngine.impactMedium();
     }
   };

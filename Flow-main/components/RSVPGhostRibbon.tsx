@@ -29,9 +29,8 @@ export const RSVPGhostRibbon: React.FC<RSVPGhostRibbonProps> = ({ screenCenter }
     const unsubscribe = heartbeat.subscribe(() => {
         // High-frequency update
         setCurrentIndex(heartbeat.currentIndex);
-        
         // Handle playlist changes (e.g., chapter swap)
-        if (heartbeat.tokens !== tokens) {
+        if (heartbeat.tokens !== undefined) {
             setTokens(heartbeat.tokens);
         }
     });
@@ -42,7 +41,7 @@ export const RSVPGhostRibbon: React.FC<RSVPGhostRibbonProps> = ({ screenCenter }
     });
 
     return () => { unsubscribe(); unsubNew(); };
-  }, [tokens]); // Dependency on tokens ensures we detect ref changes if needed, though mostly handled by check inside.
+  }, []); // stable subscription
 
   // Safe fetch (The Past, Present, Future)
   const currentToken = tokens[currentIndex] || null;
