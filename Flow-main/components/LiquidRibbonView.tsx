@@ -97,7 +97,7 @@ export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCen
     setCurrentIndex(finalIndex); // Optimistic update
 
     // Commit to Engine (Seek)
-    heartbeat.seek(finalIndex);
+    try { newRsvpEngine.seek(finalIndex); } catch (e) { heartbeat.seek(finalIndex); }
     // Ensure we stay paused
     conductor.pause();
   };

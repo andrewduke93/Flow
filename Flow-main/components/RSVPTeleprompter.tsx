@@ -288,14 +288,10 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       setIsRewinding(false);
       
       // Seek without auto-playing (seek will resume if was playing, but we'll handle that)
-      heartbeat.pause(); // Explicitly pause first
-      heartbeat.currentIndex = Math.max(0, Math.min(rewindIndexRef.current, heartbeat.tokens.length - 1));
-      // Use public method to trigger update if available
-      if (typeof heartbeat['subscribe'] === 'function') {
-        // Hack: force update by seeking to current index
-        heartbeat.seek(heartbeat.currentIndex);
-      }
-      
+      try { newRsvpEngine.pause(); } catch (e) { heartbeat.pause(); }
+      const target = Math.max(0, Math.min(rewindIndexRef.current, heartbeat.tokens.length - 1));
+      try { newRsvpEngine.seek(target); } catch (e) { heartbeat.seek(target); }
+
       // Resume via conductor (handles state machine correctly)
       conductor.play();
       RSVPHapticEngine.impactMedium();
