@@ -86,7 +86,7 @@ export const RSVPSemanticScrubber: React.FC = () => {
       
       if (previewIndex !== null) {
         try { newRsvpEngine.seek(previewIndex); } catch (e) { heartbeat.seek(previewIndex); }
-        conductor.pause();
+        try { newRsvpEngine.pause(); } catch (e) { conductor.pause(); }
       }
     }
   };
