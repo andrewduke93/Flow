@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine } from '../services/newRsvpEngine';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPToken } from '../types';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
@@ -73,11 +74,24 @@ export const RSVPWordScrubber: React.FC<RSVPWordScrubberProps> = ({
 
     const unsubC = conductor.subscribe(sync);
     const unsubH = heartbeat.subscribe(sync);
+    const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+      // Update visibility based on legacy conductor state if available
+      const isPaused = conductor.state === RSVPState.PAUSED;
+      setIsVisible(isPaused && (heartbeat.tokens.length > 0 || !!token));
+      // Update tokens if heartbeat empty
+      if (heartbeat.tokens.length === 0 && token) setTokens([token as any]);
+      // Sync indices when not scrubbing
+      if (!isScrubbing && typeof index === 'number') {
+        setCurrentIndex(index);
+        setScrubIndex(null);
+      }
+    });
     sync();
 
     return () => {
       unsubC();
       unsubH();
+      unsubNew();
     };
   }, [isScrubbing]);
 
@@ -228,7 +242,7 @@ export const RSVPWordScrubber: React.FC<RSVPWordScrubberProps> = ({
     if (isScrubbing) {
       // End scrub - commit the selection and snap to center
       const finalIndex = scrubIndex ?? currentIndex;
-      heartbeat.seek(finalIndex);
+      try { newRsvpEngine.seek(finalIndex); } catch (e) { heartbeat.seek(finalIndex); }
       setCurrentIndex(finalIndex);
       onScrubEnd?.(finalIndex);
       RSVPHapticEngine.impactMedium();
@@ -243,7 +257,7 @@ export const RSVPWordScrubber: React.FC<RSVPWordScrubberProps> = ({
     } else if (dx < TAP_THRESHOLD_PX && elapsed < TAP_THRESHOLD_MS) {
       // Tap - select the word under finger
       const tappedIndex = getIndexAtPosition(e.clientX);
-      heartbeat.seek(tappedIndex);
+      try { newRsvpEngine.seek(tappedIndex); } catch (e) { heartbeat.seek(tappedIndex); }
       setCurrentIndex(tappedIndex);
       onWordSelect?.(tappedIndex);
       RSVPHapticEngine.impactMedium();

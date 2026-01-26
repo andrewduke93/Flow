@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useLayoutEffect } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine } from '../services/newRsvpEngine';
 import { useTitanTheme } from '../services/titanTheme';
 import { useTitanSettings } from '../services/configService';
 import { RSVPToken } from '../types';
@@ -92,9 +93,22 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
 
     const unsubC = conductor.subscribe(sync);
     const unsubH = heartbeat.subscribe(sync);
+    const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+      const idx = typeof index === 'number' ? index : heartbeat.currentIndex;
+      setIsPlaying(isPlaying);
+      // Update tokens minimally if heartbeat tokens are empty
+      if (heartbeat.tokens.length === 0 && token) {
+        setTokens([token as RSVPToken]);
+      }
+      if (idx !== lastIndexRef.current) {
+        lastIndexRef.current = idx;
+        setCurrentIndex(idx);
+      }
+    });
+
     sync();
     
-    return () => { unsubC(); unsubH(); };
+    return () => { unsubC(); unsubH(); unsubNew(); };
   }, []);
 
   // Focus token - always use current index

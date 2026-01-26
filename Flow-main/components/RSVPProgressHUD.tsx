@@ -161,7 +161,7 @@ export const RSVPProgressHUD: React.FC = () => {
     }
 
     if (didSnap) RSVPHapticEngine.impactMedium();
-    heartbeat.seek(targetIndex);
+    try { newRsvpEngine.seek(targetIndex); } catch (e) { heartbeat.seek(targetIndex); }
   };
 
   const opacity = (isPlaying && !isScrubbing) ? 0.1 : 0.9;

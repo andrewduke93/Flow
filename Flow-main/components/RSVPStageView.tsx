@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { RSVPConductor } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine } from '../services/newRsvpEngine';
 import { RSVPLens } from './RSVPLens';
 import { RSVPToken } from '../types';
 
@@ -35,27 +36,42 @@ export const RSVPStageView: React.FC<RSVPStageViewProps> = React.memo(({ onToggl
     let pendingUpdate = false;
     
     const sync = () => {
-        const idx = heartbeat.currentIndex;
-        // Only trigger React render if the index has changed
-        if (idx !== lastIndexRef.current) {
-            if (!pendingUpdate) {
-                pendingUpdate = true;
-                // Batch state updates using RAF for smoother performance
-                rafId = requestAnimationFrame(() => {
-                    lastIndexRef.current = idx;
-                    setCurrentToken(heartbeat.currentToken);
-                    pendingUpdate = false;
-                });
-            }
+      const idx = heartbeat.currentIndex;
+      // Only trigger React render if the index has changed
+      if (idx !== lastIndexRef.current) {
+        if (!pendingUpdate) {
+          pendingUpdate = true;
+          // Batch state updates using RAF for smoother performance
+          rafId = requestAnimationFrame(() => {
+            lastIndexRef.current = idx;
+            setCurrentToken(heartbeat.currentToken);
+            pendingUpdate = false;
+          });
         }
+      }
     };
 
     const unsubC = conductor.subscribe(sync);
     const unsubH = heartbeat.subscribe(sync);
+    const unsubNew = newRsvpEngine.subscribe(({ index, token }) => {
+      const idx = typeof index === 'number' ? index : heartbeat.currentIndex;
+      if (idx !== lastIndexRef.current) {
+      if (!pendingUpdate) {
+        pendingUpdate = true;
+        rafId = requestAnimationFrame(() => {
+        lastIndexRef.current = idx;
+        setCurrentToken((token as any) ?? heartbeat.currentToken);
+        pendingUpdate = false;
+        });
+      }
+      }
+    });
+
     return () => { 
-        unsubC(); 
-        unsubH();
-        if (rafId !== null) cancelAnimationFrame(rafId);
+      unsubC(); 
+      unsubH();
+      unsubNew();
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, []);
 

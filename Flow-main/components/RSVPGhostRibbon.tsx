@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine } from '../services/newRsvpEngine';
 import { RSVPTokenView } from './RSVPTokenView';
 import { RSVPToken } from '../types';
 
@@ -34,7 +35,13 @@ export const RSVPGhostRibbon: React.FC<RSVPGhostRibbonProps> = ({ screenCenter }
             setTokens(heartbeat.tokens);
         }
     });
-    return unsubscribe;
+
+    const unsubNew = newRsvpEngine.subscribe(({ index, token }) => {
+      if (typeof index === 'number') setCurrentIndex(index);
+      if (heartbeat.tokens.length === 0 && token) setTokens([token as RSVPToken]);
+    });
+
+    return () => { unsubscribe(); unsubNew(); };
   }, [tokens]); // Dependency on tokens ensures we detect ref changes if needed, though mostly handled by check inside.
 
   // Safe fetch (The Past, Present, Future)
