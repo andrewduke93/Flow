@@ -1,3 +1,4 @@
+import { FixedSizeList as List } from 'react-window';
 import React, { useEffect, useRef, useState, useMemo, memo, useCallback, useLayoutEffect } from 'react';
 import { Book, RSVPToken } from '../types';
 import { TitanCore } from '../services/titanCore';
@@ -624,17 +625,35 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       );
   }, [paragraphs, activeIndex]);
 
-  // Sectioning logic: chunk paragraphs into blocks of 30
-  const sections = useMemo(() => {
-      const t0 = performance.now();
-      const result = [];
-      for (let i = 0; i < paragraphs.length; i += 30) {
-          result.push(paragraphs.slice(i, i + 30));
-      }
-      const t1 = performance.now();
-      console.log(`[TitanReaderView] Sectioning paragraphs took ${(t1 - t0).toFixed(2)}ms for ${paragraphs.length} paragraphs, ${result.length} sections.`);
-      return result;
-  }, [paragraphs]);
+
+    // Virtualized paragraph renderer
+    const Row = useCallback(({ index, style }) => {
+        const p = paragraphs[index];
+        if (!p) return null;
+        // Only render active or near-active as interactive, rest as static
+        const isActiveWindow = Math.abs(index - activeParagraphIndex) <= 1;
+        return (
+            <div style={style} key={p.startIndex}>
+                {isActiveWindow ? (
+                    <ParagraphChunk
+                        startTokenIndex={p.startIndex}
+                        tokens={p.tokens}
+                        activeIndex={activeIndex}
+                        onWordClick={handleWordClick}
+                        settings={settings}
+                        theme={theme}
+                    />
+                ) : (
+                    <StaticParagraph
+                        text={p.plainText}
+                        settings={settings}
+                        startTokenIndex={p.startIndex}
+                        onParagraphClick={handleParagraphClick}
+                    />
+                )}
+            </div>
+        );
+    }, [paragraphs, activeParagraphIndex, activeIndex, handleWordClick, handleParagraphClick, settings, theme]);
 
   return (
     <div 
@@ -679,22 +698,18 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
           </div>
       )}
 
-      <div className="w-full min-h-[100dvh] px-6 md:px-0 py-24 md:py-32 box-border relative">
-           {sections.map((section, idx) => (
-               <ParagraphSection 
-                  key={idx}
-                  sectionIndex={idx}
-                  paragraphs={section}
-                  activeParagraphIndex={activeParagraphIndex}
-                  activeIndex={activeIndex}
-                  onWordClick={handleWordClick}
-                  onParagraphClick={handleParagraphClick}
-                  settings={settings}
-                  theme={theme}
-               />
-           ))}
-           <div className="h-[40vh]" /> 
-      </div>
+            <div className="w-full min-h-[100dvh] px-6 md:px-0 py-24 md:py-32 box-border relative">
+                <List
+                    height={window.innerHeight * 0.7}
+                    itemCount={paragraphs.length}
+                    itemSize={120}
+                    width={"100%"}
+                    overscanCount={4}
+                >
+                    {Row}
+                </List>
+                <div className="h-[40vh]" />
+            </div>
     </div>
   );
 };
