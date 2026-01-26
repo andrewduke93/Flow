@@ -22,6 +22,18 @@ export default defineConfig(({ mode }) => {
       build: {
         outDir: 'dist',
         sourcemap: false,
+        rollupOptions: {
+          output: {
+            // split the large reader UI into a separate chunk to improve TTI
+            manualChunks: {
+              reader: [
+                'components/TitanReaderView.tsx',
+                'components/ReaderContainer.tsx',
+                'components/TitanShelfView.tsx'
+              ]
+            }
+          }
+        }
       },
       plugins: [react()],
       define: {
