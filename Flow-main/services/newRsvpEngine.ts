@@ -5,10 +5,12 @@ type Subscriber = (state: { index: number; token: RSVPToken | null; isPlaying: b
 export class NewRSVPEngine {
   private worker: Worker | null = null;
   private tokens: RSVPToken[] = [];
+  private rawTokens: { index: number; text: string; duration: number; }[] = [];
   private currentIndex = 0;
   private timer: number | null = null;
   private playing = false;
   private subscribers: Set<Subscriber> = new Set();
+  private wpm = 300;
 
   constructor() {
     // Create worker using Vite-compatible URL import
@@ -19,15 +21,17 @@ export class NewRSVPEngine {
       this.worker.onmessage = (e: MessageEvent) => {
         const data = e.data;
         if (!data) return;
-        if (data.type === 'chunk') {
-          const incoming = (data.tokens || []).map((t: any) => ({ index: t.index, text: t.text, duration: t.duration }));
-          // Append chunk in-order
-          this.tokens = this.tokens.concat(incoming);
-          this.notify();
+          if (data.type === 'chunk') {
+            const incoming = (data.tokens || []).map((t: any) => ({ index: t.index, text: t.text, duration: t.duration }));
+            // Append chunk in-order to rawTokens then map to RSVPTokens
+            this.rawTokens = this.rawTokens.concat(incoming);
+            this.tokens = mapRawToRSVPTokens(this.rawTokens, this.wpm);
+            this.notify();
         } else if (data.type === 'progress') {
           // Could surface progress if needed; ignore for now
         } else if (data.type === 'prepared') {
-          this.tokens = (data.tokens || []).map((t: any) => ({ index: t.index, text: t.text, duration: t.duration }));
+          this.rawTokens = (data.tokens || []).map((t: any) => ({ index: t.index, text: t.text, duration: t.duration }));
+          this.tokens = mapRawToRSVPTokens(this.rawTokens, this.wpm);
           this.currentIndex = 0;
           this.playing = false;
           this.notify();
@@ -43,10 +47,13 @@ export class NewRSVPEngine {
 
   public async prepare(content: string, wpm = 300, chunkSize = 1): Promise<void> {
     return new Promise((resolve, reject) => {
+      // store requested wpm for mapping and scheduling
+      this.wpm = wpm;
       if (!this.worker) {
         // Fallback: simple main-thread tokenization
         const words = content.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-        this.tokens = words.map((w, i) => ({ index: i, text: w, duration: Math.round(60000 / Math.max(1, wpm)) }));
+          this.rawTokens = words.map((w, i) => ({ index: i, text: w, duration: Math.round(60000 / Math.max(1, wpm)) }));
+          this.tokens = mapRawToRSVPTokens(this.rawTokens, this.wpm);
         this.currentIndex = 0;
         this.notify();
         resolve();
@@ -122,6 +129,8 @@ export class NewRSVPEngine {
       return;
     }
     this.notify();
+    const baseMs = Math.round(60000 / Math.max(1, this.wpm || 300));
+    const duration = (token as any).durationMultiplier ? Math.round(baseMs * (token as any).durationMultiplier) : baseMs;
     this.timer = window.setTimeout(() => {
       this.currentIndex = Math.min(this.tokens.length - 1, this.currentIndex + 1);
       if (this.currentIndex >= this.tokens.length - 1) {
@@ -143,7 +152,7 @@ export class NewRSVPEngine {
 
   // Expose raw token data for migration purposes
   public getTokensRaw(): { index: number; text: string; duration: number }[] {
-    return this.tokens.map(t => ({ index: (t as any).index ?? 0, text: (t as any).text ?? '', duration: (t as any).duration ?? 0 }));
+    return this.rawTokens.map(t => ({ index: t.index ?? 0, text: t.text ?? '', duration: t.duration ?? 0 }));
   }
 
   private notify() {
