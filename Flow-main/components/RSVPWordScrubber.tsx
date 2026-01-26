@@ -75,9 +75,10 @@ export const RSVPWordScrubber: React.FC<RSVPWordScrubberProps> = ({
     const unsubC = conductor.subscribe(sync);
     const unsubH = heartbeat.subscribe(sync);
     const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
-      // Update visibility based on legacy conductor state if available
-      const isPaused = conductor.state === RSVPState.PAUSED;
-      setIsVisible(isPaused && (heartbeat.tokens.length > 0 || !!token));
+      // Prefer new engine's playing state for visibility (paused => show scrubber)
+      const isPausedFromEngine = !isPlaying;
+      const hasTokens = heartbeat.tokens.length > 0 || !!token;
+      setIsVisible(isPausedFromEngine && hasTokens);
       // Update tokens if heartbeat empty
       if (heartbeat.tokens.length === 0 && token) setTokens([token as any]);
       // Sync indices when not scrubbing
