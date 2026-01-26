@@ -54,10 +54,20 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
     const unsubEngine = engine.subscribe(sync);
     const unsubConductor = conductor.subscribe(sync);
-    const unsubNew = newRsvpEngine.subscribe(({ isPlaying }) => setIsPlaying(isPlaying));
-    
+    const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+      setIsPlaying(isPlaying);
+      // Compute percentage and jump scroll view to match RSVP position
+      const total = Math.max(1, engine.totalTokens);
+      const pct = Math.min(1, Math.max(0, index / total));
+      try {
+        engine.jump(pct);
+      } catch (e) {
+        // Best effort; ignore if engine.jump not available
+      }
+    });
+
     sync();
-    return () => { unsubEngine(); unsubConductor(); };
+    return () => { unsubEngine(); unsubConductor(); unsubNew(); };
   }, []);
 
   // Cleanup
