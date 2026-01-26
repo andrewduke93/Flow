@@ -27,23 +27,14 @@ export class RSVPAligner {
    * Adaptive ORP: For each word, select the most visually stable character as the focus (not just the middle).
    * For short words, bias to the first consonant; for long, bias to a stable center.
    */
+  /**
+   * RSVP Standard ORP: 35% through the word (rounded down), not just the center.
+   * See: https://en.wikipedia.org/wiki/Rapid_serial_visual_presentation
+   */
   public static getAdaptiveORP(text: string): number {
     if (text.length <= 1) return 0;
-    if (text.length <= 4) {
-      // For very short words, prefer the first consonant if possible
-      const match = /[^aeiou]/i.exec(text);
-      return match ? match.index! : 0;
-    }
-    // For longer words, bias to a visually stable center (avoid i/l/1 if possible)
-    const center = Math.floor(text.length / 2);
-    const stable = /[mwMWzZxXvVtTnN]/;
-    if (stable.test(text[center])) return center;
-    // Search left/right for a stable char
-    for (let offset = 1; offset < text.length / 2; ++offset) {
-      if (center - offset >= 0 && stable.test(text[center - offset])) return center - offset;
-      if (center + offset < text.length && stable.test(text[center + offset])) return center + offset;
-    }
-    return center;
+    // Classic RSVP: focus letter is at Math.floor(0.35 * word.length)
+    return Math.floor(0.35 * text.length);
   }
 
   public static calculateOffset(token: RSVPToken, config: RSVPLayoutConfig): number {
