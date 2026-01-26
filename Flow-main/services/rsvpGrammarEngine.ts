@@ -154,11 +154,15 @@ export interface GrammarContext {
 export function calculateGrammarDuration(
   word: string,
   punctuation: string | undefined,
-  context: GrammarContext
+  context: GrammarContext,
+  wpm: number = 200
 ): number {
   const lowerWord = word.toLowerCase();
   let duration = 1.0;
   
+  // WPM-adaptive pause scale (slower WPM -> relatively larger pauses)
+  const pauseScale = Math.max(0.75, Math.min(1.6, 1 + (200 - Math.max(50, Math.min(1200, wpm))) / 600));
+
   // ─────────────────────────────────────────────────────────────────────────────
   // LAYER 1: Base Word Complexity
   // ─────────────────────────────────────────────────────────────────────────────
@@ -167,14 +171,19 @@ export function calculateGrammarDuration(
   
   // Character count affects recognition time (logarithmic, not linear)
   // Words over 8 chars need more time; under 4 can be faster
-  if (len >= 12) {
-    duration *= 1.3;
-  } else if (len >= 8) {
-    duration *= 1.15;
+  if (len >= 14) {
+    duration *= 1.35;
+  } else if (len >= 9) {
+    duration *= 1.18;
   } else if (len <= 2) {
-    duration *= 0.75;
+    duration *= 0.72;
   } else if (len <= 4) {
-    duration *= 0.9;
+    duration *= 0.88;
+  }
+
+  // Gentle content-word boost (helps important nouns/verbs breathe)
+  if (len >= 8 && !FUNCTION_WORDS.has(lowerWord)) {
+    duration *= 1 + Math.min(0.25, (len - 7) * 0.03);
   }
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -183,12 +192,12 @@ export function calculateGrammarDuration(
   
   if (FUNCTION_WORDS.has(lowerWord)) {
     // Function words are grammatical glue - speed through them
-    duration *= 0.8;
+    duration *= 0.78;
   }
   
   if (EMPHASIS_WORDS.has(lowerWord)) {
     // Emphasis words deserve attention
-    duration *= 1.2;
+    duration *= 1.25;
   }
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -197,18 +206,18 @@ export function calculateGrammarDuration(
   
   // Sentence-initial words need a moment (topic establishment)
   if (context.sentencePosition === 0) {
-    duration *= 1.15;
+    duration *= 1.18;
   }
   
   // Clause starters create natural break points
   if (CLAUSE_STARTERS.has(lowerWord)) {
-    duration *= 1.1;
+    duration *= 1.12;
   }
   
   // After a coordinating conjunction following punctuation = new clause
   // Example: "..., and" or "...; but"
   if (context.prevPunctuation && COORD_CONJUNCTIONS.has(lowerWord)) {
-    duration *= 1.05;
+    duration *= 1.06;
   }
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -219,16 +228,16 @@ export function calculateGrammarDuration(
     // Sum pauses for all punctuation characters
     let punctPause = 0;
     for (const char of punctuation) {
-      punctPause += PUNCTUATION_PAUSES[char] ?? 0;
+      punctPause += (PUNCTUATION_PAUSES[char] ?? 0) * pauseScale;
     }
     
     // Ellipsis detection (sequence of dots)
     if (punctuation.includes('...') || punctuation.includes('\u2026')) {
-      punctPause = Math.max(punctPause, 1.8);
+      punctPause = Math.max(punctPause, 3.0 * pauseScale);
     }
     
     // Cap the maximum punctuation pause to prevent excessive delays
-    punctPause = Math.min(punctPause, 2.5);
+    punctPause = Math.min(punctPause, 4.0);
     
     duration += punctPause;
   }
@@ -239,12 +248,12 @@ export function calculateGrammarDuration(
   
   if (context.isDialogue) {
     // Dialogue often flows more naturally/quickly (conversational pacing)
-    duration *= 0.95;
+    duration *= 0.94;
     
     // But dialogue tags need a slight pause for attribution
     if (lowerWord === 'said' || lowerWord === 'asked' || lowerWord === 'replied' ||
         lowerWord === 'whispered' || lowerWord === 'shouted' || lowerWord === 'muttered') {
-      duration *= 1.1;
+      duration *= 1.12;
     }
   }
   
@@ -254,31 +263,31 @@ export function calculateGrammarDuration(
   
   // Numbers need more processing time
   if (/\d/.test(word)) {
-    duration *= 1.2;
+    duration *= 1.35;
   }
   
   // ALL CAPS words (shouting/emphasis in text)
   if (word === word.toUpperCase() && word.length > 1 && /[A-Z]/.test(word)) {
-    duration *= 1.15;
+    duration *= 1.2;
   }
   
   // Hyphenated compounds are visually complex
   if (word.includes('-') && word.length > 5) {
-    duration *= 1.1;
+    duration *= 1.12;
   }
   
   // Contractions are familiar and quick
   if (word.includes("'") && len < 8) {
-    duration *= 0.9;
+    duration *= 0.88;
   }
   
   // ─────────────────────────────────────────────────────────────────────────────
   // FINAL: Clamp to reasonable bounds
   // ─────────────────────────────────────────────────────────────────────────────
   
-  // Minimum 0.5x (never too fast to read)
-  // Maximum 4.0x (never so slow it breaks flow)
-  return Math.max(0.5, Math.min(4.0, duration));
+  // Minimum 0.45x (never too fast to read)
+  // Maximum 6.0x (allow longer breathing pauses for sentences/paragraphs)
+  return Math.max(0.45, Math.min(6.0, duration));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -387,7 +396,8 @@ export class SentenceTracker {
  * This is the main entry point for the grammar engine.
  */
 export function processTokensWithGrammar(
-  tokens: Array<{ word: string; punctuation?: string }>
+  tokens: Array<{ word: string; punctuation?: string }>,
+  wpm: number = 200
 ): number[] {
   const dialogueTracker = new DialogueTracker();
   const sentenceTracker = new SentenceTracker();
@@ -413,7 +423,8 @@ export function processTokensWithGrammar(
     const duration = calculateGrammarDuration(
       token.word,
       token.punctuation,
-      context
+      context,
+      wpm
     );
     
     durations.push(duration);
@@ -432,7 +443,8 @@ export function processTokensWithGrammar(
  */
 export const GRAMMAR_AWARE_WORKER_CODE = `
 self.onmessage = function(e) {
-    const { text, startingIndex } = e.data;
+    const { text, startingIndex, wpm = 200 } = e.data;
+    const pauseScale = Math.max(0.75, Math.min(1.6, 1 + (200 - Math.max(50, Math.min(1200, wpm))) / 600));
     const tokens = [];
     let currentTokenIndex = startingIndex;
     
@@ -471,9 +483,10 @@ self.onmessage = function(e) {
     ]);
     
     const PUNCT_PAUSES = {
-      '.': 1.4, '?': 1.5, '!': 1.3, ';': 0.9, ':': 0.8, ',': 0.35,
-      '\\u2014': 0.6, '\\u2013': 0.4, '-': 0.1, '"': 0.25, "'": 0.15, '\\u201C': 0.25,
-      '\\u201D': 0.25, '\\u2018': 0.15, '\\u2019': 0.15, '(': 0.2, ')': 0.3, '\\u2026': 1.8
+      '.': 2.2, '?': 2.3, '!': 2.0, ';': 1.2, ':': 1.0, ',': 0.65,
+      '\\u2014': 1.1, '\\u2013': 0.7, '-': 0.12, '"': 0.45, "'": 0.25, '\\u201C': 0.45,
+      '\\u201D': 0.45, '\\u2018': 0.25, '\\u2019': 0.25, '(': 0.35, ')': 0.5, '\\u2026': 3.0,
+      '...': 3.0
     };
     
     // ═════════════════════════════════════════════════════════════════════════
@@ -493,43 +506,40 @@ self.onmessage = function(e) {
         const len = word.length;
         let dur = 1.0;
         
-        // Estimate syllables using proven syllable count algorithm
-        // (correlates strongly with reading time)
+        // Syllable estimate for robustness
         const syllables = estimateSyllables(word);
-        
-        // Syllable-based timing (more reliable than character length)
-        // Most English words: ~1-2 syllables, average 1.5
-        // 1 syllable = 0.85x (faster), 2 syllables = 1.0x (normal), 3+ = 1.0 + 0.2*(n-2)
-        if (syllables <= 1) dur *= 0.85;
+        if (syllables <= 1) dur *= 0.82;
         else if (syllables === 2) dur *= 1.0;
-        else if (syllables >= 3) dur *= (1.0 + (syllables - 2) * 0.2);
+        else if (syllables >= 3) dur *= (1.0 + (syllables - 2) * 0.22);
         
-        // Category-based adjustments (these still apply)
-        if (FUNCTION_WORDS.has(lowerWord)) dur *= 0.85;
-        if (EMPHASIS_WORDS.has(lowerWord)) dur *= 1.15;
-        if (sentPos === 0) dur *= 1.1;
-        if (CLAUSE_STARTERS.has(lowerWord)) dur *= 1.05;
+        // Function vs content words
+        if (FUNCTION_WORDS.has(lowerWord)) dur *= 0.8;
+        else if (len >= 8) dur *= 1 + Math.min(0.25, (len - 7) * 0.03);
+        if (EMPHASIS_WORDS.has(lowerWord)) dur *= 1.2;
+        if (sentPos === 0) dur *= 1.12;
+        if (CLAUSE_STARTERS.has(lowerWord)) dur *= 1.08;
         
-        // Punctuation (critical for natural pacing)
+        // Punctuation (now WPM-adaptive via pauseScale)
         if (punct) {
             let pPause = 0;
             for (let c of punct) {
-                pPause += PUNCT_PAUSES[c] || 0;
+                pPause += (PUNCT_PAUSES[c] || 0) * pauseScale;
             }
-            if (punct.includes('...') || punct.includes('\u2026')) pPause = Math.max(pPause, 1.5);
-            dur += Math.min(pPause, 2.0);
+            if (punct.includes('...') || punct.includes('\u2026')) pPause = Math.max(pPause, 3.0 * pauseScale);
+            dur += Math.min(pPause, 4.0);
         }
         
-        // Dialogue pacing (slightly faster)
-        if (isDialogue) dur *= 0.92;
+        // Dialogue
+        if (isDialogue) dur *= 0.93;
         
         // Special patterns
-        if (/\d/.test(word)) dur *= 1.15;  // Numbers take longer to parse
-        if (word === word.toUpperCase() && len > 1 && /[A-Z]/.test(word)) dur *= 1.1;
-        if (word.includes('-') && len > 5) dur *= 1.05;  // Hyphenated words
-        if (word.includes("'") && len < 8) dur *= 0.9;   // Contractions
+        if (/\d/.test(word)) dur *= 1.3;
+        if (word === word.toUpperCase() && len > 1 && /[A-Z]/.test(word)) dur *= 1.15;
+        if (word.includes('-') && len > 5) dur *= 1.08;
+        if (word.includes("'") && len < 8) dur *= 0.88;
         
-        return Math.max(0.5, Math.min(3.5, dur));
+        // Clamp (allow longer breathing pauses)
+        return Math.max(0.45, Math.min(6.0, dur));
     }
     
     // Syllable counter using proven linguistics algorithm
@@ -630,9 +640,9 @@ self.onmessage = function(e) {
             
             const isParagraphEnd = trailingSpace.indexOf('\\n') !== -1;
             
-            // Add paragraph pause
+            // Add paragraph pause (scaled by WPM-aware pauseScale)
             let finalDuration = duration;
-            if (isParagraphEnd) finalDuration += 1.8;
+            if (isParagraphEnd) finalDuration += 2.4 * pauseScale;
             
             tokens.push({
                 id: 't-' + currentTokenIndex,
@@ -647,6 +657,24 @@ self.onmessage = function(e) {
                 globalIndex: currentTokenIndex,
                 startOffset: matchIndex
             });
+
+            // Insert a short explicit silent 'breath' after sentence-ending punctuation
+            if (isSentenceEnd) {
+                tokens.push({
+                    id: 't-' + (currentTokenIndex + 1),
+                    originalText: '\u200B',
+                    leftSegment: '',
+                    centerCharacter: '\u200B',
+                    rightSegment: '',
+                    punctuation: undefined,
+                    durationMultiplier: 1.2 * pauseScale,
+                    isSentenceEnd: false,
+                    isParagraphEnd: false,
+                    globalIndex: currentTokenIndex + 1,
+                    startOffset: matchIndex + fullChunk.length
+                });
+                currentTokenIndex++;
+            }
             
             currentTokenIndex++;
             count++;

@@ -114,8 +114,8 @@ export class RSVPConductor {
     // We wrap this in an IIFE-style promise assignment to track it
     this.preparationPromise = (async () => {
         try {
-            // Generate Tokens (Async)
-            const tokens = await RSVPProcessor.process(content);
+            // Generate Tokens (Async) — forward current WPM so worker can scale punctuation pauses
+            const tokens = await RSVPProcessor.process(content, 0, this.heartbeat.wpm);
             this.heartbeat.setTokens(tokens);
             this.lastContentRef = content;
         } finally {

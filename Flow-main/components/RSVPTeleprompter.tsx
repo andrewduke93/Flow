@@ -141,29 +141,69 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       const ribbonRect = ribbon.getBoundingClientRect();
       const left = rect.left - ribbonRect.left;
       
-      // Calculate the pixel position of the focus letter (center character)
-      // by measuring the character width and position within the word
+      // Calculate the pixel position of the focus letter (center character).
+      // Default to the visual center as a fallback.
       let focusLetterPos = left + rect.width / 2;
-      
-      // If this is the focus word, we need to find exact position of center letter
+
+      // If this is the focus word, measure the exact substring widths in-DOM
+      // to account for font kerning, ligatures and browser layout.
       if (idx === currentIndex && focusToken) {
-        const text = focusToken.originalText;
-        const focusCharIdx = Math.floor(text.length / 2);
-        
-        // Estimate letter width based on word width and length
-        // This accounts for variable character widths
-        const estimatedCharWidth = rect.width / text.length;
-        const charOffset = focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
-        focusLetterPos = left + charOffset;
+        try {
+          const text = focusToken.originalText || '';
+          const focusCharIdx = Math.max(0, Math.min(text.length - 1, Math.floor(text.length / 2)));
+
+          // Create a hidden measurement span that uses the same font as the word
+          const measureSpan = document.createElement('span');
+          measureSpan.style.visibility = 'hidden';
+          measureSpan.style.position = 'absolute';
+          measureSpan.style.whiteSpace = 'nowrap';
+          // inherit computed font to match rendering exactly
+          measureSpan.style.font = window.getComputedStyle(child).font || '';
+
+          // Measure width up to (and including) the focus character, and up to the focus char (exclusive)
+          // This yields the character width as difference, which works reliably for variable-width fonts.
+          measureSpan.textContent = text.substring(0, focusCharIdx + 1);
+          child.appendChild(measureSpan);
+          const uptoInclusive = measureSpan.getBoundingClientRect().width;
+          child.removeChild(measureSpan);
+
+          measureSpan.textContent = text.substring(0, focusCharIdx);
+          child.appendChild(measureSpan);
+          const uptoExclusive = measureSpan.getBoundingClientRect().width;
+          child.removeChild(measureSpan);
+
+          const charWidth = Math.max(0, uptoInclusive - uptoExclusive);
+          const centerOffset = uptoExclusive + charWidth / 2;
+
+          // final position relative to ribbon left
+          focusLetterPos = left + centerOffset;
+        } catch (e) {
+          // fallback to center if anything goes wrong
+          focusLetterPos = left + rect.width / 2;
+        }
       }
-      
+
       wordPositions.current.set(idx, { left, width: rect.width, center: focusLetterPos });
     });
     
     const activePos = wordPositions.current.get(currentIndex);
     if (activePos) {
       // Align the focus letter position with the reticle
-      setRibbonOffset(reticleX - activePos.center);
+      const delta = reticleX - activePos.center;
+
+      // Expose a CSS variable and dev-only debug output so we can fine-tune visually
+      try {
+        document.documentElement.style.setProperty('--rsvp-center-delta', `${delta.toFixed(2)}px`);
+        // Only noisy in development
+        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.MODE === 'development') {
+          // eslint-disable-next-line no-console
+          console.debug('[RSVPTeleprompter] center delta (px):', delta);
+        }
+      } catch (e) {
+        /* ignore */
+      }
+
+      setRibbonOffset(delta);
     }
   }, [streamTokens, currentIndex, focusToken]);
 
@@ -338,6 +378,8 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
           boxShadow: isRewinding ? `0 0 30px ${FOCUS_COLOR}80` : 'none'
         }}
       />
+
+
 
       {/* WORD STREAM */}
       <div className="absolute inset-x-0 top-[42%] -translate-y-1/2 flex items-center justify-start overflow-visible z-20">

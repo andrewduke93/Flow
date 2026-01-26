@@ -64,7 +64,7 @@ export class RSVPProcessor {
     }
   }
 
-  public static async process(text: string, startingIndex: number = 0): Promise<RSVPToken[]> {
+  public static async process(text: string, startingIndex: number = 0, wpm: number = 200): Promise<RSVPToken[]> {
     // 1. Cancel any ongoing processing
     if (this.isProcessing && this.pendingReject) {
         this.pendingReject(new Error("Cancelled by new process request"));
@@ -85,7 +85,7 @@ export class RSVPProcessor {
         this.isProcessing = true;
         
         if (this.worker) {
-            this.worker.postMessage({ text, startingIndex });
+            this.worker.postMessage({ text, startingIndex, wpm });
         } else {
             reject(new Error("Worker failed to initialize"));
         }
