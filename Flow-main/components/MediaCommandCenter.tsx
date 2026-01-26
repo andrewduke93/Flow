@@ -3,6 +3,7 @@ import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine } from '../services/newRsvpEngine';
 import { Play, Pause, Plus, Minus, Type, ListMusic, Sparkles, SkipBack } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
@@ -172,17 +173,25 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
     setCurrentProgress(initialPct);
     updateVisuals(initialPct);
 
-    const unsubCore = core.subscribe(syncState);
-    const unsubCond = conductor.subscribe(syncState);
-    const unsubProgress = core.onProgress(syncProgress);
-    const unsubHeartbeat = heartbeat.subscribe(syncSmoothProgress);
+        const unsubCore = core.subscribe(syncState);
+        const unsubCond = conductor.subscribe(syncState);
+        const unsubProgress = core.onProgress(syncProgress);
+        const unsubHeartbeat = heartbeat.subscribe(syncSmoothProgress);
+        const unsubNew = newRsvpEngine.subscribe(({ index }) => {
+            if (!isScrubbingRef.current && core.isRSVPMode) {
+                const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
+                const pct = (typeof index === 'number') ? (index / total) : (heartbeat.currentIndex / total);
+                updateVisuals(pct);
+            }
+        });
 
-    return () => { 
-        unsubCore(); 
-        unsubCond(); 
-        unsubProgress(); 
-        unsubHeartbeat();
-    };
+        return () => { 
+                unsubCore(); 
+                unsubCond(); 
+                unsubProgress(); 
+                unsubHeartbeat();
+                unsubNew();
+        };
   }, [updateVisuals]); // updateVisuals now has no dependencies, so this effect runs once.
 
   // -- Interaction Logic --
@@ -260,18 +269,20 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
 
       updateVisuals(clampedPct);
       
-      if (core.isRSVPMode) {
-           const total = Math.max(1, heartbeat.tokens.length);
-           heartbeat.seek(Math.floor(clampedPct * total));
-      } else {
-           core.jump(clampedPct);
-      }
+     if (core.isRSVPMode) {
+         const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
+         const target = Math.floor(clampedPct * total);
+         try { newRsvpEngine.seek(target); } catch (e) { heartbeat.seek(target); }
+     } else {
+         core.jump(clampedPct);
+     }
   };
 
   const commitScrub = (pct: number) => {
       if (core.isRSVPMode) {
-          const total = Math.max(1, heartbeat.tokens.length);
-          heartbeat.seek(Math.floor(pct * total));
+          const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
+          const target = Math.floor(pct * total);
+          try { newRsvpEngine.seek(target); } catch (e) { heartbeat.seek(target); }
       } else {
           core.jump(pct);
       }
@@ -284,8 +295,8 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
     if (now - lastActionTime.current < 300) return;
     lastActionTime.current = now;
     
-    if (navigator.vibrate) navigator.vibrate(10);
-    onToggleRSVP();
+        if (navigator.vibrate) navigator.vibrate(10);
+        onToggleRSVP();
   };
 
   const adjustSpeed = (delta: number) => {

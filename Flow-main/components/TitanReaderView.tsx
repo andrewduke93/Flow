@@ -636,7 +636,33 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
 
 
     // Virtualized paragraph renderer
-    const Row = useCallback(({ index, style }) => {
+    const listRef = useRef<any>(null);
+    const [listHeight, setListHeight] = useState<number>(() => window.innerHeight * 0.7);
+
+    // Keep list height in sync with container size
+    useEffect(() => {
+        const recompute = () => {
+            const h = containerRef.current ? containerRef.current.clientHeight : window.innerHeight;
+            setListHeight(Math.max(200, Math.floor(h * 0.7)));
+        };
+        recompute();
+        const ro = new ResizeObserver(recompute);
+        if (containerRef.current) ro.observe(containerRef.current);
+        window.addEventListener('resize', recompute);
+        return () => { ro.disconnect(); window.removeEventListener('resize', recompute); };
+    }, []);
+
+    // Keep the virtual list centered on the active paragraph when it changes
+    useEffect(() => {
+        if (!listRef.current || activeParagraphIndex < 0) return;
+        try {
+            listRef.current.scrollToItem(activeParagraphIndex, 'center');
+        } catch (e) {
+            // ignore if list not ready
+        }
+    }, [activeParagraphIndex]);
+
+    const Row = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
         const p = paragraphs[index];
         if (!p) return null;
         // Only render active or near-active as interactive, rest as static
@@ -711,11 +737,16 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
 
             <div className="w-full min-h-[100dvh] px-6 md:px-0 py-24 md:py-32 box-border relative">
                 <List
-                    height={window.innerHeight * 0.7}
+                    ref={listRef}
+                    height={listHeight}
                     itemCount={paragraphs.length}
                     itemSize={120}
                     width={"100%"}
-                    overscanCount={4}
+                    overscanCount={6}
+                    itemKey={(index) => {
+                        const p = paragraphs[index];
+                        return p ? String(p.startIndex) : String(index);
+                    }}
                 >
                     {Row}
                 </List>
