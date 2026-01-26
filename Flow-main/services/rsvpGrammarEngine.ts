@@ -166,7 +166,6 @@ export function calculateGrammarDuration(
   // WPM-adaptive pause scale (slower WPM -> relatively larger pauses)
   const pauseScale = Math.max(0.75, Math.min(1.6, 1 + (200 - Math.max(50, Math.min(1200, wpm))) / 600));
 
-<<<<<<< HEAD
   // ─────────────────────────────────────────────────────────────────────────────
   // LAYER 0: Word Frequency (NEW)
   // ─────────────────────────────────────────────────────────────────────────────
@@ -179,9 +178,6 @@ export function calculateGrammarDuration(
     // Very common word: speed up
     duration *= 0.92;
   }
-
-=======
->>>>>>> origin/main
   // ─────────────────────────────────────────────────────────────────────────────
   // LAYER 1: Base Word Complexity
   // ─────────────────────────────────────────────────────────────────────────────
@@ -225,25 +221,18 @@ export function calculateGrammarDuration(
   // Sentence-initial words need a moment (topic establishment)
   if (context.sentencePosition === 0) {
     duration *= 1.18;
-<<<<<<< HEAD
-    // Add a subtle "breath" pause at the start of a sentence
-    duration += 0.18 * pauseScale;
-=======
->>>>>>> origin/main
+  // Add a subtle "breath" pause at the start of a sentence
+  duration += 0.18 * pauseScale;
   }
   // Clause starters create natural break points
   if (CLAUSE_STARTERS.has(lowerWord)) {
     duration *= 1.12;
-<<<<<<< HEAD
-    duration += 0.08 * pauseScale;
-=======
->>>>>>> origin/main
+  duration += 0.08 * pauseScale;
   }
   // After a coordinating conjunction following punctuation = new clause
   // Example: "..., and" or "...; but"
   if (context.prevPunctuation && COORD_CONJUNCTIONS.has(lowerWord)) {
     duration *= 1.06;
-<<<<<<< HEAD
     duration += 0.04 * pauseScale;
   }
   // Add a "breath" pause before/after dialogue boundaries
@@ -252,8 +241,6 @@ export function calculateGrammarDuration(
   }
   if (punctuation && (punctuation.includes('"') || punctuation.includes("'"))) {
     duration += 0.22 * pauseScale;
-=======
->>>>>>> origin/main
   }
   
   // ─────────────────────────────────────────────────────────────────────────────

@@ -367,13 +367,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
           boxShadow: isRewinding ? `0 0 30px ${FOCUS_COLOR}80` : 'none'
         }}
       />
-<<<<<<< HEAD
-=======
-
-
-
-      {/* WORD STREAM */}
->>>>>>> origin/main
+  {/* WORD STREAM */}
       <div className="absolute inset-x-0 top-[42%] -translate-y-1/2 flex items-center justify-start overflow-visible z-20">
         {showContext && (
           <>

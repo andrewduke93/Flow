@@ -227,8 +227,24 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   const [tokens, setTokens] = useState<RSVPToken[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const activeIndexRef = useRef(-1); // Stable ref
-  const [isReady, setIsReady] = useState(false); 
-  const [loadingProgress, setLoadingProgress] = useState(0);
+    const [isReady, setIsReady] = useState(false); 
+    const [loadingProgress, setLoadingProgress] = useState(0);
+    const [tokenizing, setTokenizing] = useState(false);
+    const [tokenizeProgress, setTokenizeProgress] = useState(0);
+    const [loadingPhase, setLoadingPhase] = useState<'book' | 'tokenize'>('book');
+    const [animatedDots, setAnimatedDots] = useState('');
+    // Track if book loading and tokenization are both complete
+    const [bookLoaded, setBookLoaded] = useState(false);
+    const [tokenizationDone, setTokenizationDone] = useState(false);
+    // Animated dots for loading engagement
+    useEffect(() => {
+        if (!isReady) {
+            const interval = setInterval(() => {
+                setAnimatedDots((prev) => prev.length < 3 ? prev + '.' : '');
+            }, 400);
+            return () => clearInterval(interval);
+        }
+    }, [isReady]);
   
   const [isRestored, setIsRestored] = useState(false);
   const isProgrammaticScroll = useRef(false);
@@ -325,55 +341,66 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
         updateActiveIndex(initialIndex);
     }
 
-    const progressUnsub = core.subscribe(() => {
-        setLoadingProgress(core.loadingProgress);
-    });
+        const progressUnsub = core.subscribe(() => {
+            setLoadingProgress(core.loadingProgress);
+        });
     
-    const init = async () => {
-      // RESET COMPONENT STATE
-      setIsReady(false);
-      setIsRestored(false);
-      setLoadingProgress(0);
-      setTokens([]);
+        const init = async () => {
+            // RESET COMPONENT STATE
+            setIsReady(false);
+            setIsRestored(false);
+            setLoadingProgress(0);
+            setTokenizing(false);
+            setTokenizeProgress(0);
+            setLoadingPhase('book');
+            setTokens([]);
 
-      // CRITICAL VALIDATION: Check if book has chapters before loading
-      if (!book.chapters || book.chapters.length === 0) {
-          console.error("[TitanReaderView] Book has no chapters! This indicates a data loading issue.", {
-              bookId: book.id,
-              title: book.title,
-              hasChapters: !!book.chapters,
-              chaptersLength: book.chapters?.length
-          });
-          // Still mark as ready so UI shows (with empty content vs infinite loading)
-          setIsReady(true);
-          setIsRestored(true);
-          return;
-      }
+            // CRITICAL VALIDATION: Check if book has chapters before loading
+            if (!book.chapters || book.chapters.length === 0) {
+                console.error("[TitanReaderView] Book has no chapters! This indicates a data loading issue.", {
+                    bookId: book.id,
+                    title: book.title,
+                    hasChapters: !!book.chapters,
+                    chaptersLength: book.chapters?.length
+                });
+                // Still mark as ready so UI shows (with empty content vs infinite loading)
+                setIsReady(true);
+                setIsRestored(true);
+                return;
+            }
 
-      try {
-          await core.load(book);
-          const fullText = core.contentStorage.string;
-          
-          if (!fullText) {
-              console.warn("[TitanReaderView] Loaded book has no content string.");
-          }
-
-          await conductor.prepare(fullText, { progress: 0 }); 
-      } catch (e) {
-          console.error("[TitanReaderView] Initialization pipeline failed:", e);
-      } finally {
-          const loadedTokens = heartbeat.tokens;
-          setTokens(loadedTokens);
-          
-          // CRITICAL: Only mark as ready if we actually have tokens or if we've definitely finished trying
-          setIsReady(true);
-          
-          // Give the DOM a tiny beat to paint before showing
-          requestAnimationFrame(() => {
-              setIsRestored(true);
-          });
-      }
-    };
+            try {
+                setLoadingPhase('book');
+                await core.load(book);
+                setLoadingProgress(1.0);
+                setLoadingPhase('tokenize');
+                setTokenizing(true);
+                const fullText = core.contentStorage.string;
+                if (!fullText) {
+                    console.warn("[TitanReaderView] Loaded book has no content string.");
+                }
+                // RSVP tokenization progress simulation (since we don't have granular progress, animate)
+                let fakeProgress = 0;
+                setTokenizeProgress(0.01);
+                const progressInterval = setInterval(() => {
+                    fakeProgress += 0.07 + Math.random() * 0.08;
+                    setTokenizeProgress((p) => Math.min(0.98, Math.max(p, fakeProgress)));
+                }, 120);
+                await conductor.prepare(fullText, { progress: 0 });
+                clearInterval(progressInterval);
+                setTokenizeProgress(1.0);
+                setTokenizing(false);
+            } catch (e) {
+                console.error("[TitanReaderView] Initialization pipeline failed:", e);
+            } finally {
+                const loadedTokens = heartbeat.tokens;
+                setTokens(loadedTokens);
+                setIsReady(true);
+                requestAnimationFrame(() => {
+                    setIsRestored(true);
+                });
+            }
+        };
 
     init();
     return () => progressUnsub();
@@ -540,33 +567,35 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   }, [isRestored, tokens.length, updateActiveIndex]);
 
   // -- 5. Memoized Paragraphs --
-  const paragraphs = useMemo(() => {
-    const result: { tokens: RSVPToken[], startIndex: number, plainText: string }[] = [];
-    let currentPara: RSVPToken[] = [];
-    let startIndex = -1;
+    const paragraphs = useMemo(() => {
+        const t0 = performance.now();
+        const result: { tokens: RSVPToken[], startIndex: number, plainText: string }[] = [];
+        let currentPara: RSVPToken[] = [];
+        let startIndex = -1;
 
-    for (const token of tokens) {
-      if (currentPara.length === 0) startIndex = token.globalIndex;
-      currentPara.push(token);
-      
-      if (token.isParagraphEnd) {
-        result.push({ 
-            tokens: currentPara, 
-            startIndex, 
-            plainText: currentPara.map(t => t.originalText).join(" ") 
-        });
-        currentPara = [];
-      }
-    }
-    if (currentPara.length > 0) {
-        result.push({ 
-            tokens: currentPara, 
-            startIndex: startIndex === -1 ? 0 : startIndex,
-            plainText: currentPara.map(t => t.originalText).join(" ")
-        });
-    }
-    return result;
-  }, [tokens]);
+        for (const token of tokens) {
+            if (currentPara.length === 0) startIndex = token.globalIndex;
+            currentPara.push(token);
+            if (token.isParagraphEnd) {
+                result.push({ 
+                        tokens: currentPara, 
+                        startIndex, 
+                        plainText: currentPara.map(t => t.originalText).join(" ") 
+                });
+                currentPara = [];
+            }
+        }
+        if (currentPara.length > 0) {
+                result.push({ 
+                        tokens: currentPara, 
+                        startIndex: startIndex === -1 ? 0 : startIndex,
+                        plainText: currentPara.map(t => t.originalText).join(" ")
+                });
+        }
+        const t1 = performance.now();
+        console.log(`[TitanReaderView] Token-to-paragraph mapping took ${(t1 - t0).toFixed(2)}ms for ${tokens.length} tokens, ${result.length} paragraphs.`);
+        return result;
+    }, [tokens]);
   
   const handleWordClick = useCallback((index: number, startOffset: number) => {
     updateActiveIndex(index);
@@ -588,10 +617,13 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
 
   // Sectioning logic: chunk paragraphs into blocks of 30
   const sections = useMemo(() => {
+      const t0 = performance.now();
       const result = [];
       for (let i = 0; i < paragraphs.length; i += 30) {
           result.push(paragraphs.slice(i, i + 30));
       }
+      const t1 = performance.now();
+      console.log(`[TitanReaderView] Sectioning paragraphs took ${(t1 - t0).toFixed(2)}ms for ${paragraphs.length} paragraphs, ${result.length} sections.`);
       return result;
   }, [paragraphs]);
 
@@ -612,27 +644,16 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
         if (e.target === e.currentTarget) onToggleChrome();
       }}
     >
-      {/* LOADING OVERLAY */}
-      {!isReady && (
-          <div 
-              className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-auto"
-              style={{ backgroundColor: theme.background }}
-          >
-              <div className="flex flex-col items-center gap-6">
-                  <div className="w-12 h-12 relative">
-                       <div className="absolute inset-0 rounded-full border-2 opacity-20" style={{ borderColor: theme.accent }} />
-                       <div 
-                          className="absolute inset-0 rounded-full border-2 border-t-transparent animate-spin" 
-                          style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} 
-                       />
-                  </div>
-                  <div className="flex flex-col items-center">
-                      <span className="text-sm font-bold tracking-widest lowercase" style={{ color: theme.secondaryText }}>loading</span>
-                      <span className="text-xs font-mono mt-1 opacity-50" style={{ color: theme.primaryText }}>{Math.floor(loadingProgress * 100)}%</span>
-                  </div>
-              </div>
-          </div>
-      )}
+
+            {/* MINIMAL LOADING SPINNER */}
+            {!isReady && (
+                <div className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-auto" style={{ backgroundColor: theme.background }}>
+                    <div className="w-12 h-12 relative">
+                        <div className="absolute inset-0 rounded-full border-2 opacity-20" style={{ borderColor: theme.accent }} />
+                        <div className="absolute inset-0 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} />
+                    </div>
+                </div>
+            )}
 
       {/* EMPTY STATE: No content loaded */}
       {isReady && tokens.length === 0 && (
