@@ -1,3 +1,4 @@
+import { test, expect } from 'vitest';
 import { Worker } from 'worker_threads';
 import path from 'path';
 
@@ -18,7 +19,7 @@ function waitForMessage(worker: Worker, predicate: (m: any) => boolean, timeout 
 }
 
 test('reedy worker loads and prepares tokens', async () => {
-  const workerPath = path.resolve(__dirname, '../test-workers/reedyIntegrationWorker.js');
+  const workerPath = path.resolve(process.cwd(), 'test-workers/reedyIntegrationWorker.js');
   const w = new Worker(workerPath);
   try {
     const loaded = await waitForMessage(w, (m) => m && m.type === 'reedy-loaded', 5000);
