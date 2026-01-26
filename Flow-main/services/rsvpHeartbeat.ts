@@ -104,6 +104,22 @@ export class RSVPHeartbeat {
   }
 
   public play() {
+    // Prefer delegating playback to newRsvpEngine when available (migration path)
+    try {
+      if (this._isPlaying) return;
+      if (this.tokens.length === 0) return;
+      if (this.currentIndex >= this.tokens.length - 1) {
+        this.currentIndex = 0;
+      }
+      // Delegate to new engine
+      newRsvpEngine.play();
+      this._isPlaying = true;
+      this.notify();
+      return;
+    } catch (e) {
+      // Fallback to internal RAF-based loop
+    }
+
     if (this._isPlaying) return;
     if (this.tokens.length === 0) return;
     if (this.currentIndex >= this.tokens.length - 1) {
@@ -116,8 +132,6 @@ export class RSVPHeartbeat {
     this.accumulatedTime = 0; // Reset token timer
     
     // Phase 9-F: Velocity Ramp
-    // Only reset ramp on COLD start (index 0), not on resume
-    // This prevents the slow start feel when pausing and resuming
     if (this.currentIndex === 0) {
       this.rampStep = 0; 
     }
@@ -128,6 +142,17 @@ export class RSVPHeartbeat {
   }
 
   public pause() {
+    // Prefer delegating pause to newRsvpEngine when available
+    try {
+      if (!this._isPlaying) return;
+      newRsvpEngine.pause();
+      this._isPlaying = false;
+      this.notify();
+      return;
+    } catch (e) {
+      // Fallback to internal pause
+    }
+
     if (!this._isPlaying) return;
 
     this._isPlaying = false;
@@ -160,13 +185,31 @@ export class RSVPHeartbeat {
   }
 
   public toggle() {
-    if (this._isPlaying) this.pause();
-    else this.play();
+    // Delegate toggle to new engine if available
+    try {
+      newRsvpEngine.togglePlay();
+      return;
+    } catch (e) {
+      if (this._isPlaying) this.pause();
+      else this.play();
+    }
   }
 
   public seek(index: number) {
     const wasPlaying = this._isPlaying;
     if (wasPlaying) this.pause();
+
+    // Try delegating seek to new engine first
+    try {
+      newRsvpEngine.seek(index);
+      this.currentIndex = Math.max(0, Math.min(index, this.tokens.length - 1));
+      this.accumulatedTime = 0;
+      this.notify();
+      if (wasPlaying) this.play();
+      return;
+    } catch (e) {
+      // fallback to internal seek
+    }
 
     // Clamp index
     this.currentIndex = Math.max(0, Math.min(index, this.tokens.length - 1));
