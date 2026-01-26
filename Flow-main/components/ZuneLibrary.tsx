@@ -28,13 +28,24 @@ export const ZuneLibrary: React.FC<ZuneLibraryProps> = ({ books, onSelectBook, o
              animate={{ opacity: 1, y: 0 }}
              transition={{ delay: i * 0.03 }}
            >
-              {book.coverUrl ? (
-                 <img src={book.coverUrl} className="w-full h-full object-cover opacity-40 group-hover:opacity-100 transition-opacity duration-500" />
-              ) : (
-                 <div className="w-full h-full flex items-center justify-center p-4 bg-neutral-800">
+                {book.coverUrl ? (
+                 <div className="w-full h-full relative">
+                  <img
+                    src={book.coverUrl}
+                    className="w-full h-full object-cover opacity-40 group-hover:opacity-100 transition-opacity duration-500"
+                    loading="lazy"
+                    style={{ position: 'absolute', inset: 0, zIndex: 2, opacity: 0, transition: 'opacity 0.5s' }}
+                    onLoad={e => { (e.currentTarget as HTMLImageElement).style.opacity = '1'; }}
+                  />
+                  <div className="w-full h-full flex items-center justify-center bg-neutral-800 animate-pulse" style={{ zIndex: 1, position: 'absolute', inset: 0 }}>
                     <h3 className="text-center font-bold text-white/10 uppercase tracking-tighter text-[10px]">{book.title}</h3>
+                  </div>
                  </div>
-              )}
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center p-4 bg-neutral-800">
+                    <h3 className="text-center font-bold text-white/10 uppercase tracking-tighter text-[10px]">{book.title}</h3>
+                  </div>
+                )}
               
               <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black via-black/80 to-transparent">
                  <h4 className="text-sm font-black truncate text-white mb-0.5 lowercase tracking-tight">{book.title}</h4>
