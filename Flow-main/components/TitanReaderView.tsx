@@ -271,68 +271,77 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   }, []);
 
   // SCROLL ENGINE: The critical piece for navigation
-  const scrollToToken = useCallback((index: number, smooth: boolean) => {
-      if (!containerRef.current) return;
-      
-      // 1. Try to find the specific word span (only exists if near active window)
-      let element = document.getElementById(`w-${index}`);
-      
-      // 2. FALLBACK: If word not rendered (StaticParagraph), find the paragraph container
-      if (!element) {
-          // We look for the paragraph with the largest start-index that is <= index
-          const allParas = Array.from(containerRef.current.querySelectorAll('p[data-start-index]')) as HTMLElement[];
-          let best: HTMLElement | null = null;
-          let bestStart = -1;
-          
-          for (const p of allParas) {
-              const s = parseInt(p.dataset.startIndex || "-1");
-              // Find the paragraph that *contains* this index (starts before or at it)
-              if (s <= index && s > bestStart) {
-                  best = p;
-                  bestStart = s;
-              }
-          }
-          element = best;
-      }
+    // Debounced and batched scrollToToken to avoid forced reflows/layout thrash
+    const scrollToTokenQueue = useRef<{index: number, smooth: boolean} | null>(null);
+    const scrollToTokenTimer = useRef<number | null>(null);
+    const isScrollingFrame = useRef(false);
 
-      if (!element) {
-          // Last resort: Just scroll percentage if DOM is missing (rare but possible on load)
-          // We calculate approximate height based on token ratio
-          if (core.totalTokens > 0) {
-             const ratio = index / core.totalTokens;
-             const totalH = containerRef.current.scrollHeight;
-             const targetY = totalH * ratio;
-             containerRef.current.scrollTo({ top: targetY, behavior: smooth ? 'smooth' : 'instant' });
-          }
-          return;
-      }
-
-      isProgrammaticScroll.current = true;
-
-      const container = containerRef.current;
-      // Offset by 15% of screen height to place text comfortably near top but not hidden
-      const opticalCenter = container.clientHeight * 0.15; 
-      
-      let offsetTop = element.offsetTop;
-      let parent = element.offsetParent as HTMLElement;
-      while (parent && parent !== container) {
-          offsetTop += parent.offsetTop;
-          parent = parent.offsetParent as HTMLElement;
-      }
-
-      const targetScroll = offsetTop - opticalCenter;
-      
-      container.scrollTo({
-          top: Math.max(0, targetScroll),
-          behavior: smooth ? 'smooth' : 'instant'
-      });
-
-      // Release lock after animation
-      setTimeout(() => {
-          isProgrammaticScroll.current = false;
-      }, smooth ? 600 : 100);
-
-  }, []);
+    const scrollToToken = useCallback((index: number, smooth: boolean) => {
+        // Always keep only the latest scroll request
+        scrollToTokenQueue.current = { index, smooth };
+        if (scrollToTokenTimer.current) {
+            clearTimeout(scrollToTokenTimer.current);
+        }
+        // Batch scrolls: perform after 1 animation frame (or 16ms)
+        scrollToTokenTimer.current = window.setTimeout(() => {
+            if (isScrollingFrame.current) return; // Prevent multiple in one frame
+            isScrollingFrame.current = true;
+            requestAnimationFrame(() => {
+                const req = scrollToTokenQueue.current;
+                scrollToTokenQueue.current = null;
+                if (!req || !containerRef.current) {
+                    isScrollingFrame.current = false;
+                    return;
+                }
+                let { index, smooth } = req;
+                // 1. Try to find the specific word span (only exists if near active window)
+                let element = document.getElementById(`w-${index}`);
+                // 2. FALLBACK: If word not rendered (StaticParagraph), find the paragraph container
+                if (!element) {
+                    const allParas = Array.from(containerRef.current.querySelectorAll('p[data-start-index]')) as HTMLElement[];
+                    let best: HTMLElement | null = null;
+                    let bestStart = -1;
+                    for (const p of allParas) {
+                        const s = parseInt(p.dataset.startIndex || "-1");
+                        if (s <= index && s > bestStart) {
+                            best = p;
+                            bestStart = s;
+                        }
+                    }
+                    element = best;
+                }
+                if (!element) {
+                    // Last resort: Just scroll percentage if DOM is missing (rare but possible on load)
+                    if (core.totalTokens > 0) {
+                        const ratio = index / core.totalTokens;
+                        const totalH = containerRef.current.scrollHeight;
+                        const targetY = totalH * ratio;
+                        containerRef.current.scrollTo({ top: targetY, behavior: smooth ? 'smooth' : 'instant' });
+                    }
+                    isScrollingFrame.current = false;
+                    return;
+                }
+                isProgrammaticScroll.current = true;
+                const container = containerRef.current;
+                const opticalCenter = container.clientHeight * 0.15;
+                let offsetTop = element.offsetTop;
+                let parent = element.offsetParent as HTMLElement;
+                while (parent && parent !== container) {
+                    offsetTop += parent.offsetTop;
+                    parent = parent.offsetParent as HTMLElement;
+                }
+                const targetScroll = offsetTop - opticalCenter;
+                container.scrollTo({
+                    top: Math.max(0, targetScroll),
+                    behavior: smooth ? 'smooth' : 'instant'
+                });
+                setTimeout(() => {
+                    isProgrammaticScroll.current = false;
+                }, smooth ? 600 : 100);
+                isScrollingFrame.current = false;
+            });
+        }, 16); // ~1 frame
+    }, []);
 
   // -- 1. Initialization --
   useEffect(() => {
@@ -675,13 +684,15 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
 
             {/* MINIMAL LOADING SPINNER */}
             {!isReady && (
-                <div style={{position:'fixed',top:0,left:0,zIndex:9999,color:'red',background:'white',fontSize:'12px',padding:'2px'}}>[TitanReaderView] Waiting for isReady...</div>
-                <div className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-auto" style={{ backgroundColor: theme.background }}>
-                    <div className="w-12 h-12 relative">
-                        <div className="absolute inset-0 rounded-full border-2 opacity-20" style={{ borderColor: theme.accent }} />
-                        <div className="absolute inset-0 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} />
-                    </div>
-                </div>
+                <>
+                  <div style={{position:'fixed',top:0,left:0,zIndex:9999,color:'red',background:'white',fontSize:'12px',padding:'2px'}}>[TitanReaderView] Waiting for isReady...</div>
+                  <div className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-auto" style={{ backgroundColor: theme.background }}>
+                      <div className="w-12 h-12 relative">
+                          <div className="absolute inset-0 rounded-full border-2 opacity-20" style={{ borderColor: theme.accent }} />
+                          <div className="absolute inset-0 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} />
+                      </div>
+                  </div>
+                </>
             )}
 
       {/* EMPTY STATE: No content loaded */}
