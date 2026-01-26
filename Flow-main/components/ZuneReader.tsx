@@ -3,6 +3,7 @@ import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine } from '../services/newRsvpEngine';
 import { RSVPLens } from './RSVPLens';
 import { ZuneControls } from './ZuneControls';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -56,6 +57,10 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
     };
     const unsubC = conductor.subscribe(sync);
     const unsubH = heartbeat.subscribe(sync);
+    const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+      setIsPlaying(isPlaying);
+      if (token) setCurrentToken(token as any);
+     });
     return () => { unsubC(); unsubH(); };
   }, []);
 
@@ -115,9 +120,16 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
                const approxProgress = (scrollTop + clickY) / totalHeight;
                
                // Better: Find the word index in the full content
-               conductor.prepare(content, { progress: core.currentProgress }); // Re-align to view
-               setIsLensActive(true);
-               conductor.play();
+               try {
+                 await newRsvpEngine.prepare(content, settings.rsvpSpeed || 350);
+                 setIsLensActive(true);
+                 newRsvpEngine.play();
+               } catch (err) {
+                 // Fallback to legacy conductor
+                 conductor.prepare(content, { progress: core.currentProgress }); // Re-align to view
+                 setIsLensActive(true);
+                 conductor.play();
+               }
             }
         }
     }
@@ -126,7 +138,7 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
   const handleToggleMode = useCallback(() => {
     if (isLensActive) {
       // EXIT RSVP -> SCROLL
-      conductor.pause();
+      try { newRsvpEngine.pause(); } catch (e) { conductor.pause(); }
       setIsLensActive(false);
       
       // Smoothly restore scroll position
@@ -139,17 +151,25 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
       }, 50);
     } else {
       // ENTER RSVP -> LENS
-      conductor.prepare(content, { progress: core.currentProgress });
-      setIsLensActive(true);
-      conductor.play();
+      (async () => {
+        try {
+          await newRsvpEngine.prepare(content, settings.rsvpSpeed || 350);
+          setIsLensActive(true);
+          newRsvpEngine.play();
+        } catch (e) {
+          await conductor.prepare(content, { progress: core.currentProgress });
+          setIsLensActive(true);
+          conductor.play();
+        }
+      })();
     }
   }, [isLensActive, content]);
 
   const handleTogglePlay = useCallback(() => {
       if (isLensActive) {
-          conductor.togglePlay();
+        try { newRsvpEngine.togglePlay(); } catch (e) { conductor.togglePlay(); }
       } else {
-          handleToggleMode(); 
+        handleToggleMode(); 
       }
   }, [isLensActive, handleToggleMode]);
 
@@ -192,7 +212,7 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
             wheelAccumulator.current += e.deltaX;
             if (Math.abs(wheelAccumulator.current) > 20) {
                 const direction = wheelAccumulator.current > 0 ? 1 : -1;
-                conductor.seekRelative(direction);
+          try { newRsvpEngine.seek(Math.max(0, (heartbeat.currentIndex || 0) + direction)); } catch (err) { conductor.seekRelative(direction); }
                 wheelAccumulator.current = 0;
             }
         }
