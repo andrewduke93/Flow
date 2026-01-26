@@ -215,6 +215,15 @@ const ParagraphSection = memo(({
  * TitanReaderView (Nuclear Option Edition)
  */
 export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggleChrome, onRequestRSVP, isActive }) => {
+    // Book open performance logging
+    useEffect(() => {
+        console.log('[TitanReaderView] Book open effect triggered for', book.title, 'at', new Date().toISOString());
+        const t0 = performance.now();
+        return () => {
+            const t1 = performance.now();
+            console.log(`[TitanReaderView] Book open effect cleanup for ${book.title} after ${(t1-t0).toFixed(2)}ms`);
+        };
+    }, [book.id]);
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
@@ -647,6 +656,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
 
             {/* MINIMAL LOADING SPINNER */}
             {!isReady && (
+                <div style={{position:'fixed',top:0,left:0,zIndex:9999,color:'red',background:'white',fontSize:'12px',padding:'2px'}}>[TitanReaderView] Waiting for isReady...</div>
                 <div className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-auto" style={{ backgroundColor: theme.background }}>
                     <div className="w-12 h-12 relative">
                         <div className="absolute inset-0 rounded-full border-2 opacity-20" style={{ borderColor: theme.accent }} />
