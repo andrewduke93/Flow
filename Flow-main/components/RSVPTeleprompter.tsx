@@ -148,23 +148,16 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       // If this is the focus word, measure the exact substring widths in-DOM
       // to account for font kerning, ligatures and browser layout.
       if (idx === currentIndex && focusToken) {
-        try {
-          const text = focusToken.originalText || '';
-          const focusCharIdx = Math.max(0, Math.min(text.length - 1, Math.floor(text.length / 2)));
-
-          // Create a hidden measurement span that uses the same font as the word
-          const measureSpan = document.createElement('span');
-          measureSpan.style.visibility = 'hidden';
-          measureSpan.style.position = 'absolute';
-          measureSpan.style.whiteSpace = 'nowrap';
-          // inherit computed font to match rendering exactly
-          measureSpan.style.font = window.getComputedStyle(child).font || '';
-
-          // Measure width up to (and including) the focus character, and up to the focus char (exclusive)
-          // This yields the character width as difference, which works reliably for variable-width fonts.
-          measureSpan.textContent = text.substring(0, focusCharIdx + 1);
-          child.appendChild(measureSpan);
-          const uptoInclusive = measureSpan.getBoundingClientRect().width;
+        <div 
+          className="absolute top-[20%] bottom-[20%] w-[2px] z-0 pointer-events-none transition-all duration-200"
+          style={{ 
+            left: `${RETICLE_POSITION}%`, 
+            backgroundColor: FOCUS_COLOR, 
+            opacity: isRewinding ? 0.6 : 0.15,
+            boxShadow: isRewinding ? `0 0 30px ${FOCUS_COLOR}80` : 'none'
+          }}
+        />
+        {/* WORD STREAM */}
           child.removeChild(measureSpan);
 
           measureSpan.textContent = text.substring(0, focusCharIdx);
@@ -368,12 +361,16 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
         }}
       />
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 
 
 
       {/* WORD STREAM */}
 >>>>>>> origin/main
+=======
+  {/* WORD STREAM */}
+>>>>>>> test/rsvp-centering
       <div className="absolute inset-x-0 top-[42%] -translate-y-1/2 flex items-center justify-start overflow-visible z-20">
         {showContext && (
           <>

@@ -183,6 +183,18 @@ export function calculateGrammarDuration(
 =======
 >>>>>>> origin/main
   // ─────────────────────────────────────────────────────────────────────────────
+  // LAYER 0: Word Frequency (NEW)
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Slow down for rare/complex words, speed up for common words
+  const freqRank = getWordFrequencyRank(word);
+  if (freqRank > 50) {
+    // Rare word: slow down
+    duration *= 1.18;
+  } else if (freqRank <= 5) {
+    // Very common word: speed up
+    duration *= 0.92;
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
   // LAYER 1: Base Word Complexity
   // ─────────────────────────────────────────────────────────────────────────────
   
@@ -226,24 +238,36 @@ export function calculateGrammarDuration(
   if (context.sentencePosition === 0) {
     duration *= 1.18;
 <<<<<<< HEAD
+<<<<<<< HEAD
     // Add a subtle "breath" pause at the start of a sentence
     duration += 0.18 * pauseScale;
 =======
 >>>>>>> origin/main
+=======
+  // Add a subtle "breath" pause at the start of a sentence
+  duration += 0.18 * pauseScale;
+>>>>>>> test/rsvp-centering
   }
   // Clause starters create natural break points
   if (CLAUSE_STARTERS.has(lowerWord)) {
     duration *= 1.12;
 <<<<<<< HEAD
+<<<<<<< HEAD
     duration += 0.08 * pauseScale;
 =======
 >>>>>>> origin/main
+=======
+  duration += 0.08 * pauseScale;
+>>>>>>> test/rsvp-centering
   }
   // After a coordinating conjunction following punctuation = new clause
   // Example: "..., and" or "...; but"
   if (context.prevPunctuation && COORD_CONJUNCTIONS.has(lowerWord)) {
     duration *= 1.06;
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> test/rsvp-centering
     duration += 0.04 * pauseScale;
   }
   // Add a "breath" pause before/after dialogue boundaries
@@ -252,8 +276,11 @@ export function calculateGrammarDuration(
   }
   if (punctuation && (punctuation.includes('"') || punctuation.includes("'"))) {
     duration += 0.22 * pauseScale;
+<<<<<<< HEAD
 =======
 >>>>>>> origin/main
+=======
+>>>>>>> test/rsvp-centering
   }
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -303,221 +330,6 @@ export function calculateGrammarDuration(
   }
   
   // ALL CAPS words (shouting/emphasis in text)
-  if (word === word.toUpperCase() && word.length > 1 && /[A-Z]/.test(word)) {
-    duration *= 1.2;
-  }
-  
-  // Hyphenated compounds are visually complex
-  if (word.includes('-') && word.length > 5) {
-    duration *= 1.12;
-  }
-  
-  // Contractions are familiar and quick
-  if (word.includes("'") && len < 8) {
-    duration *= 0.88;
-  }
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // FINAL: Clamp to reasonable bounds
-  // ─────────────────────────────────────────────────────────────────────────────
-  
-  // Minimum 0.45x (never too fast to read)
-  // Maximum 6.0x (allow longer breathing pauses for sentences/paragraphs)
-  return Math.max(0.45, Math.min(6.0, duration));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// DIALOGUE DETECTION
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Track whether we're inside quoted dialogue.
- * Handles nested quotes and various quote styles.
- */
-export class DialogueTracker {
-  private quoteStack: string[] = [];
-  private readonly OPEN_QUOTES = new Set(['"', '\u201C', '\u2018', '\u00AB', '\u2039']);
-  private readonly CLOSE_QUOTES: Record<string, string> = {
-    '"': '"',
-    '\u201C': '\u201D',
-    '\u2018': '\u2019',
-    '\u00AB': '\u00BB',
-    '\u2039': '\u203A',
-  };
-  
-  /**
-   * Process punctuation and update dialogue state.
-   * Returns true if we're currently inside dialogue.
-   */
-  update(punctuation: string | undefined): boolean {
-    if (!punctuation) return this.quoteStack.length > 0;
-    
-    for (const char of punctuation) {
-      if (this.OPEN_QUOTES.has(char)) {
-        this.quoteStack.push(char);
-      } else if (Object.values(this.CLOSE_QUOTES).includes(char)) {
-        // Find matching open quote
-        for (let i = this.quoteStack.length - 1; i >= 0; i--) {
-          if (this.CLOSE_QUOTES[this.quoteStack[i]] === char) {
-            this.quoteStack.splice(i, 1);
-            break;
-          }
-        }
-      }
-      // Handle ambiguous straight quotes
-      else if (char === '"' || char === "'") {
-        // Simple toggle for straight quotes
-        const lastQuote = this.quoteStack[this.quoteStack.length - 1];
-        if (lastQuote === char) {
-          this.quoteStack.pop();
-        } else {
-          this.quoteStack.push(char);
-        }
-      }
-    }
-    
-    return this.quoteStack.length > 0;
-  }
-  
-  reset() {
-    this.quoteStack = [];
-  }
-  
-  get isInDialogue(): boolean {
-    return this.quoteStack.length > 0;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SENTENCE POSITION TRACKER
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const SENTENCE_ENDERS = new Set(['.', '?', '!', '\u2026']);
-
-export class SentenceTracker {
-  private position = 0;
-  
-  /**
-   * Get current position and advance.
-   * Returns 0 for sentence-initial words.
-   */
-  advance(punctuation: string | undefined): number {
-    const currentPosition = this.position;
-    this.position++;
-    
-    // Check if this word ends a sentence
-    if (punctuation) {
-      for (const char of punctuation) {
-        if (SENTENCE_ENDERS.has(char)) {
-          this.position = 0; // Next word is sentence-initial
-          break;
-        }
-      }
-    }
-    
-    return currentPosition;
-  }
-  
-  reset() {
-    this.position = 0;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// INTEGRATION HELPER
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Create duration multipliers for a full token stream.
- * This is the main entry point for the grammar engine.
- */
-export function processTokensWithGrammar(
-  tokens: Array<{ word: string; punctuation?: string }>,
-  wpm: number = 200
-): number[] {
-  const dialogueTracker = new DialogueTracker();
-  const sentenceTracker = new SentenceTracker();
-  const durations: number[] = [];
-  
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    const prevToken = tokens[i - 1];
-    const nextToken = tokens[i + 1];
-    
-    const isDialogue = dialogueTracker.update(token.punctuation);
-    const sentencePosition = sentenceTracker.advance(token.punctuation);
-    
-    const context: GrammarContext = {
-      prevWord: prevToken?.word,
-      prevPunctuation: prevToken?.punctuation,
-      nextWord: nextToken?.word,
-      isDialogue,
-      sentencePosition,
-      clauseDepth: 0, // TODO: Full clause parsing
-    };
-    
-    const duration = calculateGrammarDuration(
-      token.word,
-      token.punctuation,
-      context,
-      wpm
-    );
-    
-    durations.push(duration);
-  }
-  
-  return durations;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SERIALIZABLE WORKER CODE
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Generate the enhanced worker code with grammar awareness.
- * This replaces the existing WORKER_CODE in rsvpProcessor.ts
- */
-export const GRAMMAR_AWARE_WORKER_CODE = `
-self.onmessage = function(e) {
-    const { text, startingIndex, wpm = 200 } = e.data;
-    const pauseScale = Math.max(0.75, Math.min(1.6, 1 + (200 - Math.max(50, Math.min(1200, wpm))) / 600));
-    const tokens = [];
-    let currentTokenIndex = startingIndex;
-    
-    // ═════════════════════════════════════════════════════════════════════════
-    // WORD SETS (Inlined for worker)
-    // ═════════════════════════════════════════════════════════════════════════
-    
-    const FUNCTION_WORDS = new Set([
-      'a', 'an', 'the', 'i', 'me', 'my', 'mine', 'we', 'us', 'our', 'ours',
-      'you', 'your', 'yours', 'he', 'him', 'his', 'she', 'her', 'hers',
-      'it', 'its', 'they', 'them', 'their', 'theirs', 'this', 'that', 'these', 'those',
-      'who', 'whom', 'whose', 'which', 'what', 'at', 'by', 'for', 'from', 'in', 'of',
-      'on', 'to', 'with', 'about', 'after', 'before', 'between', 'into', 'through',
-      'during', 'above', 'below', 'under', 'over', 'behind', 'beside', 'beyond',
-      'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
-      'do', 'does', 'did', 'will', 'would', 'shall', 'should', 'may', 'might',
-      'must', 'can', 'could', 'and', 'or', 'but', 'nor', 'so', 'yet', 'as', 'if',
-      'then', 'than', 'when', 'while', 'where', 'there', 'here', 'not', "n't", 'no',
-      'yes', 'very', 'just', 'only', 'also', 'even', 'still', 'too'
-    ]);
-    
-    const CLAUSE_STARTERS = new Set([
-      'although', 'because', 'before', 'after', 'unless', 'until', 'while',
-      'whereas', 'whenever', 'wherever', 'whether', 'though', 'since',
-      'however', 'therefore', 'moreover', 'furthermore', 'nevertheless',
-      'meanwhile', 'otherwise', 'consequently', 'accordingly'
-    ]);
-    
-    const EMPHASIS_WORDS = new Set([
-      'never', 'always', 'absolutely', 'definitely', 'certainly', 'surely',
-      'suddenly', 'finally', 'immediately', 'instantly', 'important', 'critical',
-      'crucial', 'essential', 'significant', 'amazing', 'incredible', 'extraordinary',
-      'remarkable', 'astonishing', 'terrible', 'horrible', 'devastating',
-      'catastrophic', 'beautiful', 'gorgeous', 'magnificent', 'stunning',
-      'first', 'second', 'third', 'lastly'
-    ]);
-    
     const PUNCT_PAUSES = {
       '.': 2.2, '?': 2.3, '!': 2.0, ';': 1.2, ':': 1.0, ',': 0.65,
       '\\u2014': 1.1, '\\u2013': 0.7, '-': 0.12, '"': 0.45, "'": 0.25, '\\u201C': 0.45,

@@ -1,3 +1,4 @@
+import { FixedSizeList as List } from 'react-window';
 import React, { useEffect, useRef, useState, useMemo, memo, useCallback, useLayoutEffect } from 'react';
 import { Book, RSVPToken } from '../types';
 import { TitanCore } from '../services/titanCore';
@@ -215,6 +216,15 @@ const ParagraphSection = memo(({
  * TitanReaderView (Nuclear Option Edition)
  */
 export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggleChrome, onRequestRSVP, isActive }) => {
+    // Book open performance logging
+    useEffect(() => {
+        console.log('[TitanReaderView] Book open effect triggered for', book.title, 'at', new Date().toISOString());
+        const t0 = performance.now();
+        return () => {
+            const t1 = performance.now();
+            console.log(`[TitanReaderView] Book open effect cleanup for ${book.title} after ${(t1-t0).toFixed(2)}ms`);
+        };
+    }, [book.id]);
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
@@ -227,8 +237,24 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   const [tokens, setTokens] = useState<RSVPToken[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const activeIndexRef = useRef(-1); // Stable ref
-  const [isReady, setIsReady] = useState(false); 
-  const [loadingProgress, setLoadingProgress] = useState(0);
+    const [isReady, setIsReady] = useState(false); 
+    const [loadingProgress, setLoadingProgress] = useState(0);
+    const [tokenizing, setTokenizing] = useState(false);
+    const [tokenizeProgress, setTokenizeProgress] = useState(0);
+    const [loadingPhase, setLoadingPhase] = useState<'book' | 'tokenize'>('book');
+    const [animatedDots, setAnimatedDots] = useState('');
+    // Track if book loading and tokenization are both complete
+    const [bookLoaded, setBookLoaded] = useState(false);
+    const [tokenizationDone, setTokenizationDone] = useState(false);
+    // Animated dots for loading engagement
+    useEffect(() => {
+        if (!isReady) {
+            const interval = setInterval(() => {
+                setAnimatedDots((prev) => prev.length < 3 ? prev + '.' : '');
+            }, 400);
+            return () => clearInterval(interval);
+        }
+    }, [isReady]);
   
   const [isRestored, setIsRestored] = useState(false);
   const isProgrammaticScroll = useRef(false);
@@ -245,68 +271,77 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   }, []);
 
   // SCROLL ENGINE: The critical piece for navigation
-  const scrollToToken = useCallback((index: number, smooth: boolean) => {
-      if (!containerRef.current) return;
-      
-      // 1. Try to find the specific word span (only exists if near active window)
-      let element = document.getElementById(`w-${index}`);
-      
-      // 2. FALLBACK: If word not rendered (StaticParagraph), find the paragraph container
-      if (!element) {
-          // We look for the paragraph with the largest start-index that is <= index
-          const allParas = Array.from(containerRef.current.querySelectorAll('p[data-start-index]')) as HTMLElement[];
-          let best: HTMLElement | null = null;
-          let bestStart = -1;
-          
-          for (const p of allParas) {
-              const s = parseInt(p.dataset.startIndex || "-1");
-              // Find the paragraph that *contains* this index (starts before or at it)
-              if (s <= index && s > bestStart) {
-                  best = p;
-                  bestStart = s;
-              }
-          }
-          element = best;
-      }
+    // Debounced and batched scrollToToken to avoid forced reflows/layout thrash
+    const scrollToTokenQueue = useRef<{index: number, smooth: boolean} | null>(null);
+    const scrollToTokenTimer = useRef<number | null>(null);
+    const isScrollingFrame = useRef(false);
 
-      if (!element) {
-          // Last resort: Just scroll percentage if DOM is missing (rare but possible on load)
-          // We calculate approximate height based on token ratio
-          if (core.totalTokens > 0) {
-             const ratio = index / core.totalTokens;
-             const totalH = containerRef.current.scrollHeight;
-             const targetY = totalH * ratio;
-             containerRef.current.scrollTo({ top: targetY, behavior: smooth ? 'smooth' : 'instant' });
-          }
-          return;
-      }
-
-      isProgrammaticScroll.current = true;
-
-      const container = containerRef.current;
-      // Offset by 15% of screen height to place text comfortably near top but not hidden
-      const opticalCenter = container.clientHeight * 0.15; 
-      
-      let offsetTop = element.offsetTop;
-      let parent = element.offsetParent as HTMLElement;
-      while (parent && parent !== container) {
-          offsetTop += parent.offsetTop;
-          parent = parent.offsetParent as HTMLElement;
-      }
-
-      const targetScroll = offsetTop - opticalCenter;
-      
-      container.scrollTo({
-          top: Math.max(0, targetScroll),
-          behavior: smooth ? 'smooth' : 'instant'
-      });
-
-      // Release lock after animation
-      setTimeout(() => {
-          isProgrammaticScroll.current = false;
-      }, smooth ? 600 : 100);
-
-  }, []);
+    const scrollToToken = useCallback((index: number, smooth: boolean) => {
+        // Always keep only the latest scroll request
+        scrollToTokenQueue.current = { index, smooth };
+        if (scrollToTokenTimer.current) {
+            clearTimeout(scrollToTokenTimer.current);
+        }
+        // Batch scrolls: perform after 1 animation frame (or 16ms)
+        scrollToTokenTimer.current = window.setTimeout(() => {
+            if (isScrollingFrame.current) return; // Prevent multiple in one frame
+            isScrollingFrame.current = true;
+            requestAnimationFrame(() => {
+                const req = scrollToTokenQueue.current;
+                scrollToTokenQueue.current = null;
+                if (!req || !containerRef.current) {
+                    isScrollingFrame.current = false;
+                    return;
+                }
+                let { index, smooth } = req;
+                // 1. Try to find the specific word span (only exists if near active window)
+                let element = document.getElementById(`w-${index}`);
+                // 2. FALLBACK: If word not rendered (StaticParagraph), find the paragraph container
+                if (!element) {
+                    const allParas = Array.from(containerRef.current.querySelectorAll('p[data-start-index]')) as HTMLElement[];
+                    let best: HTMLElement | null = null;
+                    let bestStart = -1;
+                    for (const p of allParas) {
+                        const s = parseInt(p.dataset.startIndex || "-1");
+                        if (s <= index && s > bestStart) {
+                            best = p;
+                            bestStart = s;
+                        }
+                    }
+                    element = best;
+                }
+                if (!element) {
+                    // Last resort: Just scroll percentage if DOM is missing (rare but possible on load)
+                    if (core.totalTokens > 0) {
+                        const ratio = index / core.totalTokens;
+                        const totalH = containerRef.current.scrollHeight;
+                        const targetY = totalH * ratio;
+                        containerRef.current.scrollTo({ top: targetY, behavior: smooth ? 'smooth' : 'instant' });
+                    }
+                    isScrollingFrame.current = false;
+                    return;
+                }
+                isProgrammaticScroll.current = true;
+                const container = containerRef.current;
+                const opticalCenter = container.clientHeight * 0.15;
+                let offsetTop = element.offsetTop;
+                let parent = element.offsetParent as HTMLElement;
+                while (parent && parent !== container) {
+                    offsetTop += parent.offsetTop;
+                    parent = parent.offsetParent as HTMLElement;
+                }
+                const targetScroll = offsetTop - opticalCenter;
+                container.scrollTo({
+                    top: Math.max(0, targetScroll),
+                    behavior: smooth ? 'smooth' : 'instant'
+                });
+                setTimeout(() => {
+                    isProgrammaticScroll.current = false;
+                }, smooth ? 600 : 100);
+                isScrollingFrame.current = false;
+            });
+        }, 16); // ~1 frame
+    }, []);
 
   // -- 1. Initialization --
   useEffect(() => {
@@ -325,55 +360,66 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
         updateActiveIndex(initialIndex);
     }
 
-    const progressUnsub = core.subscribe(() => {
-        setLoadingProgress(core.loadingProgress);
-    });
+        const progressUnsub = core.subscribe(() => {
+            setLoadingProgress(core.loadingProgress);
+        });
     
-    const init = async () => {
-      // RESET COMPONENT STATE
-      setIsReady(false);
-      setIsRestored(false);
-      setLoadingProgress(0);
-      setTokens([]);
+        const init = async () => {
+            // RESET COMPONENT STATE
+            setIsReady(false);
+            setIsRestored(false);
+            setLoadingProgress(0);
+            setTokenizing(false);
+            setTokenizeProgress(0);
+            setLoadingPhase('book');
+            setTokens([]);
 
-      // CRITICAL VALIDATION: Check if book has chapters before loading
-      if (!book.chapters || book.chapters.length === 0) {
-          console.error("[TitanReaderView] Book has no chapters! This indicates a data loading issue.", {
-              bookId: book.id,
-              title: book.title,
-              hasChapters: !!book.chapters,
-              chaptersLength: book.chapters?.length
-          });
-          // Still mark as ready so UI shows (with empty content vs infinite loading)
-          setIsReady(true);
-          setIsRestored(true);
-          return;
-      }
+            // CRITICAL VALIDATION: Check if book has chapters before loading
+            if (!book.chapters || book.chapters.length === 0) {
+                console.error("[TitanReaderView] Book has no chapters! This indicates a data loading issue.", {
+                    bookId: book.id,
+                    title: book.title,
+                    hasChapters: !!book.chapters,
+                    chaptersLength: book.chapters?.length
+                });
+                // Still mark as ready so UI shows (with empty content vs infinite loading)
+                setIsReady(true);
+                setIsRestored(true);
+                return;
+            }
 
-      try {
-          await core.load(book);
-          const fullText = core.contentStorage.string;
-          
-          if (!fullText) {
-              console.warn("[TitanReaderView] Loaded book has no content string.");
-          }
-
-          await conductor.prepare(fullText, { progress: 0 }); 
-      } catch (e) {
-          console.error("[TitanReaderView] Initialization pipeline failed:", e);
-      } finally {
-          const loadedTokens = heartbeat.tokens;
-          setTokens(loadedTokens);
-          
-          // CRITICAL: Only mark as ready if we actually have tokens or if we've definitely finished trying
-          setIsReady(true);
-          
-          // Give the DOM a tiny beat to paint before showing
-          requestAnimationFrame(() => {
-              setIsRestored(true);
-          });
-      }
-    };
+            try {
+                setLoadingPhase('book');
+                await core.load(book);
+                setLoadingProgress(1.0);
+                setLoadingPhase('tokenize');
+                setTokenizing(true);
+                const fullText = core.contentStorage.string;
+                if (!fullText) {
+                    console.warn("[TitanReaderView] Loaded book has no content string.");
+                }
+                // RSVP tokenization progress simulation (since we don't have granular progress, animate)
+                let fakeProgress = 0;
+                setTokenizeProgress(0.01);
+                const progressInterval = setInterval(() => {
+                    fakeProgress += 0.07 + Math.random() * 0.08;
+                    setTokenizeProgress((p) => Math.min(0.98, Math.max(p, fakeProgress)));
+                }, 120);
+                await conductor.prepare(fullText, { progress: 0 });
+                clearInterval(progressInterval);
+                setTokenizeProgress(1.0);
+                setTokenizing(false);
+            } catch (e) {
+                console.error("[TitanReaderView] Initialization pipeline failed:", e);
+            } finally {
+                const loadedTokens = heartbeat.tokens;
+                setTokens(loadedTokens);
+                setIsReady(true);
+                requestAnimationFrame(() => {
+                    setIsRestored(true);
+                });
+            }
+        };
 
     init();
     return () => progressUnsub();
@@ -540,33 +586,35 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   }, [isRestored, tokens.length, updateActiveIndex]);
 
   // -- 5. Memoized Paragraphs --
-  const paragraphs = useMemo(() => {
-    const result: { tokens: RSVPToken[], startIndex: number, plainText: string }[] = [];
-    let currentPara: RSVPToken[] = [];
-    let startIndex = -1;
+    const paragraphs = useMemo(() => {
+        const t0 = performance.now();
+        const result: { tokens: RSVPToken[], startIndex: number, plainText: string }[] = [];
+        let currentPara: RSVPToken[] = [];
+        let startIndex = -1;
 
-    for (const token of tokens) {
-      if (currentPara.length === 0) startIndex = token.globalIndex;
-      currentPara.push(token);
-      
-      if (token.isParagraphEnd) {
-        result.push({ 
-            tokens: currentPara, 
-            startIndex, 
-            plainText: currentPara.map(t => t.originalText).join(" ") 
-        });
-        currentPara = [];
-      }
-    }
-    if (currentPara.length > 0) {
-        result.push({ 
-            tokens: currentPara, 
-            startIndex: startIndex === -1 ? 0 : startIndex,
-            plainText: currentPara.map(t => t.originalText).join(" ")
-        });
-    }
-    return result;
-  }, [tokens]);
+        for (const token of tokens) {
+            if (currentPara.length === 0) startIndex = token.globalIndex;
+            currentPara.push(token);
+            if (token.isParagraphEnd) {
+                result.push({ 
+                        tokens: currentPara, 
+                        startIndex, 
+                        plainText: currentPara.map(t => t.originalText).join(" ") 
+                });
+                currentPara = [];
+            }
+        }
+        if (currentPara.length > 0) {
+                result.push({ 
+                        tokens: currentPara, 
+                        startIndex: startIndex === -1 ? 0 : startIndex,
+                        plainText: currentPara.map(t => t.originalText).join(" ")
+                });
+        }
+        const t1 = performance.now();
+        console.log(`[TitanReaderView] Token-to-paragraph mapping took ${(t1 - t0).toFixed(2)}ms for ${tokens.length} tokens, ${result.length} paragraphs.`);
+        return result;
+    }, [tokens]);
   
   const handleWordClick = useCallback((index: number, startOffset: number) => {
     updateActiveIndex(index);
@@ -586,14 +634,35 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       );
   }, [paragraphs, activeIndex]);
 
-  // Sectioning logic: chunk paragraphs into blocks of 30
-  const sections = useMemo(() => {
-      const result = [];
-      for (let i = 0; i < paragraphs.length; i += 30) {
-          result.push(paragraphs.slice(i, i + 30));
-      }
-      return result;
-  }, [paragraphs]);
+
+    // Virtualized paragraph renderer
+    const Row = useCallback(({ index, style }) => {
+        const p = paragraphs[index];
+        if (!p) return null;
+        // Only render active or near-active as interactive, rest as static
+        const isActiveWindow = Math.abs(index - activeParagraphIndex) <= 1;
+        return (
+            <div style={style} key={p.startIndex}>
+                {isActiveWindow ? (
+                    <ParagraphChunk
+                        startTokenIndex={p.startIndex}
+                        tokens={p.tokens}
+                        activeIndex={activeIndex}
+                        onWordClick={handleWordClick}
+                        settings={settings}
+                        theme={theme}
+                    />
+                ) : (
+                    <StaticParagraph
+                        text={p.plainText}
+                        settings={settings}
+                        startTokenIndex={p.startIndex}
+                        onParagraphClick={handleParagraphClick}
+                    />
+                )}
+            </div>
+        );
+    }, [paragraphs, activeParagraphIndex, activeIndex, handleWordClick, handleParagraphClick, settings, theme]);
 
   return (
     <div 
@@ -612,27 +681,19 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
         if (e.target === e.currentTarget) onToggleChrome();
       }}
     >
-      {/* LOADING OVERLAY */}
-      {!isReady && (
-          <div 
-              className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-auto"
-              style={{ backgroundColor: theme.background }}
-          >
-              <div className="flex flex-col items-center gap-6">
-                  <div className="w-12 h-12 relative">
-                       <div className="absolute inset-0 rounded-full border-2 opacity-20" style={{ borderColor: theme.accent }} />
-                       <div 
-                          className="absolute inset-0 rounded-full border-2 border-t-transparent animate-spin" 
-                          style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} 
-                       />
+
+            {/* MINIMAL LOADING SPINNER */}
+            {!isReady && (
+                <>
+                  <div style={{position:'fixed',top:0,left:0,zIndex:9999,color:'red',background:'white',fontSize:'12px',padding:'2px'}}>[TitanReaderView] Waiting for isReady...</div>
+                  <div className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-auto" style={{ backgroundColor: theme.background }}>
+                      <div className="w-12 h-12 relative">
+                          <div className="absolute inset-0 rounded-full border-2 opacity-20" style={{ borderColor: theme.accent }} />
+                          <div className="absolute inset-0 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} />
+                      </div>
                   </div>
-                  <div className="flex flex-col items-center">
-                      <span className="text-sm font-bold tracking-widest lowercase" style={{ color: theme.secondaryText }}>loading</span>
-                      <span className="text-xs font-mono mt-1 opacity-50" style={{ color: theme.primaryText }}>{Math.floor(loadingProgress * 100)}%</span>
-                  </div>
-              </div>
-          </div>
-      )}
+                </>
+            )}
 
       {/* EMPTY STATE: No content loaded */}
       {isReady && tokens.length === 0 && (
@@ -648,22 +709,18 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
           </div>
       )}
 
-      <div className="w-full min-h-[100dvh] px-6 md:px-0 py-24 md:py-32 box-border relative">
-           {sections.map((section, idx) => (
-               <ParagraphSection 
-                  key={idx}
-                  sectionIndex={idx}
-                  paragraphs={section}
-                  activeParagraphIndex={activeParagraphIndex}
-                  activeIndex={activeIndex}
-                  onWordClick={handleWordClick}
-                  onParagraphClick={handleParagraphClick}
-                  settings={settings}
-                  theme={theme}
-               />
-           ))}
-           <div className="h-[40vh]" /> 
-      </div>
+            <div className="w-full min-h-[100dvh] px-6 md:px-0 py-24 md:py-32 box-border relative">
+                <List
+                    height={window.innerHeight * 0.7}
+                    itemCount={paragraphs.length}
+                    itemSize={120}
+                    width={"100%"}
+                    overscanCount={4}
+                >
+                    {Row}
+                </List>
+                <div className="h-[40vh]" />
+            </div>
     </div>
   );
 };
