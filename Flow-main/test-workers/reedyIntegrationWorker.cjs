@@ -45,6 +45,9 @@ function computeDurationFromToken(token, wpm) {
     return;
   }
 
+  // Keep worker alive to accept messages from the parent thread
+  setInterval(() => {}, 1000);
+
   parentPort.on('message', (msg) => {
     if (!msg || msg.type !== 'prepare') return;
     const { content = '', wpm = 300 } = msg;
