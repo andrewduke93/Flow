@@ -29,9 +29,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: Flow-main/package-lock.json
 
-      - name: Install dependencies
+      - name: Install dependencies (skip lifecycle scripts)
         working-directory: Flow-main
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps --ignore-scripts
 
       - name: Build
         working-directory: Flow-main
