@@ -1,3 +1,4 @@
+// @ts-ignore - react-window types vary across environments; keep import and silence TS here
 import { FixedSizeList as List } from 'react-window';
 import React, { useEffect, useRef, useState, useMemo, memo, useCallback, useLayoutEffect } from 'react';
 import { Book, RSVPToken } from '../types';

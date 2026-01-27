@@ -126,7 +126,7 @@ export const ContentView: React.FC = () => {
 
         {selectedBook && showRsvpDemo && (
           <div key={`${selectedBook.id}-rsvp-demo`} className="p-6 z-50">
-            <RSVPLite content={books[0]?.content ?? books.map(b=>b.title).join('\n\n') || 'Welcome to Flow — RSVP Demo.'} />
+            <RSVPLite content={(books[0]?.content ?? books.map(b=>b.title).join('\n\n')) || 'Welcome to Flow — RSVP Demo.'} />
           </div>
         )}
       </AnimatePresence>

@@ -48,7 +48,7 @@ export const RSVPSemanticScrubber: React.FC = () => {
 
     return () => {
       unsubC();
-      unsubH();
+      unsubNew();
     };
   }, []);
 

@@ -32,7 +32,6 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   onRewindStateChange
 }) => {
   const conductor = RSVPConductor.getInstance();
-  const settings = TitanSettingsService.getInstance().getSettings();
   const theme = useTitanTheme();
   const { settings } = useTitanSettings();
   
@@ -147,24 +146,10 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       // If this is the focus word, measure the exact substring widths in-DOM
       // to account for font kerning, ligatures and browser layout.
       if (idx === currentIndex && focusToken) {
-        try {
-          // ...existing code for focus word measurement...
-          child.removeChild(measureSpan);
-
-          measureSpan.textContent = text.substring(0, focusCharIdx);
-          child.appendChild(measureSpan);
-          const uptoExclusive = measureSpan.getBoundingClientRect().width;
-          child.removeChild(measureSpan);
-
-          const charWidth = Math.max(0, uptoInclusive - uptoExclusive);
-          const centerOffset = uptoExclusive + charWidth / 2;
-
-          // final position relative to ribbon left
-          focusLetterPos = left + centerOffset;
-        } catch (e) {
-          // fallback to center if anything goes wrong
-          focusLetterPos = left + rect.width / 2;
-        }
+        // Precise character-measurement removed during migration: use visual center as
+        // a robust fallback. If we need pixel-perfect alignment later we can add a
+        // scoped DOM-measure helper that is fully defined here.
+        focusLetterPos = left + rect.width / 2;
       }
 
       wordPositions.current.set(idx, { left, width: rect.width, center: focusLetterPos });

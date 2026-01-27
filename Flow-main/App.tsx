@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import { TitanLibrary } from './components/TitanLibrary';
 import { ReaderContainer } from './components/ReaderContainer';
 import { TitanCore } from './services/titanCore';
+import { newRsvpEngine } from './services/newRsvpEngine';
 import { IngestionService } from './services/ingestionService';
 import { TitanStorage } from './services/titanStorage';
 import { SyncManager, SyncStatus } from './services/syncManager';
@@ -39,7 +40,8 @@ const App: React.FC = () => {
       const book = booksRef.current.find(b => b.id === currentBookId);
       if (book) {
         const engine = TitanCore.getInstance();
-        handleCloseReader(currentBookId, engine.currentTokenIndex, engine.currentProgress);
+        const idx = engine.isRSVPMode ? newRsvpEngine.getIndex() : (engine.currentBook?.lastTokenIndex ?? 0);
+        handleCloseReader(currentBookId, idx, engine.currentProgress);
       }
       
       isHandlingPopState.current = false;

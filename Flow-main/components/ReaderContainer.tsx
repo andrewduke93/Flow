@@ -192,7 +192,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
           // Prepare engine (new worker-based engine)
           try {
-            await newRsvpEngine.prepare(fullText, engine.userSettings?.rsvpSpeed ?? 350, engine.userSettings?.rsvpChunkSize ?? 1);
+            await newRsvpEngine.prepare(fullText, settings.rsvpSpeed ?? 350, settings.rsvpChunkSize ?? 1);
           } catch (e) {
             // Fallback to legacy conductor if new engine fails
             await conductor.prepare(fullText, prepareConfig as any);

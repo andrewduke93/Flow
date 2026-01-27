@@ -134,7 +134,7 @@ export class RSVPConductor {
         try {
             // Try new engine preparation first (worker-based)
             // Use new engine exclusively
-            await newRsvpEngine.prepare(content, settingsService.getSettings().rsvpSpeed);
+            await newRsvpEngine.prepare(content, TitanSettingsService.getInstance().getSettings().rsvpSpeed);
             this.lastContentRef = content;
         } finally {
             this.preparationPromise = null;

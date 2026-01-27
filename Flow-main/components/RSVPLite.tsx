@@ -9,7 +9,7 @@ export const RSVPLite: React.FC<{ content?: string }> = ({ content }) => {
   useEffect(() => {
     const unsub = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
       setIndex(index);
-      setTokenText(token?.text ?? '');
+      setTokenText(token?.originalText ?? '');
       setIsPlaying(isPlaying);
     });
     return unsub;

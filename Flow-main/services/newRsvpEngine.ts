@@ -140,7 +140,7 @@ export class NewRSVPEngine {
         return;
       }
       this.scheduleNext();
-    }, token.duration);
+    }, duration);
   }
 
   public subscribe(cb: Subscriber) {
