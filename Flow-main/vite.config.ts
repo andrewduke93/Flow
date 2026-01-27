@@ -8,7 +8,10 @@ export default defineConfig(({ mode }) => {
     const isDev = mode === 'development';
     
     return {
-      base: '/',
+      // Use a relative base so built assets work whether the site is served at
+      // the repository root or under a path like `/Flow/` on GitHub Pages.
+      // Relative assets avoid mismatches between build output and Pages CDN.
+      base: './',
       server: {
         port: 3000,
         host: '0.0.0.0',
