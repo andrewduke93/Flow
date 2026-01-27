@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useLayoutEffect } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { newRsvpEngine } from '../services/newRsvpEngine';
+import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
+import { TitanSettingsService } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
 import { useTitanSettings } from '../services/configService';
 import { RSVPToken } from '../types';
@@ -32,7 +32,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   onRewindStateChange
 }) => {
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
+  const settings = TitanSettingsService.getInstance().getSettings();
   const theme = useTitanTheme();
   const { settings } = useTitanSettings();
   
@@ -62,43 +62,30 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   const RETICLE_POSITION = 35.5;
   const FONT_SIZE = "clamp(2.5rem, 10vw, 4rem)";
 
-  // Sync with heartbeat
+  // Sync with engine (legacy heartbeat removed)
   useEffect(() => {
-    setTokens(heartbeat.tokens);
-    tokensRef.current = heartbeat.tokens;
-    lastIndexRef.current = heartbeat.currentIndex;
-    setCurrentIndex(heartbeat.currentIndex);
+    const raw = newRsvpEngine.getTokensRaw();
+    if (raw && raw.length > 0) {
+      const mapped = mapRawToRSVPTokens(raw, settings.rsvpSpeed);
+      setTokens(mapped);
+      tokensRef.current = mapped;
+      lastIndexRef.current = 0;
+      setCurrentIndex(0);
+    }
     setIsPlaying(conductor.state === RSVPState.PLAYING);
 
-    const sync = () => {
-      const idx = heartbeat.currentIndex;
-      const playing = conductor.state === RSVPState.PLAYING;
-      const hbTokens = heartbeat.tokens;
-      
-      setIsPlaying(playing);
-      
-      const tokensChanged = hbTokens !== tokensRef.current;
-      const indexChanged = idx !== lastIndexRef.current;
-      
-      if (tokensChanged) {
-        setTokens(hbTokens);
-        tokensRef.current = hbTokens;
-      }
-      
-      if (indexChanged) {
-        lastIndexRef.current = idx;
-        setCurrentIndex(idx);
-      }
-    };
-
-    const unsubC = conductor.subscribe(sync);
-    const unsubH = heartbeat.subscribe(sync);
+    const unsubC = conductor.subscribe(() => setIsPlaying(conductor.state === RSVPState.PLAYING));
     const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
-      const idx = typeof index === 'number' ? index : heartbeat.currentIndex;
+      const idx = typeof index === 'number' ? index : 0;
       setIsPlaying(isPlaying);
-      // Update tokens minimally if heartbeat tokens are empty
-      if (heartbeat.tokens.length === 0 && token) {
+      const rawNow = newRsvpEngine.getTokensRaw();
+      if (rawNow && rawNow.length > 0) {
+        const mapped = mapRawToRSVPTokens(rawNow, settings.rsvpSpeed);
+        setTokens(mapped);
+        tokensRef.current = mapped;
+      } else if (token) {
         setTokens([token as RSVPToken]);
+        tokensRef.current = [token as RSVPToken];
       }
       if (idx !== lastIndexRef.current) {
         lastIndexRef.current = idx;
@@ -106,9 +93,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       }
     });
 
-    sync();
-    
-    return () => { unsubC(); unsubH(); unsubNew(); };
+    return () => { unsubC(); unsubNew(); };
   }, []);
 
   // Focus token - always use current index
@@ -294,9 +279,10 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       setIsRewinding(false);
       
       // Seek without auto-playing (seek will resume if was playing, but we'll handle that)
-        try { newRsvpEngine.pause(); } catch (e) { heartbeat.pause(); }
-        const target = Math.max(0, Math.min(rewindIndexRef.current, heartbeat.tokens.length - 1));
-        try { newRsvpEngine.seek(target); } catch (e) { heartbeat.seek(target); }
+        try { newRsvpEngine.pause(); } catch (e) { /* ignore */ }
+        const rawNow = newRsvpEngine.getTokensRaw();
+        const target = Math.max(0, Math.min(rewindIndexRef.current, (rawNow && rawNow.length - 1) || 0));
+        try { newRsvpEngine.seek(target); } catch (e) { /* ignore */ }
 
         // Resume playback preferring new engine
         try { newRsvpEngine.play(); } catch (e) { conductor.play(); }
@@ -306,8 +292,8 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
 
   // When rewinding state changes, ensure we update from heartbeat
   useEffect(() => {
-    if (!isRewinding && currentIndex !== heartbeat.currentIndex) {
-      setCurrentIndex(heartbeat.currentIndex);
+    if (!isRewinding) {
+      // currentIndex updated via engine subscription
     }
   }, [isRewinding]);
 

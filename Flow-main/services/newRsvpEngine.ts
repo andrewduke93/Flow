@@ -150,6 +150,24 @@ export class NewRSVPEngine {
     return () => this.subscribers.delete(cb);
   }
 
+  // Allow external consumers to update WPM and remap durations
+  public updateWPM(wpm: number) {
+    this.wpm = Math.max(1, Math.floor(wpm || 300));
+    // Recompute mapped tokens from raw tokens
+    this.tokens = mapRawToRSVPTokens(this.rawTokens, this.wpm);
+    this.notify();
+  }
+
+  // Synchronous helpers for migration — provide safe, read-only accessors so callers
+  // don't need to rely on the legacy `RSVPHeartbeat`.
+  public getIndex(): number {
+    return this.currentIndex;
+  }
+
+  public getTokens(): RSVPToken[] {
+    return this.tokens.slice();
+  }
+
   // Expose raw token data for migration purposes
   public getTokensRaw(): { index: number; text: string; duration: number }[] {
     return this.rawTokens.map(t => ({ index: t.index ?? 0, text: t.text ?? '', duration: t.duration ?? 0 }));

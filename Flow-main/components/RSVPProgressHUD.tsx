@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
+import { TitanSettingsService } from '../services/configService';
 import { TitanCore } from '../services/titanCore';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
@@ -19,7 +20,7 @@ interface ChapterMarker {
  */
 export const RSVPProgressHUD: React.FC = () => {
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
+  const settings = TitanSettingsService.getInstance().getSettings();
   const core = TitanCore.getInstance();
   const theme = useTitanTheme();
 
@@ -34,52 +35,38 @@ export const RSVPProgressHUD: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   
   // WPM & Estimates
-  const [wpm, setWpm] = useState(heartbeat.wpm);
+  const [wpm, setWpm] = useState(settings.rsvpSpeed || 300);
   const [showToast, setShowToast] = useState(false);
-  const prevWpmRef = useRef(heartbeat.wpm);
+  const prevWpmRef = useRef(settings.rsvpSpeed || 300);
 
   // 1. DATA SYNC
   useEffect(() => {
-    const sync = () => {
-      setTotalTokens(heartbeat.tokens.length);
-      setCurrentIndex(heartbeat.currentIndex);
-      
-      const pct = heartbeat.tokens.length > 0 ? heartbeat.currentIndex / heartbeat.tokens.length : 0;
-      setProgress(pct);
-      
-      setIsPlaying(conductor.state === RSVPState.PLAYING);
+    // Use engine tokens exclusively
+    const raw = newRsvpEngine.getTokensRaw();
+    if (raw && raw.length > 0) {
+      setTotalTokens(raw.length);
+      setCurrentIndex(0);
+      setIsPlaying(false);
+    }
 
-
-      if (heartbeat.wpm !== prevWpmRef.current) {
-        setWpm(heartbeat.wpm);
-        prevWpmRef.current = heartbeat.wpm;
-        setShowToast(true);
-      }
-    };
-
-    const unsubConductor = conductor.subscribe(sync);
-    const unsubHeartbeat = heartbeat.subscribe(sync); 
-    const unsubNew = newRsvpEngine.subscribe(({ index, isPlaying, token }) => {
-      // Prefer new engine's playing state
+    const unsubNew = newRsvpEngine.subscribe(({ index, isPlaying }) => {
       setIsPlaying(!!isPlaying);
       if (typeof index === 'number') setCurrentIndex(index);
-      if (heartbeat.tokens.length === 0 && token) setTotalTokens(1);
+      const rawNow = newRsvpEngine.getTokensRaw();
+      setTotalTokens((rawNow && rawNow.length) || 0);
     });
-    sync();
 
-    return () => {
-      unsubConductor();
-      unsubHeartbeat();
-      unsubNew();
-    };
+    const unsubConductor = conductor.subscribe(() => {});
+
+    return () => { unsubConductor(); unsubNew(); };
   }, []);
 
   // 2. TIMELINE MARKERS (Semantic Segmentation)
   // Use TitanCore's pre-calculated token offsets for accuracy
   const markers = useMemo<ChapterMarker[]>(() => {
     const book = core.currentBook;
-    const tokens = heartbeat.tokens;
-    if (!book || !book.chapters || tokens.length === 0) return [];
+    const tokensCount = totalTokens;
+    if (!book || !book.chapters || tokensCount === 0) return [];
 
     // Use TitanCore's accurate chapter token offsets
     const chapterOffsets = core.chapterTokenOffsets;
@@ -88,10 +75,10 @@ export const RSVPProgressHUD: React.FC = () => {
     book.chapters.forEach((chapter, i) => {
       const tokenIndex = chapterOffsets[i] ?? 0;
       // Only add if within bounds
-      if (tokenIndex < tokens.length) {
+      if (tokenIndex < tokensCount) {
         result.push({
           index: tokenIndex,
-          percentage: tokenIndex / tokens.length,
+          percentage: tokenIndex / tokensCount,
           title: chapter.title
         });
       }
@@ -169,7 +156,7 @@ export const RSVPProgressHUD: React.FC = () => {
     }
 
     if (didSnap) RSVPHapticEngine.impactMedium();
-    try { newRsvpEngine.seek(targetIndex); } catch (e) { heartbeat.seek(targetIndex); }
+    try { newRsvpEngine.seek(targetIndex); } catch (e) { /* ignore */ }
   };
 
   const opacity = (isPlaying && !isScrubbing) ? 0.1 : 0.9;

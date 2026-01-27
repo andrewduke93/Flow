@@ -9,7 +9,7 @@ import { newRsvpEngine } from '../services/newRsvpEngine';
 import { ChevronLeft } from 'lucide-react';
 import { MediaCommandCenter } from './MediaCommandCenter';
 import { useTitanTheme } from '../services/titanTheme';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { TitanSettingsService } from '../services/configService';
 import { SettingsSheet } from './SettingsSheet';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 
@@ -26,7 +26,7 @@ interface ReaderContainerProps {
 export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose }) => {
   const engine = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
+  const settings = TitanSettingsService.getInstance().getSettings();
   const theme = useTitanTheme();
   
   const [isChromeVisible, setIsChromeVisible] = useState(true);
@@ -34,6 +34,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRewinding, setIsRewinding] = useState(false);
   const [currentProgress, setCurrentProgress] = useState(0);
+  const [engineIndex, setEngineIndex] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [closingSettings, setClosingSettings] = useState(false);
 
@@ -56,6 +57,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     const unsubConductor = conductor.subscribe(sync);
     const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
       setIsPlaying(isPlaying);
+      if (typeof index === 'number') setEngineIndex(index);
       // Compute percentage and jump scroll view to match RSVP position
       const total = Math.max(1, engine.totalTokens);
       const pct = Math.min(1, Math.max(0, index / total));
@@ -75,9 +77,9 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       return () => {
           // Force save on unmount only if we were in RSVP mode.
           // Otherwise, rely on engine.currentBook state.
-          conductor.shutdown(engine.isRSVPMode);
-          engine.isRSVPMode = false;
-          heartbeat.clear();
+            conductor.shutdown(engine.isRSVPMode);
+              engine.isRSVPMode = false;
+              try { newRsvpEngine.pause(); } catch (e) {}
       };
   }, []);
 
@@ -140,8 +142,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     let finalIndex = engine.currentBook?.lastTokenIndex ?? (book.lastTokenIndex || 0);
     
     if (engine.isRSVPMode) {
-        finalIndex = heartbeat.currentIndex;
-        engine.saveProgress(finalIndex);
+      finalIndex = engineIndex;
+      engine.saveProgress(finalIndex);
     }
 
     const finalProgress = engine.currentProgress;
@@ -213,7 +215,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
           try { newRsvpEngine.pause(); } catch (e) {}
           conductor.pause();
           
-          const currentTokenIndex = heartbeat.currentIndex;
+          const currentTokenIndex = engineIndex;
           
           engine.isRSVPMode = false;
           // Sync core progress immediately so the reader view doesn't jump

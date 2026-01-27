@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef, useLayoutEffect, useCallback } from
 import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { newRsvpEngine } from '../services/newRsvpEngine';
 import { RSVPLens } from './RSVPLens';
 import { ZuneControls } from './ZuneControls';
@@ -17,14 +16,14 @@ interface ZuneReaderProps {
 export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
   const { updateSettings, settings } = useTitanSettings();
 
   const [content, setContent] = useState("");
   const [isLensActive, setIsLensActive] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [wpm, setWpm] = useState(heartbeat.wpm);
-  const [currentToken, setCurrentToken] = useState(heartbeat.currentToken);
+  const [wpm, setWpm] = useState(settings.rsvpSpeed || 300);
+  const [currentToken, setCurrentToken] = useState<any>(null);
+  const [engineIndex, setEngineIndex] = useState(0);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -50,18 +49,16 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
   }, [settings.fontSize]);
 
   useEffect(() => {
-    const sync = () => {
+     const sync = () => {
        setIsPlaying(conductor.state === RSVPState.PLAYING);
-       setWpm(heartbeat.wpm);
-       setCurrentToken(heartbeat.currentToken);
-    };
-    const unsubC = conductor.subscribe(sync);
-    const unsubH = heartbeat.subscribe(sync);
-    const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+     };
+     const unsubC = conductor.subscribe(sync);
+     const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
       setIsPlaying(isPlaying);
       if (token) setCurrentToken(token as any);
-     });
-    return () => { unsubC(); unsubH(); unsubNew(); };
+      if (typeof index === 'number') setEngineIndex(index);
+      });
+     return () => { unsubC(); unsubNew(); };
   }, []);
 
   useLayoutEffect(() => {
@@ -122,10 +119,8 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
                    newRsvpEngine.play();
                  })();
                } catch (err) {
-                 // Fallback to legacy conductor
-                 conductor.prepare(content, { progress: core.currentProgress }); // Re-align to view
-                 setIsLensActive(true);
-                 conductor.play();
+                 // prepare failed; abort
+                 console.error('newRsvpEngine prepare failed', err);
                }
             }
         }
@@ -154,9 +149,7 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
           setIsLensActive(true);
           newRsvpEngine.play();
         } catch (e) {
-          await conductor.prepare(content, { progress: core.currentProgress });
-          setIsLensActive(true);
-          conductor.play();
+          console.error('newRsvpEngine prepare failed', e);
         }
       })();
     }
@@ -164,7 +157,7 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
 
   const handleTogglePlay = useCallback(() => {
       if (isLensActive) {
-        try { newRsvpEngine.togglePlay(); } catch (e) { conductor.togglePlay(); }
+        try { newRsvpEngine.togglePlay(); } catch (e) { /* ignore */ }
       } else {
         handleToggleMode(); 
       }
@@ -208,9 +201,9 @@ export const ZuneReader: React.FC<ZuneReaderProps> = ({ book, onClose }) => {
         if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
             wheelAccumulator.current += e.deltaX;
             if (Math.abs(wheelAccumulator.current) > 20) {
-                const direction = wheelAccumulator.current > 0 ? 1 : -1;
-          try { newRsvpEngine.seek(Math.max(0, (heartbeat.currentIndex || 0) + direction)); } catch (err) { conductor.seekRelative(direction); }
-                wheelAccumulator.current = 0;
+              const direction = wheelAccumulator.current > 0 ? 1 : -1;
+            try { newRsvpEngine.seek(Math.max(0, (engineIndex || 0) + direction)); } catch (err) { conductor.seekRelative(direction); }
+              wheelAccumulator.current = 0;
             }
         }
     }

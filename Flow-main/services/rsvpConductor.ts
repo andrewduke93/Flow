@@ -1,5 +1,4 @@
-import { RSVPHeartbeat } from './rsvpHeartbeat';
-import { newRsvpEngine } from './newRsvpEngine';
+import { newRsvpEngine, mapRawToRSVPTokens } from './newRsvpEngine';
 import { RSVPProcessor } from './rsvpProcessor';
 import { TitanCore } from './titanCore';
 import { RSVPHapticEngine } from './rsvpHaptics'; 
@@ -28,7 +27,7 @@ export interface RSVPStartConfig {
 export class RSVPConductor {
   private static instance: RSVPConductor;
   
-  private heartbeat: RSVPHeartbeat;
+    private engineIndex: number = 0;
   private core: TitanCore;
 
   public state: RSVPState = RSVPState.IDLE;
@@ -46,29 +45,28 @@ export class RSVPConductor {
   private notifyScheduled: boolean = false;
 
   private constructor() {
-    this.heartbeat = RSVPHeartbeat.getInstance();
-    this.core = TitanCore.getInstance();
-    
-        this.heartbeat.subscribe(() => this.handleHeartbeatUpdate());
-        this.heartbeat.onComplete(() => {
-                this.state = RSVPState.FINISHED;
-                this.releaseWakeLock(); // Release lock on finish
-                this.notify();
-        });
+        this.core = TitanCore.getInstance();
 
-        // Subscribe to newRsvpEngine for gradual migration; keep legacy heartbeat as fallback
+        // Subscribe to engine updates (newRsvpEngine is now the single source of truth)
         try {
             newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
-                // Mirror behavior of heartbeat-based updates
+                if (typeof index === 'number') this.engineIndex = index;
+
                 if (!isPlaying && this.state === RSVPState.PLAYING) {
                     this.state = RSVPState.PAUSED;
                     this.releaseWakeLock();
                 }
 
-                // Periodic sync to core for progress persistence
                 if (typeof index === 'number' && Math.abs(index - this.lastSavedIndex) >= 100) {
                     this.syncProgressToCore(true, index, token);
                     this.lastSavedIndex = index;
+                }
+
+                // Detect finish
+                const raw = newRsvpEngine.getTokensRaw();
+                if (!isPlaying && raw && raw.length > 0 && index >= raw.length - 1) {
+                    this.state = RSVPState.FINISHED;
+                    this.releaseWakeLock();
                 }
 
                 this.notify();
@@ -82,10 +80,8 @@ export class RSVPConductor {
     this.updateWPM(initialWPM);
 
     settingsService.subscribe(() => {
-        const newWPM = settingsService.getSettings().rsvpSpeed;
-        if (this.heartbeat.wpm !== newWPM) {
-            this.updateWPM(newWPM);
-        }
+      const newWPM = settingsService.getSettings().rsvpSpeed;
+      this.updateWPM(newWPM);
     });
 
     // Re-acquire lock on visibility change if playing
@@ -111,7 +107,7 @@ export class RSVPConductor {
     
     // 1. FAST PATH: Cache Hit
     // If the content string reference hasn't changed and we have tokens, skip processing.
-    if (this.lastContentRef === content && this.heartbeat.tokens.length > 0) {
+    if (this.lastContentRef === content && newRsvpEngine.getTokensRaw().length > 0) {
         this.applyConfig(config);
         return;
     }
@@ -137,48 +133,9 @@ export class RSVPConductor {
     this.preparationPromise = (async () => {
         try {
             // Try new engine preparation first (worker-based)
-            try {
-                await newRsvpEngine.prepare(content, this.heartbeat.wpm);
-                // Map engine tokens into RSVPHeartbeat token shape for legacy consumers
-                try {
-                    const raw = newRsvpEngine.getTokensRaw();
-                    if (raw && raw.length > 0) {
-                        const baseDuration = 60000 / Math.max(1, this.heartbeat.wpm);
-                        const mapped = raw.map((t: any) => {
-                            const txt: string = t.text || '';
-                            const len = txt.length || 0;
-                            const orpIdx = Math.max(0, Math.floor(len / 2));
-                            const left = txt.slice(0, orpIdx);
-                            const center = txt.charAt(orpIdx) || '';
-                            const right = txt.slice(orpIdx + 1);
-                            const punctMatch = txt.match(/[.!?,;:]+$/);
-                            const durationMultiplier = t.duration ? (t.duration / baseDuration) : 1.0;
-                            return {
-                                id: `e-${t.index}`,
-                                originalText: txt,
-                                leftSegment: left,
-                                centerCharacter: center,
-                                rightSegment: right,
-                                punctuation: punctMatch ? punctMatch[0] : undefined,
-                                durationMultiplier,
-                                isSentenceEnd: !!punctMatch && /[.!?]/.test(punctMatch[0]),
-                                isParagraphEnd: false,
-                                globalIndex: t.index,
-                                startOffset: -1
-                            } as any;
-                        });
-                        this.heartbeat.setTokens(mapped as any);
-                    }
-                } catch (mapErr) {
-                    console.warn('RSVPConductor: failed to map engine tokens to heartbeat', mapErr);
-                }
-                this.lastContentRef = content;
-            } catch (e) {
-                // Fallback to legacy processor if new engine fails
-                const tokens = await RSVPProcessor.process(content, 0, this.heartbeat.wpm);
-                this.heartbeat.setTokens(tokens);
-                this.lastContentRef = content;
-            }
+            // Use new engine exclusively
+            await newRsvpEngine.prepare(content, settingsService.getSettings().rsvpSpeed);
+            this.lastContentRef = content;
         } finally {
             this.preparationPromise = null;
         }
@@ -192,7 +149,9 @@ export class RSVPConductor {
    * Applies the seek/position logic after tokens are loaded.
    */
   private applyConfig(config: RSVPStartConfig) {
-      const tokens = this.heartbeat.tokens;
+      const settings = TitanSettingsService.getInstance().getSettings();
+      const raw = newRsvpEngine.getTokensRaw();
+      const tokens = mapRawToRSVPTokens(raw, settings.rsvpSpeed);
       let startIndex = 0;
 
       if (config.index !== undefined) {
@@ -216,7 +175,7 @@ export class RSVPConductor {
         startIndex = Math.max(0, Math.min(Math.floor(tokens.length * progress), tokens.length - 1));
       }
 
-      this.heartbeat.seek(startIndex);
+    try { newRsvpEngine.seek(startIndex); } catch (e) { /* ignore */ }
       
       // Ensure state is ready but paused (unless we decide to auto-play elsewhere)
       this.state = RSVPState.PAUSED;
@@ -236,40 +195,40 @@ export class RSVPConductor {
   public play() {
     // If finished, restart from beginning
     if (this.state === RSVPState.FINISHED) {
-        this.heartbeat.seek(0);
+        try { newRsvpEngine.seek(0); } catch (e) {}
         this.state = RSVPState.PAUSED;
         RSVPHapticEngine.impactMedium(); // Haptic feedback for restart
     }
     
-    if (this.heartbeat.tokens.length === 0) {
+    if (newRsvpEngine.getTokensRaw().length === 0) {
         return; 
     }
 
         this.state = RSVPState.PLAYING;
-        try { newRsvpEngine.play(); } catch (e) { this.heartbeat.play(); }
+        newRsvpEngine.play();
         this.requestWakeLock(); // Lock screen
         this.notify();
   }
 
   public pause(skipContextRewind: boolean = false) {
     this.state = RSVPState.PAUSED;
-        try { newRsvpEngine.pause(); } catch (e) { this.heartbeat.pause(); }
+                newRsvpEngine.pause();
     this.releaseWakeLock(); // Release lock
     
     // Context Rewind: Move back slightly to give context upon resume
     // This provides a better "re-entry" experience into the text
     if (!skipContextRewind) {
-        const currentIndex = this.heartbeat.currentIndex;
+        const currentIndex = this.engineIndex;
         const rewindAmount = 1; 
         const targetIndex = Math.max(0, currentIndex - rewindAmount);
         
         if (targetIndex !== currentIndex) {
-            this.heartbeat.seek(targetIndex);
+            try { newRsvpEngine.seek(targetIndex); } catch (e) {}
         }
     }
     
     // CRITICAL: Force sync to core so ReaderView can snap to this exact location
-        this.syncProgressToCore(true);
+                this.syncProgressToCore(true);
     this.notify();
   }
 
@@ -277,7 +236,7 @@ export class RSVPConductor {
    * Relative Seek (Scrubbing)
    */
   public seekRelative(delta: number) {
-      const current = this.heartbeat.currentIndex;
+      const current = this.engineIndex;
       const target = current + delta;
       
       // Only seek if changed
@@ -285,7 +244,7 @@ export class RSVPConductor {
           if (this.state === RSVPState.PLAYING) {
              this.pause(true); // Don't do context rewind when manually seeking
           }
-          try { newRsvpEngine.seek(target); } catch (e) { this.heartbeat.seek(target); }
+          try { newRsvpEngine.seek(target); } catch (e) {}
           this.syncProgressToCore(true); // Ensure Core is updated so UI reflects change
       }
   }
@@ -301,20 +260,19 @@ export class RSVPConductor {
     }
     
     // 2. STOP
-    try { newRsvpEngine.pause(); } catch (e) { this.heartbeat.stop(); }
+    try { newRsvpEngine.pause(); } catch (e) { /* ignore */ }
     this.state = RSVPState.IDLE;
     this.releaseWakeLock();
     
     // 3. CLEAR CACHE
     // We clear cache on shutdown to prevent memory leaks or stale state between books
-    this.lastContentRef = null;
-    this.heartbeat.clear(); 
+        this.lastContentRef = null;
     
     this.notify();
   }
 
   public updateWPM(wpm: number) {
-      this.heartbeat.updateWPM(wpm);
+            newRsvpEngine.updateWPM(wpm);
   }
 
   // MARK: - Internal Logic
@@ -337,38 +295,18 @@ export class RSVPConductor {
       }
   }
 
-  private handleHeartbeatUpdate() {
-      if (!this.heartbeat.isPlaying && this.state === RSVPState.PLAYING) {
-          this.state = RSVPState.PAUSED;
-          this.releaseWakeLock();
-      }
-
-      // Haptics removed for playback as requested.
-      /*
-      const token = this.heartbeat.currentToken;
-      if (token && this.state === RSVPState.PLAYING) {
-         RSVPHapticEngine.pulse(token);
-      }
-      */
-
-      // Sync less frequently during playback to save resources, but sync often enough for scrubbing
-      const currentIndex = this.heartbeat.currentIndex;
-      if (Math.abs(currentIndex - this.lastSavedIndex) >= 100) {
-          this.syncProgressToCore();
-          this.lastSavedIndex = currentIndex;
-      }
-      this.notify();
-  }
-
     private syncProgressToCore(forceSave: boolean = false, index?: number, token?: RSVPToken) {
             // Prefer explicit index/token if provided (from new engine subscription)
-            const currentIndex = typeof index === 'number' ? index : this.heartbeat.currentIndex;
-            const currentToken = token ?? this.heartbeat.currentToken;
+            const currentIndex = typeof index === 'number' ? index : this.engineIndex;
+            const settings = TitanSettingsService.getInstance().getSettings();
+            const raw = newRsvpEngine.getTokensRaw();
+            const mappedTokens = mapRawToRSVPTokens(raw, settings.rsvpSpeed);
+            const currentToken = token ?? mappedTokens[currentIndex] ?? null;
 
-            const totalTokens = (this.heartbeat.tokens && this.heartbeat.tokens.length) || (this.core.totalTokens || 0);
+            const totalTokens = (mappedTokens && mappedTokens.length) || (this.core.totalTokens || 0);
             if (totalTokens === 0) return;
 
-            if (currentToken && (currentToken as any).startOffset !== undefined) {
+            if (currentToken && (currentToken as any).startOffset !== undefined && (currentToken as any).startOffset >= 0) {
                 this.core.syncFromRSVP((currentToken as any).startOffset, currentIndex);
             } else {
                 if (currentIndex > 0) {

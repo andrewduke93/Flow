@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { newRsvpEngine } from '../services/newRsvpEngine';
 import { Play, Pause, Plus, Minus, Type, ListMusic, Sparkles, SkipBack } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
@@ -24,9 +23,8 @@ interface MediaCommandCenterProps {
  * Mission: Perfect center-weighted balance.
  */
 export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, onToggleRSVP, isRSVPActive, isRewinding = false, onSettingsClick }) => {
-  const core = TitanCore.getInstance();
-  const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
+    const core = TitanCore.getInstance();
+    const conductor = RSVPConductor.getInstance();
   const { settings, updateSettings } = useTitanSettings();
   const theme = useTitanTheme();
 
@@ -72,21 +70,22 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
 
   // -- Helpers --
 
-  const getEstTime = useCallback((pct: number) => {
-    const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
-    const idx = Math.floor(pct * total);
-    const left = total - idx;
-    const speed = settings.rsvpSpeed || 250; // Fallback if settings corrupted
-    const mins = Math.ceil(left / speed);
+    const getEstTime = useCallback((pct: number) => {
+        const rawLen = newRsvpEngine.getTokensRaw().length || core.totalTokens || 1;
+        const total = Math.max(1, rawLen);
+        const idx = Math.floor(pct * total);
+        const left = total - idx;
+        const speed = settings.rsvpSpeed || 250; // Fallback if settings corrupted
+        const mins = Math.ceil(left / speed);
     
-    if (mins < 1) return "< 1m";
-    if (mins >= 60) {
-        const h = Math.floor(mins / 60);
-        const m = mins % 60;
-        return `${h}h ${m}m`;
-    }
-    return `${mins}m`;
-  }, [settings.rsvpSpeed, heartbeat.tokens.length, core.totalTokens]);
+        if (mins < 1) return "< 1m";
+        if (mins >= 60) {
+                const h = Math.floor(mins / 60);
+                const m = mins % 60;
+                return `${h}h ${m}m`;
+        }
+        return `${mins}m`;
+    }, [settings.rsvpSpeed, core.totalTokens]);
 
   const getCurrentChapterTitle = useCallback((pct: number) => {
       if (!book.chapters || book.chapters.length === 0) return "";
@@ -156,17 +155,20 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
 
     // HIGH-FREQUENCY SYNC (Direct DOM)
     const syncSmoothProgress = () => {
-        if (!isScrubbingRef.current && core.isRSVPMode && heartbeat.tokens.length > 0) {
-            const pct = heartbeat.currentIndex / heartbeat.tokens.length;
-            updateVisuals(pct);
+        if (!isScrubbingRef.current && core.isRSVPMode) {
+            const raw = newRsvpEngine.getTokensRaw();
+            if (raw && raw.length > 0) {
+                const idx = 0; // will be filled by newRsvpEngine subscription
+            }
         }
     };
 
     syncState();
     
     // Initial position
-    const initialPct = (core.isRSVPMode && heartbeat.tokens.length > 0) 
-        ? heartbeat.currentIndex / heartbeat.tokens.length 
+    const raw = newRsvpEngine.getTokensRaw();
+    const initialPct = (core.isRSVPMode && raw && raw.length > 0) 
+        ? 0 / Math.max(1, raw.length) 
         : core.currentProgress;
     
     lastRenderedPct.current = initialPct;
@@ -176,20 +178,18 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
         const unsubCore = core.subscribe(syncState);
         const unsubCond = conductor.subscribe(syncState);
         const unsubProgress = core.onProgress(syncProgress);
-        const unsubHeartbeat = heartbeat.subscribe(syncSmoothProgress);
         const unsubNew = newRsvpEngine.subscribe(({ index }) => {
             if (!isScrubbingRef.current && core.isRSVPMode) {
-                const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
-                const pct = (typeof index === 'number') ? (index / total) : (heartbeat.currentIndex / total);
+                const rawNow = newRsvpEngine.getTokensRaw();
+                const total = Math.max(1, rawNow.length || core.totalTokens);
+                const pct = (typeof index === 'number') ? (index / total) : core.currentProgress;
                 updateVisuals(pct);
             }
         });
-
         return () => { 
                 unsubCore(); 
                 unsubCond(); 
                 unsubProgress(); 
-                unsubHeartbeat();
                 unsubNew();
         };
   }, [updateVisuals]); // updateVisuals now has no dependencies, so this effect runs once.
@@ -274,9 +274,10 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
       updateVisuals(clampedPct);
       
      if (core.isRSVPMode) {
-         const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
+         const rawLen = newRsvpEngine.getTokensRaw().length || core.totalTokens || 1;
+         const total = Math.max(1, rawLen);
          const target = Math.floor(clampedPct * total);
-         try { newRsvpEngine.seek(target); } catch (e) { heartbeat.seek(target); }
+         try { newRsvpEngine.seek(target); } catch (e) { /* ignore */ }
      } else {
          core.jump(clampedPct);
      }
@@ -284,9 +285,10 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
 
   const commitScrub = (pct: number) => {
       if (core.isRSVPMode) {
-          const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
+          const rawLen = newRsvpEngine.getTokensRaw().length || core.totalTokens || 1;
+          const total = Math.max(1, rawLen);
           const target = Math.floor(pct * total);
-          try { newRsvpEngine.seek(target); } catch (e) { heartbeat.seek(target); }
+          try { newRsvpEngine.seek(target); } catch (e) { /* ignore */ }
       } else {
           core.jump(pct);
       }
@@ -321,7 +323,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
       if (core.isRSVPMode) {
           if (chapterIndex < core.chapterTokenOffsets.length) {
               const tokenIdx = core.chapterTokenOffsets[chapterIndex];
-              heartbeat.seek(tokenIdx);
+              try { newRsvpEngine.seek(tokenIdx); } catch (e) { /* ignore */ }
               // Use jumpToChapter to ensure all listeners are notified
               // This triggers both jumpListeners and notify() for proper background sync
               core.jumpToChapter(chapterIndex);

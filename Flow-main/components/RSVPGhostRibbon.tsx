@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
+import { TitanSettingsService } from '../services/configService';
 import { RSVPTokenView } from './RSVPTokenView';
 import { RSVPToken } from '../types';
 
@@ -14,7 +14,6 @@ interface RSVPGhostRibbonProps {
  * Mission: Render the "Ghost" tokens (previous and next) to provide parafoveal context.
  */
 export const RSVPGhostRibbon: React.FC<RSVPGhostRibbonProps> = ({ screenCenter }) => {
-  const heartbeat = RSVPHeartbeat.getInstance();
   
   // State
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -22,34 +21,21 @@ export const RSVPGhostRibbon: React.FC<RSVPGhostRibbonProps> = ({ screenCenter }
 
   // 2. DATA LOGIC: Sync with Heartbeat (prefer engine tokens when heartbeat empty)
   useEffect(() => {
-    // Sync initial state
-    if (heartbeat.tokens && heartbeat.tokens.length > 0) {
-      setTokens(heartbeat.tokens);
-    } else {
-      const raw = newRsvpEngine.getTokensRaw();
-      if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, heartbeat.wpm));
+    // Prefer engine tokens only
+    const rawInit = newRsvpEngine.getTokensRaw();
+    const settings = TitanSettingsService.getInstance().getSettings();
+    if (rawInit && rawInit.length > 0) {
+      setTokens(mapRawToRSVPTokens(rawInit, settings.rsvpSpeed));
+      setCurrentIndex(0);
     }
-    setCurrentIndex(heartbeat.currentIndex);
 
-    const unsubscribe = heartbeat.subscribe(() => {
-        // High-frequency update
-        setCurrentIndex(heartbeat.currentIndex);
-        // Handle playlist changes (e.g., chapter swap)
-        if (heartbeat.tokens && heartbeat.tokens.length > 0) {
-            setTokens(heartbeat.tokens);
-        }
-    });
-
-    const unsubNew = newRsvpEngine.subscribe(({ index, token }) => {
+    const unsubNew = newRsvpEngine.subscribe(({ index }) => {
       if (typeof index === 'number') setCurrentIndex(index);
-      if ((!heartbeat.tokens || heartbeat.tokens.length === 0)) {
-        const raw = newRsvpEngine.getTokensRaw();
-        if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, heartbeat.wpm));
-        else if (token) setTokens([token as RSVPToken]);
-      }
+      const raw = newRsvpEngine.getTokensRaw();
+      if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, settings.rsvpSpeed));
     });
 
-    return () => { unsubscribe(); unsubNew(); };
+    return () => { unsubNew(); };
   }, []); // stable subscription
 
   // Safe fetch (The Past, Present, Future)

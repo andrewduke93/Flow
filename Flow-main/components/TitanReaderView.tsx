@@ -3,8 +3,8 @@ import React, { useEffect, useRef, useState, useMemo, memo, useCallback, useLayo
 import { Book, RSVPToken } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { useTitanTheme, TitanThemeColors } from '../services/titanTheme';
+import { newRsvpEngine } from '../services/newRsvpEngine';
 import { useTitanSettings } from '../services/configService';
 
 interface TitanReaderViewProps {
@@ -227,7 +227,6 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
     }, [book.id]);
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
   const theme = useTitanTheme();
   const { settings } = useTitanSettings();
   
@@ -412,7 +411,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
             } catch (e) {
                 console.error("[TitanReaderView] Initialization pipeline failed:", e);
             } finally {
-                const loadedTokens = heartbeat.tokens;
+                const loadedTokens = newRsvpEngine.getTokens();
                 setTokens(loadedTokens);
                 setIsReady(true);
                 requestAnimationFrame(() => {
@@ -469,7 +468,6 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   // When RSVP pauses, sync the exact word position to the scroll view
   useEffect(() => {
       const conductor = RSVPConductor.getInstance();
-      const heartbeat = RSVPHeartbeat.getInstance();
       
       let lastConductorState = conductor.state;
       
@@ -478,7 +476,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
           
           // When RSVP pauses (was playing, now paused), sync the exact position
           if (lastConductorState === 'PLAYING' && currentState === 'PAUSED') {
-              const currentTokenIndex = heartbeat.currentIndex;
+              const currentTokenIndex = newRsvpEngine.getIndex();
               updateActiveIndex(currentTokenIndex);
               // Smooth scroll to show current word in background
               scrollToToken(currentTokenIndex, true);
