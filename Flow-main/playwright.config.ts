@@ -1,3 +1,5 @@
+// @ts-nocheck
+// Playwright types are only available in CI where Playwright is installed; skip local TS checking for this config.
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
