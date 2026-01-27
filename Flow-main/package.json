@@ -11,6 +11,8 @@
     "test": "vitest",
     "test:watch": "vitest --watch",
     "test:ci": "vitest --run --reporter verbose",
+    "test:e2e:playwright": "playwright test",
+    "test:e2e:playwright:ci": "playwright test --reporter=list",
     "check:conflicts": "node ./scripts/check-conflicts.cjs",
     "ci": "npm run check:conflicts && npm run test:ci && npm run build",
     "prepare": "husky install"
@@ -32,6 +34,8 @@
     "husky": "^8.0.0",
     "vitest": "^1.1.5",
     "@testing-library/react": "^14.0.0",
-    "@testing-library/jest-dom": "^6.0.0"
+    "@testing-library/jest-dom": "^6.0.0",
+    "@playwright/test": "^1.40.0",
+    "playwright": "^1.40.0"
   }
 }
