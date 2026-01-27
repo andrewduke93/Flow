@@ -6,38 +6,49 @@ try { Worker = require('worker_threads').Worker; } catch (e) { Worker = null; }
 
 function waitForMessage(worker: any, predicate: (m: any) => boolean, timeout = 5000) {
   return new Promise<any>((resolve, reject) => {
+    const onmsg = (m: any) => {
+      try {
+        if (predicate(m)) {
+          clearTimeout(t);
+          cleanup();
+          resolve(m);
+        }
+      } catch (err) {
+        clearTimeout(t);
+        cleanup();
+        reject(err);
+      }
+    };
+    const onerr = (err: any) => {
+      clearTimeout(t);
+      cleanup();
+      reject(err);
+    };
+    const onexit = (code: number) => {
+      clearTimeout(t);
+      cleanup();
+      reject(new Error('worker exited with code ' + code));
+    };
+    const cleanup = () => {
+      try { worker.removeListener('message', onmsg); } catch {};
+      try { worker.removeListener('error', onerr); } catch {};
+      try { worker.removeListener('exit', onexit); } catch {};
+    };
     const t = setTimeout(() => {
-      worker.removeAllListeners('message');
-      worker.removeAllListeners('error');
-      worker.removeAllListeners('exit');
+      cleanup();
       reject(new Error('timeout waiting for message'));
     }, timeout);
-    worker.on('message', function onmsg(m) {
-      if (predicate(m)) {
-        clearTimeout(t);
-        worker.removeListener('message', onmsg);
-        worker.removeAllListeners('error');
-        worker.removeAllListeners('exit');
-        resolve(m);
-      }
-    });
-    worker.once('error', (err) => {
-      clearTimeout(t);
-      worker.removeAllListeners('message');
-      worker.removeAllListeners('exit');
-      reject(err);
-    });
-    worker.once('exit', (code) => {
-      clearTimeout(t);
-      worker.removeAllListeners('message');
-      worker.removeAllListeners('error');
-      reject(new Error('worker exited with code ' + code));
-    });
+    worker.on('message', onmsg);
+    worker.once('error', onerr);
+    worker.once('exit', onexit);
   });
 }
 
-// Skip by default in CI / node test env; keep test file present for manual runs.
-const runner = test.skip;
+// Run the test only when Node worker_threads are available and the vendored Reedy files exist.
+const reedyBase = path.resolve(process.cwd(), 'public/packages/reedy-core/js/content');
+const requiredFiles = ['content.js','Parser.js','Sequencer.js','Reader.js','View.js','ContentSelector.js'];
+const reedyAvailable = Worker && requiredFiles.every(f => fs.existsSync(path.join(reedyBase, f)));
+const runner = reedyAvailable ? test : test.skip;
 
 runner('reedy worker loads and prepares tokens', async () => {
   const workerPath = path.resolve(process.cwd(), 'test-workers/reedyIntegrationWorker.cjs');
