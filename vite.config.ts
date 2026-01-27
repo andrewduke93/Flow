@@ -6,7 +6,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-      base: mode === 'production' ? '/Flow/' : '/',
+      // Use a relative base so built assets work regardless of whether the
+      // site is served from the repo root or under `/Flow/` on GitHub Pages.
+      // This prevents absolute-path mismatches and CDN/path-prefix issues.
+      base: './',
       server: {
         port: 3000,
         host: '0.0.0.0',
