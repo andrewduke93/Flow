@@ -36,8 +36,15 @@
 
         function parseWithReedy() {
             const text = document.getElementById('test-text').value;
+            let debug = {
+                hasWindowReedy: !!window.reedy,
+                reedyKeys: window.reedy ? Object.keys(window.reedy) : [],
+                hasSimpleParser: !!(window.reedy && window.reedy.simpleParser),
+                hasSequencer: !!(window.reedy && window.reedy.Sequencer)
+            };
+            
             if (!window.reedy || !window.reedy.simpleParser || !window.reedy.Sequencer) {
-                renderResult({ error: 'reedy-not-available' });
+                renderResult({ error: 'reedy-not-available', debug });
                 return;
             }
 
@@ -48,9 +55,9 @@
                 while (seq.toNextToken()) {
                     tokens.push(seq.getToken().toString());
                 }
-                renderResult({ tokens, success: true });
+                renderResult({ tokens, success: true, debug });
             } catch (e) {
-                renderResult({ error: String(e) });
+                renderResult({ error: String(e), debug });
             }
         }
 
