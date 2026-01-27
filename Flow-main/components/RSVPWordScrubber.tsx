@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
+import { TitanSettingsService } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPToken } from '../types';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
@@ -28,7 +29,7 @@ export const RSVPWordScrubber: React.FC<RSVPWordScrubberProps> = ({
   onScrubEnd
 }) => {
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
+  const settings = TitanSettingsService.getInstance().getSettings();
   const theme = useTitanTheme();
   
   const containerRef = useRef<HTMLDivElement>(null);
@@ -59,25 +60,36 @@ export const RSVPWordScrubber: React.FC<RSVPWordScrubberProps> = ({
   useEffect(() => {
     const sync = () => {
       const isPaused = conductor.state === RSVPState.PAUSED;
-      const hasTokens = heartbeat.tokens.length > 0;
-      
-      setIsVisible(isPaused && hasTokens);
-      setTokens(heartbeat.tokens);
-      
+      const raw = newRsvpEngine.getTokensRaw();
+
+      setIsVisible(isPaused && !!(raw && raw.length > 0));
+      if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, settings.rsvpSpeed));
+
       // Only update currentIndex if not actively scrubbing
       if (!isScrubbing) {
-        setCurrentIndex(heartbeat.currentIndex);
+        // engine subscription updates currentIndex
         setScrubIndex(null);
       }
     };
 
     const unsubC = conductor.subscribe(sync);
-    const unsubH = heartbeat.subscribe(sync);
+    const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+      // Prefer new engine's playing state for visibility (paused => show scrubber)
+      const isPausedFromEngine = !isPlaying;
+      const raw = newRsvpEngine.getTokensRaw();
+      setIsVisible(isPausedFromEngine && !!(raw && raw.length > 0));
+      if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, settings.rsvpSpeed));
+      // Sync indices when not scrubbing
+      if (!isScrubbing && typeof index === 'number') {
+        setCurrentIndex(index);
+        setScrubIndex(null);
+      }
+    });
     sync();
 
     return () => {
       unsubC();
-      unsubH();
+      unsubNew();
     };
   }, [isScrubbing]);
 
@@ -226,9 +238,9 @@ export const RSVPWordScrubber: React.FC<RSVPWordScrubberProps> = ({
     const elapsed = Date.now() - holdStartTime.current;
     
     if (isScrubbing) {
-      // End scrub - commit the selection and snap to center
-      const finalIndex = scrubIndex ?? currentIndex;
-      heartbeat.seek(finalIndex);
+    // End scrub - commit the selection and snap to center
+    const finalIndex = scrubIndex ?? currentIndex;
+    try { newRsvpEngine.seek(finalIndex); } catch (e) { /* ignore */ }
       setCurrentIndex(finalIndex);
       onScrubEnd?.(finalIndex);
       RSVPHapticEngine.impactMedium();
@@ -243,7 +255,7 @@ export const RSVPWordScrubber: React.FC<RSVPWordScrubberProps> = ({
     } else if (dx < TAP_THRESHOLD_PX && elapsed < TAP_THRESHOLD_MS) {
       // Tap - select the word under finger
       const tappedIndex = getIndexAtPosition(e.clientX);
-      heartbeat.seek(tappedIndex);
+      try { newRsvpEngine.seek(tappedIndex); } catch (e) { /* ignore */ }
       setCurrentIndex(tappedIndex);
       onWordSelect?.(tappedIndex);
       RSVPHapticEngine.impactMedium();

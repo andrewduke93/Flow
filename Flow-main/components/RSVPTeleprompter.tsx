@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useLayoutEffect } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
+import { TitanSettingsService } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
 import { useTitanSettings } from '../services/configService';
 import { RSVPToken } from '../types';
@@ -31,7 +32,6 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   onRewindStateChange
 }) => {
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
   const theme = useTitanTheme();
   const { settings } = useTitanSettings();
   
@@ -61,40 +61,38 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   const RETICLE_POSITION = 35.5;
   const FONT_SIZE = "clamp(2.5rem, 10vw, 4rem)";
 
-  // Sync with heartbeat
+  // Sync with engine (legacy heartbeat removed)
   useEffect(() => {
-    setTokens(heartbeat.tokens);
-    tokensRef.current = heartbeat.tokens;
-    lastIndexRef.current = heartbeat.currentIndex;
-    setCurrentIndex(heartbeat.currentIndex);
+    const raw = newRsvpEngine.getTokensRaw();
+    if (raw && raw.length > 0) {
+      const mapped = mapRawToRSVPTokens(raw, settings.rsvpSpeed);
+      setTokens(mapped);
+      tokensRef.current = mapped;
+      lastIndexRef.current = 0;
+      setCurrentIndex(0);
+    }
     setIsPlaying(conductor.state === RSVPState.PLAYING);
 
-    const sync = () => {
-      const idx = heartbeat.currentIndex;
-      const playing = conductor.state === RSVPState.PLAYING;
-      const hbTokens = heartbeat.tokens;
-      
-      setIsPlaying(playing);
-      
-      const tokensChanged = hbTokens !== tokensRef.current;
-      const indexChanged = idx !== lastIndexRef.current;
-      
-      if (tokensChanged) {
-        setTokens(hbTokens);
-        tokensRef.current = hbTokens;
+    const unsubC = conductor.subscribe(() => setIsPlaying(conductor.state === RSVPState.PLAYING));
+    const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+      const idx = typeof index === 'number' ? index : 0;
+      setIsPlaying(isPlaying);
+      const rawNow = newRsvpEngine.getTokensRaw();
+      if (rawNow && rawNow.length > 0) {
+        const mapped = mapRawToRSVPTokens(rawNow, settings.rsvpSpeed);
+        setTokens(mapped);
+        tokensRef.current = mapped;
+      } else if (token) {
+        setTokens([token as RSVPToken]);
+        tokensRef.current = [token as RSVPToken];
       }
-      
-      if (indexChanged) {
+      if (idx !== lastIndexRef.current) {
         lastIndexRef.current = idx;
         setCurrentIndex(idx);
       }
-    };
+    });
 
-    const unsubC = conductor.subscribe(sync);
-    const unsubH = heartbeat.subscribe(sync);
-    sync();
-    
-    return () => { unsubC(); unsubH(); };
+    return () => { unsubC(); unsubNew(); };
   }, []);
 
   // Focus token - always use current index
@@ -148,24 +146,10 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       // If this is the focus word, measure the exact substring widths in-DOM
       // to account for font kerning, ligatures and browser layout.
       if (idx === currentIndex && focusToken) {
-        try {
-          // ...existing code for focus word measurement...
-          child.removeChild(measureSpan);
-
-          measureSpan.textContent = text.substring(0, focusCharIdx);
-          child.appendChild(measureSpan);
-          const uptoExclusive = measureSpan.getBoundingClientRect().width;
-          child.removeChild(measureSpan);
-
-          const charWidth = Math.max(0, uptoInclusive - uptoExclusive);
-          const centerOffset = uptoExclusive + charWidth / 2;
-
-          // final position relative to ribbon left
-          focusLetterPos = left + centerOffset;
-        } catch (e) {
-          // fallback to center if anything goes wrong
-          focusLetterPos = left + rect.width / 2;
-        }
+        // Precise character-measurement removed during migration: use visual center as
+        // a robust fallback. If we need pixel-perfect alignment later we can add a
+        // scoped DOM-measure helper that is fully defined here.
+        focusLetterPos = left + rect.width / 2;
       }
 
       wordPositions.current.set(idx, { left, width: rect.width, center: focusLetterPos });
@@ -219,7 +203,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       setIsRewinding(true);
       RSVPHapticEngine.impactLight();
       rewindIndexRef.current = currentIndex;
-      conductor.pause();
+      try { newRsvpEngine.pause(); } catch (e) { conductor.pause(); }
       rewindIntervalRef.current = setInterval(() => {
         rewindIndexRef.current = Math.max(0, rewindIndexRef.current - 1);
         setCurrentIndex(rewindIndexRef.current);
@@ -246,10 +230,16 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       holdTimerRef.current = null;
       // If pointer up before hold threshold, treat as tap: toggle pause/play
       if (isPlaying) {
-        if (conductor.state === RSVPState.PLAYING) {
-          conductor.pause(true);
-        } else {
-          conductor.play();
+        try {
+          // Prefer new engine control
+          if (isPlaying) newRsvpEngine.pause();
+          else newRsvpEngine.play();
+        } catch (e) {
+          if (conductor.state === RSVPState.PLAYING) {
+            conductor.pause(true);
+          } else {
+            conductor.play();
+          }
         }
       }
     }
@@ -274,24 +264,21 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       setIsRewinding(false);
       
       // Seek without auto-playing (seek will resume if was playing, but we'll handle that)
-      heartbeat.pause(); // Explicitly pause first
-      heartbeat.currentIndex = Math.max(0, Math.min(rewindIndexRef.current, heartbeat.tokens.length - 1));
-      // Use public method to trigger update if available
-      if (typeof heartbeat['subscribe'] === 'function') {
-        // Hack: force update by seeking to current index
-        heartbeat.seek(heartbeat.currentIndex);
-      }
-      
-      // Resume via conductor (handles state machine correctly)
-      conductor.play();
+        try { newRsvpEngine.pause(); } catch (e) { /* ignore */ }
+        const rawNow = newRsvpEngine.getTokensRaw();
+        const target = Math.max(0, Math.min(rewindIndexRef.current, (rawNow && rawNow.length - 1) || 0));
+        try { newRsvpEngine.seek(target); } catch (e) { /* ignore */ }
+
+        // Resume playback preferring new engine
+        try { newRsvpEngine.play(); } catch (e) { conductor.play(); }
       RSVPHapticEngine.impactMedium();
     }
   };
 
   // When rewinding state changes, ensure we update from heartbeat
   useEffect(() => {
-    if (!isRewinding && currentIndex !== heartbeat.currentIndex) {
-      setCurrentIndex(heartbeat.currentIndex);
+    if (!isRewinding) {
+      // currentIndex updated via engine subscription
     }
   }, [isRewinding]);
 

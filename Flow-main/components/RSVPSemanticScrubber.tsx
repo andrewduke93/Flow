@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
+import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
+import { TitanSettingsService } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPToken } from '../types';
 
@@ -18,7 +19,7 @@ interface ScrubberMarker {
  */
 export const RSVPSemanticScrubber: React.FC = () => {
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
+  const settings = TitanSettingsService.getInstance().getSettings();
   const theme = useTitanTheme();
   
   const containerRef = useRef<HTMLDivElement>(null);
@@ -36,17 +37,18 @@ export const RSVPSemanticScrubber: React.FC = () => {
   useEffect(() => {
     const sync = () => {
       setIsVisible(conductor.state === RSVPState.PAUSED || conductor.state === RSVPState.IDLE);
-      setTokens(heartbeat.tokens);
-      setCurrentIndex(heartbeat.currentIndex);
+      const raw = newRsvpEngine.getTokensRaw();
+      if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, settings.rsvpSpeed));
+      setCurrentIndex((raw && raw.length > 0) ? 0 : 0);
     };
 
     const unsubC = conductor.subscribe(sync);
-    const unsubH = heartbeat.subscribe(sync);
+    const unsubNew = newRsvpEngine.subscribe(() => sync());
     sync();
 
     return () => {
       unsubC();
-      unsubH();
+      unsubNew();
     };
   }, []);
 
@@ -78,15 +80,15 @@ export const RSVPSemanticScrubber: React.FC = () => {
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent) => {
+    const handlePointerUp = (e: React.PointerEvent) => {
     if (isScrubbing) {
       setIsScrubbing(false);
       setPreviewIndex(null);
       (e.target as Element).releasePointerCapture(e.pointerId);
       
       if (previewIndex !== null) {
-        heartbeat.seek(previewIndex);
-        conductor.pause();
+        try { newRsvpEngine.seek(previewIndex); } catch (e) { /* ignore */ }
+        try { newRsvpEngine.pause(); } catch (e) { conductor.pause(); }
       }
     }
   };

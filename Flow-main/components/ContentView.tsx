@@ -4,6 +4,7 @@ import { TitanLibrary } from './TitanLibrary';
 import { ReaderContainer } from './ReaderContainer';
 import { generateMockBooks } from '../services/mockData';
 import { AnimatePresence, motion } from 'framer-motion';
+import RSVPLite from './RSVPLite';
 
 /**
  * ContentView (Phase 5-B / 9-H)
@@ -14,6 +15,15 @@ import { AnimatePresence, motion } from 'framer-motion';
 export const ContentView: React.FC = () => {
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+
+  // Quick RSVP demo toggle via query param ?rsvpDemo=1
+  const [showRsvpDemo] = useState<boolean>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('rsvpDemo') === '1';
+    } catch (e) {
+      return false;
+    }
+  });
 
   // Load Initial Data
   useEffect(() => {
@@ -106,12 +116,18 @@ export const ContentView: React.FC = () => {
         Uses AnimatePresence to handle the exit animation.
       */}
       <AnimatePresence>
-        {selectedBook && (
+        {selectedBook && !showRsvpDemo && (
           <ReaderContainer 
             key={selectedBook.id} // Critical for AnimatePresence
             book={selectedBook} 
             onClose={handleCloseReader} 
           />
+        )}
+
+        {selectedBook && showRsvpDemo && (
+          <div key={`${selectedBook.id}-rsvp-demo`} className="p-6 z-50">
+            <RSVPLite content={(books[0]?.content ?? books.map(b=>b.title).join('\n\n')) || 'Welcome to Flow — RSVP Demo.'} />
+          </div>
         )}
       </AnimatePresence>
     </div>

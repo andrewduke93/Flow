@@ -31,7 +31,6 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   onRewindStateChange
 }) => {
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
   const theme = useTitanTheme();
   const { settings } = useTitanSettings();
   
@@ -70,24 +69,15 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     setIsPlaying(conductor.state === RSVPState.PLAYING);
 
     const sync = () => {
-      const idx = heartbeat.currentIndex;
-      const playing = conductor.state === RSVPState.PLAYING;
-      const hbTokens = heartbeat.tokens;
-      
-      setIsPlaying(playing);
-      
-      const tokensChanged = hbTokens !== tokensRef.current;
-      const indexChanged = idx !== lastIndexRef.current;
-      
-      if (tokensChanged) {
-        setTokens(hbTokens);
-        tokensRef.current = hbTokens;
+      const raw = newRsvpEngine.getTokensRaw();
+      if (raw && raw.length > 0) {
+        const mapped = mapRawToRSVPTokens(raw, settings.rsvpSpeed);
+        setTokens(mapped);
+        tokensRef.current = mapped;
+        lastIndexRef.current = 0;
+        setCurrentIndex(0);
       }
-      
-      if (indexChanged) {
-        lastIndexRef.current = idx;
-        setCurrentIndex(idx);
-      }
+      setIsPlaying(conductor.state === RSVPState.PLAYING);
     };
 
     const unsubC = conductor.subscribe(sync);

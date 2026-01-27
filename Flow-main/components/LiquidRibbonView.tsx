@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { RSVPTokenView } from './RSVPTokenView';
 import { RSVPToken } from '../types';
 import { RSVPScrubberLogic } from '../services/rsvpScrubber';
+import { newRsvpEngine, mapRawToRSVPTokens } from '../services/newRsvpEngine';
+import { TitanSettingsService } from '../services/configService';
 
 /**
  * LiquidRibbonView (Phase 9-B)
@@ -12,7 +13,7 @@ import { RSVPScrubberLogic } from '../services/rsvpScrubber';
  */
 export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCenter }) => {
   const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
+  const settings = TitanSettingsService.getInstance().getSettings();
   
   const [tokens, setTokens] = useState<RSVPToken[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -34,20 +35,29 @@ export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCen
     const sync = () => {
       // Only sync if not interacting to prevent fighting the user
       if (!isDragging) {
-        setTokens(heartbeat.tokens);
-        setCurrentIndex(heartbeat.currentIndex);
+        const raw = newRsvpEngine.getTokensRaw();
+        if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, settings.rsvpSpeed));
+        setCurrentIndex((raw && raw.length > 0) ? 0 : 0);
         setIsExpanded(conductor.state === RSVPState.PAUSED || conductor.state === RSVPState.IDLE);
       }
     };
-    
+
     const unsubConductor = conductor.subscribe(sync);
-    const unsubHeartbeat = heartbeat.subscribe(sync);
-    
+    const unsubNew = newRsvpEngine.subscribe(({ index, token, isPlaying }) => {
+      if (!isDragging) {
+        if (typeof index === 'number') setCurrentIndex(index);
+        const raw = newRsvpEngine.getTokensRaw();
+        if (raw && raw.length > 0) setTokens(mapRawToRSVPTokens(raw, settings.rsvpSpeed));
+        else if (token) setTokens([token as RSVPToken]);
+        setIsExpanded(!isPlaying);
+      }
+    });
+
     sync();
 
     return () => {
         unsubConductor();
-        unsubHeartbeat();
+        unsubNew();
     };
   }, [isDragging]); // Re-subscribe when drag state changes
 
@@ -66,6 +76,9 @@ export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCen
     
     // Capture pointer for smooth dragging even if mouse leaves div
     (e.target as Element).setPointerCapture(e.pointerId);
+
+    // Pause playback while dragging (prefer new engine)
+    try { newRsvpEngine.pause(); } catch (err) { conductor.pause(); }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -97,9 +110,9 @@ export const LiquidRibbonView: React.FC<{ screenCenter: number }> = ({ screenCen
     setCurrentIndex(finalIndex); // Optimistic update
 
     // Commit to Engine (Seek)
-    heartbeat.seek(finalIndex);
-    // Ensure we stay paused
-    conductor.pause();
+    try { newRsvpEngine.seek(finalIndex); } catch (e) { /* ignore */ }
+    // Ensure we stay paused (prefer new engine)
+    try { newRsvpEngine.pause(); } catch (err) { conductor.pause(); }
   };
 
   // MARK: - Rendering Logic
