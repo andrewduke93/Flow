@@ -13,7 +13,7 @@
     "test:ci": "vitest --run --reporter verbose",
     "check:conflicts": "node ./scripts/check-conflicts.cjs",
     "ci": "npm run check:conflicts && npm run test:ci && npm run build",
-    "prepare": "husky install"
+    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && husky install || echo 'Skipping husky install (no git or CI)'"
   },
   "dependencies": {
     "react": "^19.2.3",
