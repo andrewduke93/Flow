@@ -95,7 +95,6 @@
       }
     </style>
 
-
   <script type="importmap">
 {
   "imports": {
@@ -109,8 +108,9 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/Flow/assets/index-BZPkpCZl.js"></script>
-<link rel="manifest" href="/Flow/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/Flow/registerSW.js"></script></head>
+  <script type="module" crossorigin src="./assets/index-BGHs0FZb.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/reader-Dypa2sRS.js">
+</head>
   <body>
     <div id="root"></div>
     <!-- Fallback: ensure any preserved splash is removed once the app mounts or after a short timeout -->
@@ -121,16 +121,13 @@
             var s = document.getElementById('splash-fallback');
             var root = document.getElementById('root');
             if(!s) return;
-            // If app rendered content into #root, we can safely remove the splash
             if(root && root.children && root.children.length>0){
               s.remove();
               return;
             }
           }catch(e){}
         }
-        // Try a few times during load
         window.addEventListener('load', function(){ setTimeout(tryRemoveSplash, 300); setTimeout(tryRemoveSplash, 1200); setTimeout(tryRemoveSplash, 3000); });
-        // Final fallback: always remove after 7s so users aren't blocked by a stale splash
         setTimeout(function(){ try{ var s=document.getElementById('splash-fallback'); if(s) s.remove(); }catch(e){} }, 7000);
       })();
     </script>
