@@ -17,6 +17,13 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+node_modules/
+
+# Ignore Flow-main node_modules if present
+/Flow-main/node_modules/
+
+# Ignore editor/worktree artifacts
+.worktree
 *.suo
 *.ntvs*
 *.njsproj
