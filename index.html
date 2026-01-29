@@ -1,3 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <!-- Preload book cover image for LCP optimization (first book as example) -->
+    <link rel="preload" as="image" href="./public/cover.jpg" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="A quiet place to read. No distractions, just your books." />
+    
+    <!-- PWA Capabilities -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Flow" />
+    
+    <title>Flow</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/Flow/manifest.json">
+    
+    <!-- Icons: Using PNG for Better Compatibility -->
+    <link rel="icon" type="image/png" href="/Flow/favicon.png">
+    <link rel="apple-touch-icon" href="/Flow/icons/apple-touch-icon-180x180.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script>
+      // Register the Service Worker for PWA functionality (guarded to avoid 404s)
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          // Get the base path from the current location
+          const basePath = window.location.pathname.split('/Flow')[0] + '/Flow';
+          const swUrl = basePath + '/sw.js';
+          // Check script exists before attempting registration to avoid 404 errors
+          fetch(swUrl, { method: 'HEAD' })
+            .then(res => {
+              if (res.ok) {
+                return navigator.serviceWorker.register(swUrl, { scope: basePath + '/' })
+                  .then(registration => console.log('Flow Service Worker registered:', registration));
+              }
+              // Skip registration when sw.js is not present
+              console.warn('sw.js not found at', swUrl);
+            })
+            .catch(err => {
+              console.error('Flow Service Worker registration failed (fetch/check):', err);
+            });
+        });
+      }
+      
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Inter"', '-apple-system', 'sans-serif'],
+              zune: ['"Inter"', 'sans-serif'],
+            },
+            colors: {
+              zune: {
+                black: '#000000',
+                white: '#FFFFFF',
+                ember: '#E25822',
+                gray: '#333333',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #000000;
+        color: #FFFFFF;
+        font-family: "Inter", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden; /* App-like feel */
+        overscroll-behavior: none; /* Prevent bounce on Mac/iOS */
+      }
+      /* Zero Scrollbar Policy */
+      ::-webkit-scrollbar {
+        width: 0px;
+        background: transparent;
+      }
+      .no-tap-highlight {
+        -webkit-tap-highlight-color: transparent;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes fadeOut {
+        from { opacity: 1; }
+        to { opacity: 0; }
+      }
+      @keyframes slideUp {
+        from { transform: translateY(100%); }
+        to { transform: translateY(0); }
+      }
+      @keyframes slideDown {
+        from { transform: translateY(0); }
+        to { transform: translateY(100%); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "jszip": "https://esm.sh/jszip@3.10.1",
+    "framer-motion": "https://esm.sh/framer-motion@11.1.7?external=react,react-dom",
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0"
+  }
+}
+</script>
+  <script type="module" crossorigin src="./assets/index-BGHs0FZb.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/reader-Dypa2sRS.js">
+  </body>
+</html>
 
 <!DOCTYPE html>
 <html lang="en">
