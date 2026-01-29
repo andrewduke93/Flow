@@ -1,13 +1,14 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <!-- Preload book cover image for LCP optimization (first book as example) -->
+    <link rel="preload" as="image" href="./public/cover.jpg" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="A quiet place to read. No distractions, just your books." />
     
-    <!-- iOS PWA Capabilities -->
+    <!-- PWA Capabilities -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Flow" />
@@ -17,6 +18,7 @@
     <!-- PWA Manifest -->
     <link rel="manifest" href="/Flow/manifest.json">
     
+    <!-- Icons: Using PNG for Better Compatibility -->
     <link rel="icon" type="image/png" href="/Flow/favicon.png">
     <link rel="apple-touch-icon" href="/Flow/icons/apple-touch-icon-180x180.png">
 
@@ -28,15 +30,17 @@
       // Register the Service Worker for PWA functionality (guarded to avoid 404s)
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          // Determine base path and check sw.js existence before registering
+          // Get the base path from the current location
           const basePath = window.location.pathname.split('/Flow')[0] + '/Flow';
           const swUrl = basePath + '/sw.js';
+          // Check script exists before attempting registration to avoid 404 errors
           fetch(swUrl, { method: 'HEAD' })
             .then(res => {
               if (res.ok) {
                 return navigator.serviceWorker.register(swUrl, { scope: basePath + '/' })
                   .then(registration => console.log('Flow Service Worker registered:', registration));
               }
+              // Skip registration when sw.js is not present
               console.warn('sw.js not found at', swUrl);
             })
             .catch(err => {
@@ -59,16 +63,6 @@
                 ember: '#E25822',
                 gray: '#333333',
               }
-            },
-            transitionDuration: {
-              '300': '300ms',
-              '400': '400ms',
-              '500': '500ms',
-            },
-            transitionTimingFunction: {
-              'smooth': 'cubic-bezier(0.4, 0, 0.2, 1)',
-              'enter': 'cubic-bezier(0.16, 1, 0.3, 1)',
-              'exit': 'cubic-bezier(0.7, 0, 0.84, 0)',
             }
           }
         }
@@ -91,26 +85,33 @@
       .no-tap-highlight {
         -webkit-tap-highlight-color: transparent;
       }
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      @keyframes fadeOut {
-        from { opacity: 1; }
-        to { opacity: 0; }
-      }
+      /* Animation: slideUp - only plays once on mount */
       @keyframes slideUp {
-        from { transform: translateY(100%); }
-        to { transform: translateY(0); }
+        from { transform: translateY(100%); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
       }
-      @keyframes slideDown {
-        from { transform: translateY(0); }
-        to { transform: translateY(100%); }
+      .animate-slideUp {
+        animation: slideUp 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
     </style>
-  </head>
+
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "jszip": "https://esm.sh/jszip@3.10.1",
+    "framer-motion": "https://esm.sh/framer-motion@11.1.7?external=react,react-dom",
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0"
+  }
+}
+</script>
+  <script type="module" crossorigin src="./assets/index-BGHs0FZb.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/reader-Dypa2sRS.js">
+</head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
