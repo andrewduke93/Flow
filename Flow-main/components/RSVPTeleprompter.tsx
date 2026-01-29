@@ -145,16 +145,30 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       // by measuring the character width and position within the word
       let focusLetterPos = left + rect.width / 2;
       
-      // If this is the focus word, we need to find exact position of center letter
+      // If this is the focus word, try to find the precise ORP character DOM
       if (idx === currentIndex && focusToken) {
         const text = focusToken.originalText;
-        const focusCharIdx = Math.floor(text.length / 2);
-        
-        // Estimate letter width based on word width and length
-        // This accounts for variable character widths
-        const estimatedCharWidth = rect.width / text.length;
-        const charOffset = focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
-        focusLetterPos = left + charOffset;
+        const focusCharIdx = getORP(text);
+
+        // Prefer exact DOM measurement of the ORP character when available
+        try {
+          const orpSpan = (child.querySelector && (child.querySelector('span:nth-child(2)') as HTMLElement)) || null;
+          if (orpSpan && orpSpan.getBoundingClientRect) {
+            const orpRect = orpSpan.getBoundingClientRect();
+            const orpCenter = (orpRect.left + orpRect.right) / 2;
+            focusLetterPos = orpCenter - ribbonRect.left;
+          } else if (text.length > 0) {
+            // Fallback: estimate letter width based on word width and length
+            const estimatedCharWidth = rect.width / text.length;
+            const charOffset = focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
+            focusLetterPos = left + charOffset;
+          }
+        } catch (e) {
+          // Fallback to estimation on any error
+          const estimatedCharWidth = rect.width / Math.max(1, text.length);
+          const charOffset = focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
+          focusLetterPos = left + charOffset;
+        }
       }
       
       wordPositions.current.set(idx, { left, width: rect.width, center: focusLetterPos });
@@ -292,10 +306,14 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
 
   if (!focusToken) return null;
 
-  // ORP calculation - Center of word for natural focal point
-  // Centers each word on the reticle line, eye-friendly positioning
+  // ORP calculation - use ~30% into the word (Optimal Recognition Point)
+  // This places the highlighted letter slightly left of center for faster recognition
   const getORP = (text: string) => {
-    return Math.floor(text.length / 2);  // Center letter of word
+    const len = Math.max(1, text.length);
+    // For very short words, pick first letter; otherwise use ~30% index
+    if (len <= 3) return 0;
+    const idx = Math.floor(len * 0.3);
+    return Math.min(len - 1, Math.max(0, idx));
   };
 
   const orpIdx = getORP(focusToken.originalText);
