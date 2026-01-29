@@ -8,7 +8,7 @@
     <meta name="description" content="A quiet place to read. No distractions, just your books." />
     
     <!-- iOS PWA Capabilities -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Flow" />
     
@@ -25,34 +25,22 @@
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
-      // Register the Service Worker for PWA functionality
+      // Register the Service Worker for PWA functionality (guarded to avoid 404s)
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          // Add cache-bust query param to force SW refresh
-          const swUrl = '/Flow/sw.js?' + new Date().getTime();
-          navigator.serviceWorker.register(swUrl, { scope: '/Flow/' })
-            .then(registration => {
-              console.log('Flow Service Worker registered:', registration);
-              
-              // Check for updates every 60 seconds
-              setInterval(() => {
-                registration.update();
-              }, 60000);
-              
-              // Listen for SW updates
-              registration.addEventListener('updatefound', () => {
-                const newWorker = registration.installing;
-                newWorker.addEventListener('statechange', () => {
-                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    console.log('New Service Worker available. Page will reload.');
-                    // Force page reload on SW update
-                    window.location.reload();
-                  }
-                });
-              });
+          // Determine base path and check sw.js existence before registering
+          const basePath = window.location.pathname.split('/Flow')[0] + '/Flow';
+          const swUrl = basePath + '/sw.js';
+          fetch(swUrl, { method: 'HEAD' })
+            .then(res => {
+              if (res.ok) {
+                return navigator.serviceWorker.register(swUrl, { scope: basePath + '/' })
+                  .then(registration => console.log('Flow Service Worker registered:', registration));
+              }
+              console.warn('sw.js not found at', swUrl);
             })
             .catch(err => {
-              console.error('Flow Service Worker registration failed:', err);
+              console.error('Flow Service Worker registration failed (fetch/check):', err);
             });
         });
       }
