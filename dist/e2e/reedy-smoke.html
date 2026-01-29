@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Reedy smoke — Flow (test)</title>
+    <style>body{font-family:Inter,system-ui,Arial,sans-serif;margin:32px;color:#111}</style>
+  </head>
+  <body>
+    <h1>Reedy smoke (vendored)</h1>
+    <p id="reedy-status">initializing…</p>
+    <pre id="reedy-result" style="display:none"></pre>
+    <div id="reedy-ready" style="display:none">ready</div>
+    <div>Tokens parsed: <span id="reedy-token-count">0</span></div>
+
+    <script>
+      (function () {
+        const sample = 'This is a short Playwright smoke test. It should parse and return tokens.';
+
+        function renderResult(obj) {
+          const out = document.getElementById('reedy-result');
+          out.style.display = 'block';
+          out.textContent = JSON.stringify(obj);
+          document.getElementById('reedy-token-count').textContent = String((obj.tokens||[]).length);
+          document.getElementById('reedy-status').textContent = 'ready';
+          document.getElementById('reedy-ready').style.display = 'block';
+        }
+
+        function parseWithReedy() {
+          try {
+            if (!window.reedy || !window.reedy.simpleParser || !window.reedy.Sequencer) {
+              renderResult({ error: 'reedy-not-available' });
+              return;
+            }
+
+            const text = sample;
+            const parser = window.reedy.simpleParser(text);
+            const seq = new window.reedy.Sequencer(text, parser);
+
+            const tokens = [];
+            for (let i = 0; i < Math.min(200, seq.length); i++) {
+              const tk = seq.getToken(i);
+              tokens.push({ text: tk.toString(), duration: tk.getComplexity ? tk.getComplexity() : 1 });
+            }
+
+            renderResult({ tokens, length: seq.length });
+          } catch (err) {
+            renderResult({ error: String(err) });
+          }
+        }
+
+        // Try to use vendored scripts under /packages/reedy-core/js/content/
+        const check = () => {
+          if (window.reedy && window.reedy.simpleParser && window.reedy.Sequencer) return parseWithReedy();
+          const base = './packages/reedy-core/js/content/';
+          const needed = ['content.js','Parser.js','Sequencer.js','Reader.js','View.js','ContentSelector.js'];
+          let pending = needed.length;
+          needed.forEach((s) => {
+            const src = base + s;
+            const el = document.createElement('script');
+            el.src = src;
+            el.onload = () => { if (--pending === 0) parseWithReedy(); };
+            el.onerror = () => { pending = 0; renderResult({ error: 'failed-to-load:'+src }); };
+            document.head.appendChild(el);
+          });
+        };
+
+        setTimeout(check, 50);
+      })();
+    </script>
+  </body>
+</html>
