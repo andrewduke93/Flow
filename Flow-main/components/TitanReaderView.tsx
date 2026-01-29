@@ -28,10 +28,10 @@ const LightweightWord = memo(({
 }) => {
   return (
     <span
-      id={`w-${token.globalIndex}`} 
+      id={`w-$${token.globalIndex}`} 
       data-idx={token.globalIndex}
       data-off={token.startOffset}
-      className={`inline py-0.5 rounded-[2px] cursor-pointer select-none transition-colors duration-200 ${isActive ? '' : 'hover:opacity-60'}`}
+      className={`inline py-0.5 rounded-[2px] cursor-pointer select-none transition-colors duration-200 $${isActive ? '' : 'hover:opacity-60'}`}
       style={{
           backgroundColor: isActive ? theme.accent : 'transparent',
           color: isActive ? '#FFFFFF' : 'inherit',
@@ -62,12 +62,12 @@ const StaticParagraph = memo(({
 }) => {
     return (
         <p
-            id={`p-${startTokenIndex}`}
+            id={`p-$${startTokenIndex}`}
             data-start-index={startTokenIndex}
             onClick={() => onParagraphClick(startTokenIndex)}
             className="max-w-[60ch] mx-auto box-border relative cursor-pointer hover:opacity-100 transition-opacity scroll-mt-32"
             style={{
-                fontSize: `${settings.fontSize}px`,
+                fontSize: `$${settings.fontSize}px`,
                 lineHeight: settings.lineHeight,
                 marginBottom: settings.paragraphSpacing,
                 fontFamily: settings.fontFamily === 'New York' ? 'serif' : 'sans-serif',
@@ -118,12 +118,12 @@ const ParagraphChunk = memo(({
 
   return (
     <p 
-      id={`p-${startTokenIndex}`}
+      id={`p-$${startTokenIndex}`}
       data-start-index={startTokenIndex}
       onClick={handleDelegatedClick}
       className="max-w-[60ch] mx-auto box-border relative scroll-mt-32"
       style={{
-        fontSize: `${settings.fontSize}px`,
+        fontSize: `$${settings.fontSize}px`,
         lineHeight: settings.lineHeight,
         marginBottom: settings.paragraphSpacing,
         fontFamily: settings.fontFamily === 'New York' ? 'serif' : 'sans-serif',
@@ -249,7 +249,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       if (!containerRef.current) return;
       
       // 1. Try to find the specific word span (only exists if near active window)
-      let element = document.getElementById(`w-${index}`);
+      let element = document.getElementById(`w-$${index}`);
       
       // 2. FALLBACK: If word not rendered (StaticParagraph), find the paragraph container
       if (!element) {
@@ -637,13 +637,61 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       {/* EMPTY STATE: No content loaded */}
       {isReady && tokens.length === 0 && (
           <div 
-              className="fixed inset-0 flex items-center justify-center z-[50] pointer-events-none"
+              className="fixed inset-0 flex items-center justify-center z-[50] pointer-events-auto"
               style={{ backgroundColor: theme.background }}
           >
               <div className="flex flex-col items-center gap-4 px-8 text-center">
                   <div className="text-4xl opacity-30">📖</div>
                   <span className="text-lg font-medium" style={{ color: theme.secondaryText }}>No content available</span>
                   <span className="text-sm opacity-60" style={{ color: theme.secondaryText }}>This book appears to be empty or failed to load.</span>
+                  <div className="mt-4 flex gap-3">
+                    <button
+                      className="px-4 py-2 rounded bg-zune-ember text-white text-sm shadow"
+                      onClick={async () => {
+                        try {
+                          const storage = (await import('../services/titanStorage')).TitanStorage.getInstance();
+                          const ingestion = (await import('../services/ingestionService')).IngestionService.getInstance();
+                          // Try to fetch the stored source blob for this book
+                          const src = await storage.getSource(book.id);
+                          if (src) {
+                            const file = new File([src], `$${book.title || 'book'}.epub`, { type: 'application/epub+zip' });
+                            const repaired = await ingestion.ingest(file);
+                            // Persist repaired book and reopen
+                            await storage.saveBook(repaired);
+                            await storage.saveSource(repaired.id, src);
+                            // Force UI update by navigating to repaired book id
+                            window.location.reload();
+                            return;
+                          }
+
+                          // Fallback: re-seed welcome book if it's the guide
+                          if (book.id === 'guide-book-v1') {
+                            const mocks = (await import('../services/mockData')).generateMockBooks();
+                            const welcome = mocks.find(m => m.id === 'guide-book-v1');
+                            if (welcome) {
+                              await storage.saveBook(welcome);
+                              window.location.reload();
+                              return;
+                            }
+                          }
+
+                          alert('Repair failed: no source available to re-ingest. Try re-importing the book or use the Library to open a different title.');
+                        } catch (err) {
+                          console.error('Repair failed', err);
+                          alert('Repair failed — see console for details.');
+                        }
+                      }}
+                    >
+                      Repair book
+                    </button>
+
+                    <button
+                      className="px-4 py-2 rounded border border-neutral-700 text-sm"
+                      onClick={() => { if (containerRef.current) containerRef.current.scrollTop = 0; }}
+                    >
+                      Scroll to top
+                    </button>
+                  </div>
               </div>
           </div>
       )}
