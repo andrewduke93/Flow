@@ -6,9 +6,11 @@ import { fileURLToPath } from 'url';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     const isDev = mode === 'development';
+    const isCapacitor = process.env.CAPACITOR_BUILD === 'true';
     
     return {
-      base: '/Flow/',
+      // Use relative paths for Capacitor native builds, /Flow/ for web
+      base: isCapacitor ? './' : '/Flow/',
       server: {
         port: 3000,
         host: '0.0.0.0',
@@ -62,7 +64,8 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.IS_CAPACITOR': JSON.stringify(isCapacitor)
       },
       resolve: {
         alias: {
