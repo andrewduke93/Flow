@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CloudService, CloudBook } from '../services/cloudService';
-import { BookstoreService, BookstoreBook } from '../services/bookstoreService';
 import { useTitanTheme } from '../services/titanTheme';
 import { Search, Download, X, Loader2, BookOpen, Library, Check, AlertCircle, Lock, Play, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,70 +13,33 @@ interface TitanCloudLibraryProps {
 }
 
 type DownloadState = 'idle' | 'loading' | 'success' | 'error';
-type SourceTab = 'gutenberg' | 'standard-ebooks' | 'open-library' | 'feedbooks';
 
 const SUGGESTED_GENRES = ["philosophy", "gothic", "sci-fi", "adventure", "poetry", "mystery"];
 
-const SOURCE_INFO: Record<SourceTab, { name: string; description: string; color: string }> = {
-  'gutenberg': { 
-    name: 'Project Gutenberg', 
-    description: '70,000+ free public domain ebooks',
-    color: '#6366F1'
-  },
-  'standard-ebooks': { 
-    name: 'Standard Ebooks', 
-    description: 'beautifully formatted classics',
-    color: '#EC4899'
-  },
-  'open-library': { 
-    name: 'Open Library', 
-    description: 'borrow from the internet archive',
-    color: '#F59E0B'
-  },
-  'feedbooks': { 
-    name: 'Feedbooks', 
-    description: 'curated public domain catalog',
-    color: '#10B981'
-  }
-};
-
 /**
  * TitanCloudLibrary
- * The "Visit Library" experience with multiple sources.
+ * The "Visit Library" experience - Project Gutenberg public domain books.
  * Identity: The Archivist.
  */
 export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBooks, onClose, onImport, onOpen }) => {
   const theme = useTitanTheme();
   const cloudService = CloudService.getInstance();
-  const bookstoreService = BookstoreService.getInstance();
 
-  const [activeTab, setActiveTab] = useState<SourceTab>('gutenberg');
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<(CloudBook | BookstoreBook)[]>([]);
+  const [results, setResults] = useState<CloudBook[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   
   // Track download state per book title to allow parallel/multiple interactions
   const [downloadStates, setDownloadStates] = useState<Record<string, DownloadState>>({});
 
-  // Load featured books when tab changes
+  // Load featured books on mount
   useEffect(() => {
     loadFeatured();
-  }, [activeTab]);
+  }, []);
 
   const loadFeatured = async () => {
     setQuery('');
-    setResults([]);
-    
-    if (activeTab === 'gutenberg') {
-      setResults(cloudService.getFeaturedBooks());
-    } else {
-      try {
-        const featured = await bookstoreService.getFeatured(activeTab);
-        setResults(featured);
-      } catch (e) {
-        console.error('Failed to load featured:', e);
-      }
-    }
+    setResults(cloudService.getFeaturedBooks());
   };
 
   const handleSearch = async (e?: React.FormEvent, overrideQuery?: string) => {
@@ -93,13 +55,8 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
     setResults([]);
 
     try {
-      if (activeTab === 'gutenberg') {
-        const books = await cloudService.searchCuratedBooks(searchVal);
-        setResults(books);
-      } else {
-        const books = await bookstoreService.search(activeTab, searchVal);
-        setResults(books);
-      }
+      const books = await cloudService.searchCuratedBooks(searchVal);
+      setResults(books);
     } catch (e) {
       console.error(e);
     } finally {
@@ -114,7 +71,7 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
     }
   }, [query]);
 
-  const handleDownload = async (book: CloudBook | BookstoreBook) => {
+  const handleDownload = async (book: CloudBook) => {
     const bookKey = book.title;
     const currentState = downloadStates[bookKey] || 'idle';
     if (currentState === 'loading' || currentState === 'success') return;
@@ -122,16 +79,7 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
     setDownloadStates(prev => ({ ...prev, [bookKey]: 'loading' }));
 
     try {
-      let newBook: Book;
-      
-      if ('gutenbergId' in book) {
-        // Gutenberg book
-        newBook = await cloudService.downloadBook(book);
-      } else {
-        // Bookstore book
-        newBook = await bookstoreService.downloadBook(book);
-      }
-      
+      const newBook = await cloudService.downloadBook(book);
       onImport(newBook);
       setDownloadStates(prev => ({ ...prev, [bookKey]: 'success' }));
     } catch (e) {
@@ -204,11 +152,8 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
     return baseStyle;
   };
 
-  // Detect copyright substitution (Gutenberg only)
-  const isCopyrightSubstituted = activeTab === 'gutenberg' && results.length > 0 && 
-    (results[0] as CloudBook).isCopyrightedReplacement;
-
-  const activeSource = SOURCE_INFO[activeTab];
+  // Detect copyright substitution
+  const isCopyrightSubstituted = results.length > 0 && results[0].isCopyrightedReplacement;
 
   return (
     <div 
@@ -225,7 +170,7 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
             </h2>
           </div>
           <p className="text-xs font-medium opacity-60 lowercase max-w-[240px]" style={{ color: theme.secondaryText }}>
-            free books from the public domain
+            70,000+ free public domain ebooks
           </p>
         </div>
         <button 
@@ -236,37 +181,8 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
         </button>
       </div>
 
-      {/* SOURCE TABS */}
-      <div className="px-6 pt-4 pb-2">
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide">
-          {(Object.keys(SOURCE_INFO) as SourceTab[]).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`shrink-0 px-4 py-2 rounded-xl text-xs font-bold lowercase tracking-wide transition-all active:scale-95 ${
-                activeTab === tab 
-                  ? 'text-white shadow-md' 
-                  : 'opacity-60 hover:opacity-100'
-              }`}
-              style={{ 
-                backgroundColor: activeTab === tab ? SOURCE_INFO[tab].color : theme.surface,
-                color: activeTab === tab ? '#FFF' : theme.primaryText,
-                border: activeTab === tab ? 'none' : `1px solid ${theme.borderColor}`
-              }}
-            >
-              {SOURCE_INFO[tab].name}
-            </button>
-          ))}
-        </div>
-        
-        {/* Active source description */}
-        <p className="text-[10px] font-medium lowercase mt-2 opacity-50" style={{ color: theme.secondaryText }}>
-          {activeSource.description}
-        </p>
-      </div>
-
       {/* SEARCH BAR */}
-      <div className="px-6 pt-2 pb-2">
+      <div className="px-6 pt-4 pb-2">
         <form onSubmit={handleSearch} className="relative group">
           <input 
             type="text"
@@ -287,8 +203,8 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
           />
         </form>
 
-        {/* Quick Genre Pills (Gutenberg only) */}
-        {!query && activeTab === 'gutenberg' && (
+        {/* Quick Genre Pills */}
+        {!query && (
           <div className="flex flex-wrap gap-2 mt-3 animate-fadeIn">
             {SUGGESTED_GENRES.map(genre => (
               <button
@@ -324,13 +240,13 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
               className="flex items-center justify-center gap-2 py-6 mb-2 text-sm font-medium"
               style={{ color: theme.secondaryText }}
             >
-              <Sparkles className="animate-pulse" size={16} style={{ color: activeSource.color }} />
-              <span className="lowercase">scanning {activeSource.name.toLowerCase()}...</span>
+              <Sparkles className="animate-pulse" size={16} style={{ color: theme.accent }} />
+              <span className="lowercase">scanning project gutenberg...</span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* COPYRIGHT BANNER (If substituted - Gutenberg only) */}
+        {/* COPYRIGHT BANNER (If substituted) */}
         <AnimatePresence>
           {!isSearching && isCopyrightSubstituted && (
             <motion.div
@@ -390,13 +306,11 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
               );
 
               const downloadState = downloadStates[book.title] || 'idle';
-              const bookSource = 'source' in book ? book.source : 'gutenberg';
-              const sourceColor = SOURCE_INFO[bookSource as SourceTab]?.color || theme.accent;
               
               return (
                 <motion.div
                   layout
-                  key={`${bookSource}-${book.title}`}
+                  key={`gutenberg-${book.title}`}
                   initial={false}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
@@ -410,7 +324,7 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
                   {/* Mood Gradient */}
                   <div 
                     className="absolute top-0 right-0 w-40 h-40 rounded-full blur-[60px] opacity-[0.12] transition-opacity group-hover:opacity-[0.2]"
-                    style={{ backgroundColor: book.moodColor || sourceColor }}
+                    style={{ backgroundColor: book.moodColor || theme.accent }}
                   />
 
                   <div className="relative z-10 flex flex-col h-full">
@@ -436,13 +350,13 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
                       </div>
                       
                       {/* Tags */}
-                      {'genre' in book && book.genre && (
+                      {book.genre && (
                         <div className="flex flex-wrap gap-1.5 mb-3">
                           <span 
                             className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight"
                             style={{ 
-                              backgroundColor: `${sourceColor}15`, 
-                              color: sourceColor
+                              backgroundColor: `${theme.accent}15`, 
+                              color: theme.accent
                             }}
                           >
                             {book.genre}
