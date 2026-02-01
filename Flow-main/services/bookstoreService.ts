@@ -27,6 +27,50 @@ export interface BookstoreBook {
   feedbooksId?: string;
 }
 
+// CORS proxy for fetching from external domains
+// Uses multiple fallback proxies for reliability
+const CORS_PROXIES = [
+  'https://api.allorigins.win/raw?url=',
+  'https://corsproxy.io/?',
+];
+
+async function fetchWithCORS(url: string): Promise<Response> {
+  // Try direct fetch first (might work for some APIs)
+  try {
+    const direct = await fetch(url, { mode: 'cors' });
+    if (direct.ok) return direct;
+  } catch {
+    // Direct fetch failed, try proxies
+  }
+  
+  // Try each proxy
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const res = await fetch(proxy + encodeURIComponent(url));
+      if (res.ok) return res;
+    } catch {
+      continue;
+    }
+  }
+  
+  throw new Error('All CORS proxies failed');
+}
+
+export interface BookstoreBook {
+  id: string;
+  title: string;
+  author: string;
+  summary: string;
+  moodColor: string;
+  coverUrl?: string;
+  source: 'standard-ebooks' | 'open-library' | 'feedbooks' | 'gutenberg';
+  downloadUrl?: string;
+  // Source-specific metadata
+  openLibraryKey?: string;
+  standardEbooksUrl?: string;
+  feedbooksId?: string;
+}
+
 // Color generator from string hash
 const generateColor = (str: string): string => {
   let hash = 0;
@@ -190,7 +234,7 @@ class StandardEbooksProvider {
     const textUrl = `${book.standardEbooksUrl}/text/single-page`;
     
     try {
-      const res = await fetch(textUrl);
+      const res = await fetchWithCORS(textUrl);
       if (!res.ok) throw new Error('Failed to fetch text');
       
       const html = await res.text();
@@ -200,11 +244,17 @@ class StandardEbooksProvider {
       const doc = parser.parseFromString(html, 'text/html');
       
       // Remove navigation, headers, etc.
-      doc.querySelectorAll('nav, header, footer, .toc').forEach(el => el.remove());
+      doc.querySelectorAll('nav, header, footer, .toc, #toc, .colophon, .titlepage, .imprint').forEach(el => el.remove());
       
       // Get the main content
       const content = doc.querySelector('main, article, body');
-      return content?.textContent || '';
+      const text = content?.textContent || '';
+      
+      if (text.length < 500) {
+        throw new Error('Content too short');
+      }
+      
+      return text;
       
     } catch (e) {
       console.error('[StandardEbooks] Download failed:', e);
@@ -307,26 +357,34 @@ class OpenLibraryProvider {
     if (!book.openLibraryKey) throw new Error('No Open Library key');
     
     try {
-      // Get edition info
+      // Get edition info to find an Internet Archive ID
       const workRes = await fetch(`https://openlibrary.org${book.openLibraryKey}.json`);
       const workData = await workRes.json();
       
       // Try to find a readable edition
-      const editionsRes = await fetch(`https://openlibrary.org${book.openLibraryKey}/editions.json?limit=10`);
+      const editionsRes = await fetch(`https://openlibrary.org${book.openLibraryKey}/editions.json?limit=20`);
       const editionsData = await editionsRes.json();
       
-      // Look for an edition with full text available
-      for (const edition of editionsData.entries || []) {
-        if (edition.ocaid) {
-          // This has an Internet Archive ID - try to get the text
-          const textUrl = `https://archive.org/stream/${edition.ocaid}/${edition.ocaid}_djvu.txt`;
-          const textRes = await fetch(textUrl);
+      // Look for an edition with full text available (prioritize those with ocaid)
+      const editionsWithOcaid = (editionsData.entries || []).filter((e: any) => e.ocaid);
+      
+      for (const edition of editionsWithOcaid) {
+        try {
+          // Try the plain text version from Internet Archive
+          const textUrl = `https://archive.org/download/${edition.ocaid}/${edition.ocaid}_djvu.txt`;
+          const textRes = await fetchWithCORS(textUrl);
           if (textRes.ok) {
-            return await textRes.text();
+            const text = await textRes.text();
+            if (text.length > 1000) {
+              return text;
+            }
           }
+        } catch {
+          continue;
         }
       }
       
+      // If no direct text, try to get readable online version
       throw new Error('No readable edition found. Some books require borrowing from Open Library.');
     } catch (e) {
       console.error('[OpenLibrary] Download failed:', e);
@@ -446,15 +504,23 @@ class FeedbooksProvider {
     if (!book.feedbooksId) throw new Error('No Feedbooks ID');
     
     try {
-      // Feedbooks provides epub and txt downloads
+      // Feedbooks provides txt downloads for public domain books
       const txtUrl = `https://www.feedbooks.com/book/${book.feedbooksId}.txt`;
-      const res = await fetch(txtUrl);
+      const res = await fetchWithCORS(txtUrl);
       
       if (!res.ok) {
-        throw new Error('Text version not available');
+        // Try epub endpoint and extract text
+        const epubUrl = `https://www.feedbooks.com/book/${book.feedbooksId}.epub`;
+        throw new Error('Text version not available, try epub');
       }
       
-      return await res.text();
+      const text = await res.text();
+      
+      if (text.length < 500) {
+        throw new Error('Content too short');
+      }
+      
+      return text;
     } catch (e) {
       console.error('[Feedbooks] Download failed:', e);
       throw new Error('Could not download from Feedbooks');

@@ -51,6 +51,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   const [isRewindHeld, setIsRewindHeld] = useState(false);
   const [isNarratorEnabled, setIsNarratorEnabled] = useState(narrator.isEnabled);
   const showChapterSelectorRef = useRef(false);
+  const wasPlayingBeforeRewind = useRef(false);
   
   // Refs
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -335,6 +336,9 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     if (!isRSVPActive) return;
     RSVPHapticEngine.impactLight();
     
+    // Track if we were playing BEFORE rewind starts
+    wasPlayingBeforeRewind.current = conductor.state === RSVPState.PLAYING;
+    
     // Immediate single step back
     const newIdx = Math.max(0, heartbeat.currentIndex - REWIND_STEP);
     heartbeat.seek(newIdx);
@@ -342,8 +346,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     // Start hold timer for continuous rewind
     rewindHoldTimerRef.current = setTimeout(() => {
       setIsRewindHeld(true);
-      const wasPlaying = conductor.state === RSVPState.PLAYING;
-      if (wasPlaying) conductor.pause();
+      if (wasPlayingBeforeRewind.current) conductor.pause();
       
       rewindIntervalRef.current = setInterval(() => {
         const current = heartbeat.currentIndex;
@@ -369,8 +372,10 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     }
     if (isRewindHeld) {
       setIsRewindHeld(false);
-      // Resume playback after hold release
-      conductor.play();
+      // Only resume playback if we were playing before rewind started
+      if (wasPlayingBeforeRewind.current) {
+        conductor.play();
+      }
       RSVPHapticEngine.impactMedium();
     }
   }, [isRewindHeld]);

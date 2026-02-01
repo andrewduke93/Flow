@@ -7,10 +7,16 @@ import { RSVPToken } from '../types';
  * to ensure zero-latency updates and precise WPM timing.
  * 
  * Update Phase 9-F: Velocity Ramp & Re-Entry Logic.
+ * Update Phase 10: Sentence Chunking for natural rhythm.
  * Performance Optimized: Batched React notifications, RAF-based timing, microtask batching.
  * 
  * Identity: Game Engine Engineer / Systems Architect.
  */
+
+// Sentence-ending punctuation for natural rhythm detection
+const SENTENCE_ENDERS = new Set(['.', '!', '?', '…', '‽']);
+const CLAUSE_PAUSERS = new Set([';', ':', '—', '–']);
+
 export class RSVPHeartbeat {
   private static instance: RSVPHeartbeat;
   
@@ -23,6 +29,11 @@ export class RSVPHeartbeat {
   // Tracks how many words have been shown since 'Play' started.
   // 0 = 1st word (2.0x slow), 1 = 2nd word (1.5x slow), 2 = 3rd word (1.2x slow), 3+ = Normal.
   public rampStep: number = 3; 
+
+  // Phase 10: Sentence Chunking
+  // Natural reading rhythm - boost pauses at sentence boundaries
+  private sentenceBoostEnabled: boolean = true;
+  private wordsInCurrentSentence: number = 0;
 
   // Internal Engine State
   private _isPlaying: boolean = false;
@@ -203,7 +214,39 @@ export class RSVPHeartbeat {
     else if (this.rampStep === 1) rampMultiplier = 1.5;  // Picking up
     else if (this.rampStep === 2) rampMultiplier = 1.2;  // Almost there
 
-    const requiredDuration = baseDuration * token.durationMultiplier * rampMultiplier;
+    // Phase 10: Sentence Chunking - Natural Rhythm Boost
+    // At higher WPM, the token's durationMultiplier might not create enough
+    // perceptual pause. Add an extra sentence-boundary boost.
+    let sentenceBoost = 1.0;
+    if (this.sentenceBoostEnabled) {
+      const word = token.word;
+      const lastChar = word.charAt(word.length - 1);
+      const secondLastChar = word.length > 1 ? word.charAt(word.length - 2) : '';
+      
+      // Check for sentence-ending punctuation (including inside quotes)
+      const endsWithSentence = SENTENCE_ENDERS.has(lastChar) || 
+        (lastChar === '"' && SENTENCE_ENDERS.has(secondLastChar)) ||
+        (lastChar === "'" && SENTENCE_ENDERS.has(secondLastChar)) ||
+        (lastChar === '\u201D' && SENTENCE_ENDERS.has(secondLastChar)) ||
+        (lastChar === '\u2019' && SENTENCE_ENDERS.has(secondLastChar));
+      
+      const endsWithClause = CLAUSE_PAUSERS.has(lastChar);
+      
+      if (endsWithSentence) {
+        // Sentence boundary: add perceptual pause that scales with WPM
+        // At higher speeds, we need MORE relative pause to notice it
+        const speedFactor = Math.max(1.0, this.wpm / 200);
+        sentenceBoost = 1.0 + (0.3 * speedFactor);
+        this.wordsInCurrentSentence = 0;
+      } else if (endsWithClause) {
+        // Clause boundary: smaller pause
+        sentenceBoost = 1.15;
+      } else {
+        this.wordsInCurrentSentence++;
+      }
+    }
+
+    const requiredDuration = baseDuration * token.durationMultiplier * rampMultiplier * sentenceBoost;
 
     // 5. Check Threshold
     if (this.accumulatedTime >= requiredDuration) {
