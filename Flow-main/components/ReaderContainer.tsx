@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Book } from '../types';
 import { TitanReaderView } from './TitanReaderView';
 import { RSVPTeleprompter } from './RSVPTeleprompter'; 
@@ -219,21 +219,44 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   // MARK: - Gesture Handling moved to RSVPTeleprompter (unified tap/hold/swipe)
 
   // Handle tap from teleprompter - toggle play/pause
-  const handleTeleprompterTap = () => {
+  const handleTeleprompterTap = useCallback(() => {
     if (conductor.state === RSVPState.PLAYING) {
       conductor.pause(true); // Skip context rewind for quick tap-pause
     } else {
       conductor.play();
     }
-  };
+  }, []);
 
   // Handle long press exit from RSVP - exit to scroll view with word highlighted
-  const handleLongPressExit = () => {
-    if (!isRSVP) return;
+  const handleLongPressExit = useCallback(() => {
+    if (!engine.isRSVPMode) return;
     
     // Exit RSVP mode and scroll to current word
     handleModeToggle(false);
-  };
+  }, []);
+
+  // Handle settings open - memoized to prevent MediaCommandCenter re-renders
+  const handleSettingsClick = useCallback(() => {
+    if (!isHandlingPopState.current) {
+      window.history.pushState({ modal: 'settings' }, '', window.location.href);
+    }
+    setShowSettings(true);
+  }, []);
+
+  // Handle toggle chrome visibility - memoized for TitanReaderView
+  const handleToggleChrome = useCallback(() => {
+    setIsChromeVisible(p => !p);
+  }, []);
+
+  // Handle RSVP request from reader - memoized
+  const handleRequestRSVP = useCallback((offset?: number, index?: number) => {
+    handleModeToggle(true, offset, index);
+  }, []);
+
+  // Handle toggle from MediaCommandCenter - memoized
+  const handleMediaToggle = useCallback((startOffset?: number) => {
+    handleModeToggle(undefined, startOffset);
+  }, []);
 
   return (
     <div 
@@ -253,8 +276,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       >
           <TitanReaderView 
             book={book} 
-            onToggleChrome={() => setIsChromeVisible(p => !p)} 
-            onRequestRSVP={(offset, index) => handleModeToggle(true, offset, index)}
+            onToggleChrome={handleToggleChrome} 
+            onRequestRSVP={handleRequestRSVP}
             isActive={!isRSVP} 
           />
       </div>
@@ -290,15 +313,10 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       >
          <MediaCommandCenter 
             book={book} 
-            onToggleRSVP={(startOffset) => handleModeToggle(undefined, startOffset)}
+            onToggleRSVP={handleMediaToggle}
             isRSVPActive={isRSVP}
             isRewinding={isRewinding}
-            onSettingsClick={() => {
-              if (!isHandlingPopState.current) {
-                window.history.pushState({ modal: 'settings' }, '', window.location.href);
-              }
-              setShowSettings(true);
-            }}
+            onSettingsClick={handleSettingsClick}
          />
       </div>
 

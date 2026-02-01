@@ -1,16 +1,17 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback, memo, lazy, Suspense } from 'react';
 import { Book } from '../types';
 import { TitanBookCell } from './TitanBookCell';
 import { EmptyLibraryState } from './TitanLibraryExtras';
-import { IngestionService } from '../services/ingestionService';
 import { Plus, Trash2, X, Sparkles, CheckSquare, Settings, BookmarkCheck, ChevronDown, ChevronRight, BookMarked, Archive, CheckCircle, CloudDownload, LibraryBig, LayoutGrid, Heart } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
-import { SettingsSheet } from './SettingsSheet';
-import { TitanCloudLibrary } from './TitanCloudLibrary';
-import { TitanShelfView } from './TitanShelfView';
-import { BookDetailModal } from './BookDetailModal';
+
+// Lazy load modal components
+const SettingsSheet = lazy(() => import('./SettingsSheet').then(m => ({ default: m.SettingsSheet })));
+const TitanCloudLibrary = lazy(() => import('./TitanCloudLibrary').then(m => ({ default: m.TitanCloudLibrary })));
+const BookDetailModal = lazy(() => import('./BookDetailModal').then(m => ({ default: m.BookDetailModal })));
+const TitanShelfView = lazy(() => import('./TitanShelfView').then(m => ({ default: m.TitanShelfView })));
 
 interface TitanLibraryProps {
   books: Book[];
@@ -25,7 +26,7 @@ interface TitanLibraryProps {
  * TitanLibrary
  * Unified Dashboard.
  */
-export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect, onBookImported, onDeleteBooks, onToggleReadStatus, onToggleFavorite }) => {
+export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSelect, onBookImported, onDeleteBooks, onToggleReadStatus, onToggleFavorite }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -259,6 +260,14 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
       setSelectedIds(new Set());
   };
 
+  // MEMOIZED CALLBACK for TitanBookCell to prevent re-renders
+  const handleLongPress = useCallback((book: Book) => {
+      if (!isHandlingPopState.current) {
+        window.history.pushState({ modal: 'detail' }, '', window.location.href);
+      }
+      setInspectingBook(book);
+  }, []);
+
   // -- Hold-to-Delete (Superbar) --
 
   const handlePointerDownDelete = (e: React.PointerEvent) => {
@@ -406,16 +415,7 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
                                     isEditing={isEditing}
                                     isSelected={selectedIds.has(book.id)}
                                     onToggleSelect={handleToggleSelect}
-                                    onRequestManage={() => {
-                                        setIsEditing(true);
-                                        setSelectedIds(new Set([book.id]));
-                                    }}
-                                    onLongPress={(b) => {
-                                      if (!isHandlingPopState.current) {
-                                        window.history.pushState({ modal: 'detail' }, '', window.location.href);
-                                      }
-                                      setInspectingBook(b);
-                                    }}
+                                    onLongPress={handleLongPress}
                                 />
                             </motion.div>
                         ))}
@@ -447,12 +447,7 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
                                             isEditing={isEditing}
                                             isSelected={selectedIds.has(book.id)}
                                             onToggleSelect={handleToggleSelect}
-                                            onLongPress={(b) => {
-                                              if (!isHandlingPopState.current) {
-                                                window.history.pushState({ modal: 'detail' }, '', window.location.href);
-                                              }
-                                              setInspectingBook(b);
-                                            }}
+                                            onLongPress={handleLongPress}
                                         />
                                     </div>
                                 ))}
@@ -486,12 +481,7 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
                                             isEditing={isEditing}
                                             isSelected={selectedIds.has(book.id)}
                                             onToggleSelect={handleToggleSelect}
-                                            onLongPress={(b) => {
-                                              if (!isHandlingPopState.current) {
-                                                window.history.pushState({ modal: 'detail' }, '', window.location.href);
-                                              }
-                                              setInspectingBook(b);
-                                            }}
+                                            onLongPress={handleLongPress}
                                         />
                                     </div>
                                 ))}
@@ -690,4 +680,4 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
       )}
     </div>
   );
-};
+});

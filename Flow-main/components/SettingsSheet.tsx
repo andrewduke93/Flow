@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { ThemePickerView } from './ThemePickerView';
 import { TypeLabView } from './TypeLabView';
 import { Palette, Type, X, Cloud } from 'lucide-react';
@@ -15,8 +15,9 @@ interface SettingsSheetProps {
  * SettingsSheet (Phase 13: Unified Native Settings)
  * Identity: UX Architect.
  * Mission: A unified control center with explicit navigation.
+ * Performance: memo() wrapped to prevent re-renders from parent state changes
  */
-export const SettingsSheet: React.FC<SettingsSheetProps> = ({ onClose }) => {
+export const SettingsSheet: React.FC<SettingsSheetProps> = memo(({ onClose }) => {
   const [activeTab, setActiveTab] = useState<'optical' | 'typo'>('optical');
   const theme = useTitanTheme();
   const { settings } = useTitanSettings();
@@ -144,4 +145,4 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ onClose }) => {
       </div>
     </div>
   );
-};
+});

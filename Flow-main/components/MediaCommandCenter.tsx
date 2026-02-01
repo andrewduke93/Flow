@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
@@ -21,8 +21,9 @@ interface MediaCommandCenterProps {
  * MediaCommandCenter (Symmetric Control Deck)
  * Identity: Industrial Design.
  * Mission: Perfect center-weighted balance.
+ * Performance: memo() wrapped to prevent re-renders from parent state changes
  */
-export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, onToggleRSVP, isRSVPActive, isRewinding = false, onSettingsClick }) => {
+export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({ book, onToggleRSVP, isRSVPActive, isRewinding = false, onSettingsClick }) => {
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
@@ -547,4 +548,4 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
           </div>
     </div>
   );
-}
+});

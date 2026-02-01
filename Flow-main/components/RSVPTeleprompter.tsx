@@ -421,7 +421,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
         {/* Word Ribbon */}
         <div
           ref={ribbonRef}
-          className="flex items-baseline gap-5 whitespace-nowrap"
+          className="flex items-baseline gap-5 whitespace-nowrap will-change-transform"
           style={{
             transform: `translateX(${ribbonOffset}px)`,
             transition: isRewinding ? 'transform 0.05s linear' : 'none',

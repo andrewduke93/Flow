@@ -1,8 +1,7 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect, useCallback, memo } from 'react';
 import { Book } from '../types';
 import { getDerivedColor } from '../utils';
-import { motion, AnimatePresence, Variants } from 'framer-motion';
-import { Check, BookOpen, Star, CheckCircle } from 'lucide-react';
+import { Check, BookOpen, CheckCircle } from 'lucide-react';
 import { useTitanTheme } from '../services/titanTheme';
 import { useTitanSettings } from '../services/configService';
 
@@ -13,11 +12,10 @@ interface TitanBookCellProps {
   isEditing?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (book: Book) => void;
-  onRequestManage?: (book: Book) => void;
-  onLongPress?: (book: Book) => void; // New Prop
+  onLongPress?: (book: Book) => void;
 }
 
-const ProceduralCover: React.FC<{ book: Book }> = React.memo(({ book }) => {
+const ProceduralCover: React.FC<{ book: Book }> = memo(({ book }) => {
   const themeColor = getDerivedColor(book.tintColorHex);
   return (
     <div 
@@ -25,7 +23,6 @@ const ProceduralCover: React.FC<{ book: Book }> = React.memo(({ book }) => {
       style={{ backgroundColor: themeColor }}
     >
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
-         {/* Soft, friendly circles now using a more consistent scale */}
          <div className="absolute w-32 h-32 bg-white rounded-full blur-3xl transform -translate-x-8 -translate-y-8 opacity-40" />
          <div className="absolute w-24 h-24 bg-white rounded-full blur-2xl transform translate-x-6 translate-y-6 opacity-30" />
       </div>
@@ -42,15 +39,15 @@ const ProceduralCover: React.FC<{ book: Book }> = React.memo(({ book }) => {
 });
 
 /**
- * TitanBookCell (Quirky Jiggle Edition)
+ * TitanBookCell (Performance Optimized)
+ * Uses CSS animation for jiggle effect instead of Framer Motion JS animation
  */
-export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, onSelect, isEditing, isSelected, onToggleSelect, onLongPress }) => {
+export const TitanBookCell: React.FC<TitanBookCellProps> = memo(({ book, onSelect, isEditing, isSelected, onToggleSelect, onLongPress }) => {
   const theme = useTitanTheme();
   const { settings } = useTitanSettings();
   
-  // Random Jiggle Offset
-  const randomDelay = useRef(Math.random() * 0.2);
-  const randomRotation = useRef(Math.random() > 0.5 ? 1 : -1);
+  // Random delay offset for staggered jiggle - stable across renders
+  const randomDelay = useRef(`${Math.random() * 0.2}s`);
 
   // Interaction Logic
   const timerRef = useRef<number | null>(null);
@@ -58,7 +55,7 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
   const hasMovedRef = useRef(false);
   const startPos = useRef({ x: 0, y: 0 });
   
-  // Cleanup timer on unmount to prevent memory leaks
+  // Cleanup timer on unmount
   useEffect(() => {
       return () => {
           if (timerRef.current) {
@@ -68,7 +65,7 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
       };
   }, []);
 
-  const handlePointerDown = (e: React.PointerEvent) => {
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
       isLongPressTriggered.current = false;
       hasMovedRef.current = false;
       startPos.current = { x: e.clientX, y: e.clientY };
@@ -77,18 +74,17 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
       timerRef.current = window.setTimeout(() => {
           if (onLongPress) {
               isLongPressTriggered.current = true;
-              if (navigator.vibrate) navigator.vibrate(20); // Haptic feedback
+              if (navigator.vibrate) navigator.vibrate(20);
               onLongPress(book);
           }
       }, 500); // 500ms hold time
-  };
+  }, [onLongPress, book]);
 
-  const handlePointerMove = (e: React.PointerEvent) => {
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
       // Calculate distance to detect scroll intent vs tap
-      // We check this regardless of timer state to prevent drag-after-timeout selection
       const dist = Math.hypot(e.clientX - startPos.current.x, e.clientY - startPos.current.y);
       
-      // 10px threshold usually filters out shaky fingers but catches scrolls
+      // 10px threshold filters shaky fingers but catches scrolls
       if (dist > 10) {
           hasMovedRef.current = true;
           if (timerRef.current) {
@@ -96,9 +92,9 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
               timerRef.current = null;
           }
       }
-  };
+  }, []);
 
-  const handlePointerUp = (e: React.PointerEvent) => {
+  const handlePointerUp = useCallback(() => {
       if (timerRef.current) {
           clearTimeout(timerRef.current);
           timerRef.current = null;
@@ -108,40 +104,24 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
       // 1. Long press didn't happen
       // 2. User didn't scroll (move > 10px)
       if (!isLongPressTriggered.current && !hasMovedRef.current) {
-          // Normal Click
           if (isEditing) {
               onToggleSelect?.(book);
           } else {
               onSelect(book);
           }
       }
-      // Reset flags
       isLongPressTriggered.current = false;
       hasMovedRef.current = false;
-  };
+  }, [isEditing, onToggleSelect, book, onSelect]);
 
-  const handlePointerCancel = (e: React.PointerEvent) => {
-      // If the browser cancels the event (e.g. native scroll takes over), abort everything
+  const handlePointerCancel = useCallback(() => {
       if (timerRef.current) {
           clearTimeout(timerRef.current);
           timerRef.current = null;
       }
       isLongPressTriggered.current = false;
       hasMovedRef.current = false;
-  };
-
-  const jiggle: Variants = {
-      idle: { rotate: 0 },
-      editing: { 
-          rotate: [0, -1.5 * randomRotation.current, 1.5 * randomRotation.current, -1.5 * randomRotation.current, 0],
-          transition: {
-              duration: 0.35,
-              repeat: Infinity,
-              delay: randomDelay.current,
-              ease: "linear"
-          }
-      }
-  };
+  }, []);
 
   const progressPercent = Math.floor((book.bookmarkProgress || 0) * 100);
 
@@ -185,11 +165,11 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = React.memo(({ book, o
       }}
     >
       <div 
-        className="relative aspect-[2/3] w-full rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] overflow-hidden z-10 will-change-transform active:scale-[0.97] hover:scale-[1.02] hover:-translate-y-0.5"
+        className={`relative aspect-[2/3] w-full rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] overflow-hidden z-10 will-change-transform active:scale-[0.97] hover:scale-[1.02] hover:-translate-y-0.5 ${isEditing ? 'animate-jiggle' : ''}`}
         style={{ 
           backgroundColor: theme.surface,
-          transform: isEditing ? 'scale(0.94)' : 'scale(1.0)',
-          transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease-out',
+          animationDelay: isEditing ? randomDelay.current : undefined,
+          transition: isEditing ? 'none' : 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease-out',
         }}
       >
         {book.coverUrl ? (
