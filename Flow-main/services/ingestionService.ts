@@ -122,6 +122,94 @@ export class IngestionService {
       return book;
   }
 
+  /**
+   * Ingest pasted text as a "clipping".
+   * Simpler chaptering for user-provided content.
+   */
+  public async ingestPastedText(title: string, rawText: string): Promise<Book> {
+      const bookId = crypto.randomUUID();
+      
+      // Generate a mood color from the title
+      let hash = 0;
+      for (let i = 0; i < title.length; i++) {
+          hash = title.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const h = Math.abs(hash % 360);
+      const tintColor = `hsl(${h}, 45%, 45%)`;
+
+      // For pasted content, use simpler chaptering
+      const chapters = this.simpleChaptering(rawText);
+
+      const book: Book = {
+          id: bookId,
+          title: title,
+          author: 'Clipping',
+          tintColorHex: tintColor, 
+          lastOpened: new Date(),
+          isFinished: false,
+          bookmarkProgress: 0,
+          chapters: chapters,
+          sourceType: 'pasted'
+      };
+
+      const encoder = new TextEncoder();
+      const buffer = encoder.encode(rawText).buffer;
+      
+      await this.persistBook(book, buffer);
+      return book;
+  }
+
+  /**
+   * Simple chaptering for pasted content.
+   * Breaks into manageable chunks without complex heuristics.
+   */
+  private simpleChaptering(rawText: string): Chapter[] {
+      const WORDS_PER_SECTION = 2000;
+      const paragraphs = rawText.split(/\n\s*\n/).filter(p => p.trim());
+      
+      const chapters: Chapter[] = [];
+      let currentContent: string[] = [];
+      let currentWordCount = 0;
+      let sectionNumber = 1;
+
+      for (const para of paragraphs) {
+          const words = para.trim().split(/\s+/).length;
+          currentContent.push(para.trim());
+          currentWordCount += words;
+
+          if (currentWordCount >= WORDS_PER_SECTION) {
+              chapters.push({
+                  id: crypto.randomUUID(),
+                  title: chapters.length === 0 ? 'Start' : `Section ${sectionNumber}`,
+                  content: currentContent.join('\n\n'),
+                  wordCount: currentWordCount,
+                  sortOrder: chapters.length
+              });
+              currentContent = [];
+              currentWordCount = 0;
+              sectionNumber++;
+          }
+      }
+
+      // Add remaining content
+      if (currentContent.length > 0) {
+          chapters.push({
+              id: crypto.randomUUID(),
+              title: chapters.length === 0 ? 'Content' : `Section ${sectionNumber}`,
+              content: currentContent.join('\n\n'),
+              wordCount: currentWordCount,
+              sortOrder: chapters.length
+          });
+      }
+
+      // If only one chapter, rename it
+      if (chapters.length === 1) {
+          chapters[0].title = 'Content';
+      }
+
+      return chapters;
+  }
+
   // MARK: - Internal Helpers
 
   private async persistBook(book: Book, sourceBuffer: ArrayBuffer) {

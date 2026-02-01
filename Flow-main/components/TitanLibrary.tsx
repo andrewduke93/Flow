@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useMemo, useCallback, memo, lazy, S
 import { Book } from '../types';
 import { TitanBookCell } from './TitanBookCell';
 import { EmptyLibraryState } from './TitanLibraryExtras';
-import { Plus, Trash2, X, Sparkles, CheckSquare, Settings, BookmarkCheck, ChevronDown, ChevronRight, BookMarked, Archive, CheckCircle, CloudDownload, LibraryBig, LayoutGrid, Heart } from 'lucide-react';
+import { Plus, Trash2, X, Sparkles, CheckSquare, Settings, BookmarkCheck, ChevronDown, ChevronRight, BookMarked, Archive, CheckCircle, CloudDownload, LibraryBig, LayoutGrid, Heart, FileText, Scissors } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
@@ -13,6 +13,7 @@ const SettingsSheet = lazy(() => import('./SettingsSheet').then(m => ({ default:
 const TitanCloudLibrary = lazy(() => import('./TitanCloudLibrary').then(m => ({ default: m.TitanCloudLibrary })));
 const BookDetailModal = lazy(() => import('./BookDetailModal').then(m => ({ default: m.BookDetailModal })));
 const TitanShelfView = lazy(() => import('./TitanShelfView').then(m => ({ default: m.TitanShelfView })));
+const TextImportModal = lazy(() => import('./TextImportModal').then(m => ({ default: m.TextImportModal })));
 
 interface TitanLibraryProps {
   books: Book[];
@@ -49,6 +50,8 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
   // Section States
   const [showFinished, setShowFinished] = useState(false); 
   const [showFavorites, setShowFavorites] = useState(false);
+  const [showClippings, setShowClippings] = useState(false);
+  const [showTextImport, setShowTextImport] = useState(false);
 
   // UNIFIED CONTEXT STATE
   // Used for both Shelf View Tap and Grid View Long Press
@@ -60,7 +63,9 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
       if (isHandlingPopState.current) return;
       isHandlingPopState.current = true;
       
-      if (inspectingBook) {
+      if (showTextImport) {
+        setShowTextImport(false);
+      } else if (inspectingBook) {
         setInspectingBook(null);
       } else if (showCloudLibrary || closingCloudLibrary) {
         handleCloseCloudLibrary();
@@ -73,7 +78,7 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
     
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [inspectingBook, showCloudLibrary, closingCloudLibrary, showSettings, closingSettings]);
+  }, [inspectingBook, showCloudLibrary, closingCloudLibrary, showSettings, closingSettings, showTextImport]);
 
   // Close Settings with animation
   const handleCloseSettings = () => {
@@ -117,16 +122,17 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // -- Splitting Active vs Finished vs Favorites --
-  const { activeBooks, finishedBooks, favoriteBooks } = useMemo(() => {
+  // -- Splitting Active vs Finished vs Favorites vs Clippings --
+  const { activeBooks, finishedBooks, favoriteBooks, clippings } = useMemo(() => {
       const sorted = [...books].sort((a, b) => 
         new Date(b.lastOpened).getTime() - new Date(a.lastOpened).getTime()
       );
       
       return {
           favoriteBooks: sorted.filter(b => b.isFavorite),
-          activeBooks: sorted.filter(b => !b.isFinished),
-          finishedBooks: sorted.filter(b => b.isFinished)
+          activeBooks: sorted.filter(b => !b.isFinished && b.sourceType !== 'pasted'),
+          finishedBooks: sorted.filter(b => b.isFinished),
+          clippings: sorted.filter(b => b.sourceType === 'pasted')
       };
   }, [books]);
 
@@ -225,6 +231,19 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
   };
 
   const triggerImport = () => fileInputRef.current?.click();
+
+  // Text Import Handler
+  const handleTextImport = async (title: string, text: string) => {
+    try {
+      const newBook = await IngestionService.getInstance().ingestPastedText(title, text);
+      onBookImported(newBook);
+      setShowTextImport(false);
+      RSVPHapticEngine.impactMedium();
+    } catch (error) {
+      console.error('[TitanLibrary] Text import error:', error);
+      alert(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
   const toggleEditMode = () => {
       RSVPHapticEngine.impactMedium();
@@ -491,6 +510,41 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
                      </div>
                  )}
 
+                 {/* 4. Clippings Section */}
+                 {clippings.length > 0 && (
+                     <div className="mt-2 border-t pt-6" style={{ borderColor: theme.borderColor }}>
+                         <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowClippings(p => !p);
+                            }}
+                            className="flex items-center gap-1.5 text-sm font-medium lowercase hover:opacity-80 transition-opacity mb-4"
+                            style={{ color: theme.secondaryText, opacity: 0.6 }}
+                         >
+                            {showClippings ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            <Scissors size={14} className="opacity-60" />
+                            <span>clippings ({clippings.length})</span>
+                         </button>
+                         
+                         {showClippings && (
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-6 md:gap-x-6 md:gap-y-8 pb-6">
+                                {clippings.map((book) => (
+                                    <div key={`clip-${book.id}`}>
+                                        <TitanBookCell 
+                                            book={book}
+                                            onSelect={onBookSelect}
+                                            isEditing={isEditing}
+                                            isSelected={selectedIds.has(book.id)}
+                                            onToggleSelect={handleToggleSelect}
+                                            onLongPress={handleLongPress}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                         )}
+                     </div>
+                 )}
+
                  <div className="h-24" />
              </div>
          )}
@@ -538,8 +592,22 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
                             }}
                             className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 transition-colors"
                             style={{ color: theme.accent }}
+                            title="Browse Library"
                         >
                             <CloudDownload size={18} />
+                        </button>
+                        <button 
+                            onClick={() => {
+                              if (!isHandlingPopState.current) {
+                                window.history.pushState({ modal: 'text-import' }, '', window.location.href);
+                              }
+                              setShowTextImport(true);
+                            }}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 transition-colors"
+                            style={{ color: theme.secondaryText }}
+                            title="Paste Text"
+                        >
+                            <FileText size={18} />
                         </button>
                         <div className="w-px h-5 bg-black/10" />
                         <button 
@@ -679,6 +747,18 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
           </div>
         </>
       )}
+
+      {/* TEXT IMPORT MODAL */}
+      <AnimatePresence>
+        {showTextImport && (
+          <Suspense fallback={null}>
+            <TextImportModal
+              onClose={() => setShowTextImport(false)}
+              onImport={handleTextImport}
+            />
+          </Suspense>
+        )}
+      </AnimatePresence>
     </div>
   );
 });

@@ -50,7 +50,7 @@ export interface Book {
   // Sync Flow
   driveId?: string; // Google Drive File ID
   driveVersion?: string; // For conflict resolution
-  sourceType?: 'epub' | 'text'; // Format tracking for sync upload/download
+  sourceType?: 'epub' | 'text' | 'pasted'; // Format tracking for sync upload/download
 
   // Relations
   chapters?: Chapter[];
