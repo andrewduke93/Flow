@@ -3,7 +3,8 @@ import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { Play, Pause, Plus, Minus, Type, ListMusic, Sparkles, RotateCcw } from 'lucide-react';
+import { RSVPNarrator } from '../services/rsvpNarrator';
+import { Play, Pause, Plus, Minus, Type, ListMusic, Sparkles, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
@@ -37,6 +38,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
+  const narrator = RSVPNarrator.getInstance();
   const { settings, updateSettings } = useTitanSettings();
   const theme = useTitanTheme();
 
@@ -47,6 +49,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   const [currentProgress, setCurrentProgress] = useState(0);
   const [showChapterSelector, setShowChapterSelector] = useState(false);
   const [isRewindHeld, setIsRewindHeld] = useState(false);
+  const [isNarratorEnabled, setIsNarratorEnabled] = useState(narrator.isEnabled);
   const showChapterSelectorRef = useRef(false);
   
   // Refs
@@ -145,6 +148,56 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
       lastRenderedPct.current = safePct;
       setCurrentProgress(safePct);
     }
+  }, []);
+
+  // Build phrases when tokens change and narrator is enabled
+  useEffect(() => {
+    if (!isNarratorEnabled || !isRSVPActive || heartbeat.tokens.length === 0) return;
+    
+    // Build phrase chunks from tokens for natural-sounding speech
+    const words = heartbeat.tokens.map(t => t.word);
+    narrator.buildPhrases(words);
+    narrator.syncWithWPM(settings.rsvpSpeed);
+  }, [isNarratorEnabled, isRSVPActive, heartbeat.tokens.length, settings.rsvpSpeed]);
+
+  // Narrator sync effect - speaks phrases for natural flow
+  useEffect(() => {
+    if (!isNarratorEnabled || !isRSVPActive) return;
+    
+    const syncNarrator = () => {
+      if (!heartbeat.isPlaying) return;
+      
+      const idx = heartbeat.currentIndex;
+      
+      // Check if we should start a new phrase
+      if (narrator.shouldSpeakAtIndex(idx)) {
+        narrator.speakAtIndex(idx);
+      }
+    };
+    
+    const unsubHeartbeat = heartbeat.subscribe(syncNarrator);
+    return () => {
+      unsubHeartbeat();
+      narrator.stop();
+    };
+  }, [isNarratorEnabled, isRSVPActive]);
+
+  // Reset narrator on pause/stop
+  useEffect(() => {
+    if (!isPlaying && isNarratorEnabled) {
+      narrator.pause();
+    }
+    if (isPlaying && isNarratorEnabled && narrator.state === 'paused') {
+      narrator.resume();
+    }
+  }, [isPlaying, isNarratorEnabled]);
+
+  // Narrator state sync
+  useEffect(() => {
+    const unsub = narrator.subscribe(() => {
+      setIsNarratorEnabled(narrator.isEnabled);
+    });
+    return unsub;
   }, []);
 
   useEffect(() => {
@@ -536,8 +589,32 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
             </button>
           </div>
 
-          {/* Right: Ghost Preview + Settings */}
+          {/* Right: Narrator + Ghost Preview + Settings */}
           <div className="flex items-center justify-end gap-2">
+            {/* Narrator Toggle - AI TTS */}
+            {isRSVPActive && RSVPNarrator.isSupported() && (
+              <button 
+                className="flex items-center justify-center w-11 h-11 rounded-xl border transition-all outline-none active:scale-95"
+                style={{ 
+                  borderColor: isNarratorEnabled ? theme.accent + '40' : theme.borderColor, 
+                  backgroundColor: isNarratorEnabled ? `${theme.accent}15` : `${theme.primaryText}05`,
+                  color: isNarratorEnabled ? theme.accent : theme.secondaryText
+                }}
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  RSVPHapticEngine.impactLight();
+                  narrator.toggleEnabled();
+                }}
+                title={isNarratorEnabled ? "Disable narrator" : "Enable AI narrator"}
+              >
+                {isNarratorEnabled ? (
+                  <Volume2 size={16} className="fill-current" />
+                ) : (
+                  <VolumeX size={16} />
+                )}
+              </button>
+            )}
+            
             {isRSVPActive && (
               <button 
                 className="flex items-center justify-center w-11 h-11 rounded-xl border transition-all outline-none active:scale-95"
