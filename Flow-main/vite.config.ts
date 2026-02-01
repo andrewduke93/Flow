@@ -34,10 +34,8 @@ export default defineConfig(({ mode }) => {
                 './services/rsvpConductor',
                 './services/rsvpHeartbeat', 
                 './services/rsvpProcessor',
-                './services/rsvpScrubber',
                 './services/rsvpGrammarEngine',
-                './services/rsvpHaptics',
-                './services/rsvpAligner'
+                './services/rsvpHaptics'
               ],
               // Cloud/sync feature chunk
               'cloud': [

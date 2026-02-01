@@ -6,6 +6,7 @@ import { Plus, Trash2, X, Sparkles, CheckSquare, Settings, BookmarkCheck, Chevro
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
+import { IngestionService } from '../services/ingestionService';
 
 // Lazy load modal components
 const SettingsSheet = lazy(() => import('./SettingsSheet').then(m => ({ default: m.SettingsSheet })));

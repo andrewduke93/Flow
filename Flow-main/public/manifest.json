@@ -1,8 +1,8 @@
 {
   "id": "/Flow/",
-  "name": "Flow: E-Reader & Library",
+  "name": "Flow: Speed Reader",
   "short_name": "Flow",
-  "description": "Finally finish that book, dude. Flow uses RSVP speed reading to help you breeze through your library. Syncs with Google Drive so you never lose your spot. Algebraic!",
+  "description": "A distraction-free reading app with RSVP speed reading technology. Import EPUB books and read at 50-2000 words per minute. Syncs with Google Drive.",
   "start_url": "/Flow/",
   "scope": "/Flow/",
   "display": "standalone",

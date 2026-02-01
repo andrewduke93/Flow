@@ -255,7 +255,7 @@ export class RSVPHeartbeat {
    * Batched notification system for React optimization.
    * Prevents excessive React re-renders during rapid heartbeat updates.
    */
-  private notify() {
+  notify() {
     // During playback, batch notifications to prevent excessive React renders
     if (this._isPlaying && !this.notifyScheduled) {
       this.notifyScheduled = true;

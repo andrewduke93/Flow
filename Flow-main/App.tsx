@@ -52,7 +52,7 @@ const App: React.FC = () => {
         const safeProgress = (isNaN(engine.currentProgress) || !isFinite(engine.currentProgress)) ? 0 : engine.currentProgress;
         const updatedBook: Book = {
           ...book,
-          lastTokenIndex: engine.currentTokenIndex,
+          lastTokenIndex: engine.currentBook?.lastTokenIndex ?? book.lastTokenIndex ?? 0,
           bookmarkProgress: safeProgress,
           isFinished: safeProgress >= 0.99 || engine.currentBook?.isFinished || false,
           lastOpened: new Date()

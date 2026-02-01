@@ -1,52 +1,45 @@
-# Build and push to gh-pages branch for GitHub Pages deployment
-# Uses gh-pages branch strategy for predictable, cache-free deployments
-# Updated: 2026-01-25 - Switch to gh-pages branch for reliability
-name: Deploy to gh-pages branch
+# Flow - GitHub Pages Deployment
+# Builds the PWA and deploys to gh-pages branch
+name: Deploy Flow
 
 on:
-  # Runs on pushes targeting the default branch
   push:
     branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow pushing to gh-pages branch
 permissions:
   contents: write
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  # Build and deploy job
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main branch
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: main
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: Flow-main/package-lock.json
       
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        working-directory: ./Flow-main
+        run: npm ci
       
       - name: Build
+        working-directory: ./Flow-main
         run: npm run build
       
-      - name: Deploy dist to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-          cname: andrewduke93.github.io
+          publish_dir: ./Flow-main/dist
