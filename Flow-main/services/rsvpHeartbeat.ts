@@ -218,9 +218,9 @@ export class RSVPHeartbeat {
     // At higher WPM, the token's durationMultiplier might not create enough
     // perceptual pause. Add an extra sentence-boundary boost.
     let sentenceBoost = 1.0;
-    if (this.sentenceBoostEnabled) {
-      const word = token.word;
-      const lastChar = word.charAt(word.length - 1);
+    if (this.sentenceBoostEnabled && token.originalText) {
+      const word = token.originalText;
+      const lastChar = word.length > 0 ? word.charAt(word.length - 1) : '';
       const secondLastChar = word.length > 1 ? word.charAt(word.length - 2) : '';
       
       // Check for sentence-ending punctuation (including inside quotes)

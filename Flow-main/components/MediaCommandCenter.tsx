@@ -156,7 +156,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     if (!isNarratorEnabled || !isRSVPActive || heartbeat.tokens.length === 0) return;
     
     // Build phrase chunks from tokens for natural-sounding speech
-    const words = heartbeat.tokens.map(t => t.word);
+    const words = heartbeat.tokens.map(t => t.originalText);
     narrator.buildPhrases(words);
     narrator.syncWithWPM(settings.rsvpSpeed);
   }, [isNarratorEnabled, isRSVPActive, heartbeat.tokens.length, settings.rsvpSpeed]);

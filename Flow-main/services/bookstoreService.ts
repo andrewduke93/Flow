@@ -30,45 +30,33 @@ export interface BookstoreBook {
 // CORS proxy for fetching from external domains
 // Uses multiple fallback proxies for reliability
 const CORS_PROXIES = [
-  'https://api.allorigins.win/raw?url=',
-  'https://corsproxy.io/?',
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
 ];
 
 async function fetchWithCORS(url: string): Promise<Response> {
-  // Try direct fetch first (might work for some APIs)
-  try {
-    const direct = await fetch(url, { mode: 'cors' });
-    if (direct.ok) return direct;
-  } catch {
-    // Direct fetch failed, try proxies
-  }
+  // Try each proxy in order
+  const errors: string[] = [];
   
-  // Try each proxy
-  for (const proxy of CORS_PROXIES) {
+  for (const makeUrl of CORS_PROXIES) {
     try {
-      const res = await fetch(proxy + encodeURIComponent(url));
-      if (res.ok) return res;
-    } catch {
+      const proxyUrl = makeUrl(url);
+      console.log('[CORS] Trying:', proxyUrl);
+      const res = await fetch(proxyUrl);
+      if (res.ok) {
+        console.log('[CORS] Success with proxy');
+        return res;
+      }
+      errors.push(`Status ${res.status}`);
+    } catch (e) {
+      errors.push(String(e));
       continue;
     }
   }
   
-  throw new Error('All CORS proxies failed');
-}
-
-export interface BookstoreBook {
-  id: string;
-  title: string;
-  author: string;
-  summary: string;
-  moodColor: string;
-  coverUrl?: string;
-  source: 'standard-ebooks' | 'open-library' | 'feedbooks' | 'gutenberg';
-  downloadUrl?: string;
-  // Source-specific metadata
-  openLibraryKey?: string;
-  standardEbooksUrl?: string;
-  feedbooksId?: string;
+  console.error('[CORS] All proxies failed:', errors);
+  throw new Error(`All CORS proxies failed: ${errors.join(', ')}`);
 }
 
 // Color generator from string hash
