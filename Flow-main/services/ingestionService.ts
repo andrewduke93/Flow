@@ -70,6 +70,15 @@ export class IngestionService {
           book.coverUrl = await CoverService.findCover(book.title, book.author);
       }
 
+      // Cache cover as blob for persistence across reloads
+      if (book.coverUrl) {
+          try {
+              book.coverUrl = await CoverService.cacheAndGetCover(book.id, book.coverUrl);
+          } catch (e) {
+              console.warn('[Ingestion] Cover caching failed, using URL:', e);
+          }
+      }
+
       book.sourceType = 'epub';
       
       await this.persistBook(book, arrayBuffer);
@@ -102,6 +111,15 @@ export class IngestionService {
 
       if (!book.coverUrl) {
           book.coverUrl = await CoverService.findCover(title, author);
+      }
+
+      // Cache cover as blob for persistence across reloads
+      if (book.coverUrl) {
+          try {
+              book.coverUrl = await CoverService.cacheAndGetCover(book.id, book.coverUrl);
+          } catch (e) {
+              console.warn('[Ingestion] Cover caching failed, using URL:', e);
+          }
       }
 
       const encoder = new TextEncoder();

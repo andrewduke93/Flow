@@ -4,11 +4,13 @@ import { Book } from '../types';
  * TitanStorage
  * The persistent memory layer. Uses IndexedDB to store heavy book content.
  * Replaces the fragile localStorage implementation.
+ * 
+ * v2: Added 'covers' store for blob-based cover image persistence.
  */
 export class TitanStorage {
   private static instance: TitanStorage;
   private dbName = 'FlowLibraryDB';
-  private version = 2; // BUMP VERSION for 'sources' store
+  private version = 3; // BUMP VERSION for 'covers' store
   private db: IDBDatabase | null = null;
 
   private constructor() {}
@@ -44,6 +46,11 @@ export class TitanStorage {
         // Store for Raw EPUB Binaries (For Cloud Upload/Restore)
         if (!db.objectStoreNames.contains('sources')) {
           db.createObjectStore('sources'); // Key: Book ID, Value: ArrayBuffer
+        }
+
+        // Store for Cover Image Blobs (Persist across reloads)
+        if (!db.objectStoreNames.contains('covers')) {
+          db.createObjectStore('covers'); // Key: Book ID, Value: Blob
         }
       };
 
@@ -81,6 +88,7 @@ export class TitanStorage {
     await this.delete('books', id);
     await this.delete('metadata', id);
     await this.delete('sources', id);
+    await this.delete('covers', id); // Also delete cached cover
   }
 
   public async getAllMetadata(): Promise<Book[]> {
@@ -91,6 +99,37 @@ export class TitanStorage {
   public async getFullBook(id: string): Promise<Book | undefined> {
     await this.init();
     return this.get('books', id);
+  }
+
+  // MARK: - Cover Blob Storage (v2)
+
+  /**
+   * Save a cover image blob for a book.
+   * @param id Book ID
+   * @param blob Cover image blob
+   */
+  public async saveCoverBlob(id: string, blob: Blob): Promise<void> {
+    await this.init();
+    await this.put('covers', blob, id);
+  }
+
+  /**
+   * Get a cached cover blob for a book.
+   * @param id Book ID
+   * @returns The cover blob, or undefined if not cached
+   */
+  public async getCoverBlob(id: string): Promise<Blob | undefined> {
+    await this.init();
+    return this.get('covers', id);
+  }
+
+  /**
+   * Delete a cached cover blob.
+   * @param id Book ID
+   */
+  public async deleteCoverBlob(id: string): Promise<void> {
+    await this.init();
+    await this.delete('covers', id);
   }
 
   // Generic IDB Helpers

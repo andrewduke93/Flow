@@ -108,6 +108,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ onClose }) => {
         <div className="flex p-0.5 rounded-xl border" style={{ borderColor: theme.borderColor }}>
             <button 
             onClick={() => setActiveTab('optical')}
+            aria-label="Appearance settings"
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-medium transition-all lowercase`}
             style={{ 
                 backgroundColor: activeTab === 'optical' ? theme.surface : 'transparent',
@@ -115,10 +116,11 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ onClose }) => {
                 opacity: activeTab === 'optical' ? 1 : 0.5
             }}
             >
-            <Palette size={14} /> theme
+            <Palette size={14} /> appearance
             </button>
             <button 
             onClick={() => setActiveTab('typo')}
+            aria-label="Text settings"
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-medium transition-all lowercase`}
             style={{ 
                 backgroundColor: activeTab === 'typo' ? theme.surface : 'transparent',
@@ -126,7 +128,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ onClose }) => {
                 opacity: activeTab === 'typo' ? 1 : 0.5
             }}
             >
-            <Type size={14} /> typography
+            <Type size={14} /> text
             </button>
         </div>
       </div>

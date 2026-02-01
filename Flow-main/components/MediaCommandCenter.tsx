@@ -51,6 +51,16 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
 
   const activeColor = theme.accent; 
 
+  // Semantic speed labels for better UX
+  const getSpeedLabel = useCallback((wpm: number): string => {
+    if (wpm <= 150) return 'relaxed';
+    if (wpm <= 200) return 'easy';
+    if (wpm <= 275) return 'normal';
+    if (wpm <= 350) return 'brisk';
+    if (wpm <= 450) return 'fast';
+    return 'turbo';
+  }, []);
+
   // PRECISE THRESHOLDS FROM CORE
   const preciseThresholds = useMemo(() => {
       if (core.chapterTokenOffsets.length > 0 && core.totalTokens > 0) {
@@ -442,9 +452,12 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
                   <div 
                     className="flex items-center h-11 rounded-xl overflow-hidden border"
                     style={{ borderColor: theme.borderColor, backgroundColor: `${theme.primaryText}05` }}
+                    role="group"
+                    aria-label="Reading speed control"
                   >
                       <button 
                         onClick={() => adjustSpeed(-25)}
+                        aria-label="Decrease reading speed"
                         className="w-11 h-full flex items-center justify-center hover:bg-white/5 active:scale-90 transition-all outline-none"
                         style={{ color: theme.secondaryText }}
                       >
@@ -453,9 +466,12 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
                       
                       <div className="w-px h-5" style={{ backgroundColor: theme.borderColor }} />
                       
-                      <div className="px-2 text-center flex items-center justify-center min-w-[44px]">
-                        <span className="font-variant-numeric tabular-nums text-xs font-semibold" style={{ color: theme.primaryText }}>
+                      <div className="px-2 text-center flex flex-col items-center justify-center min-w-[52px]">
+                        <span className="font-variant-numeric tabular-nums text-xs font-semibold leading-tight" style={{ color: theme.primaryText }}>
                             {settings.rsvpSpeed}
+                        </span>
+                        <span className="text-[9px] uppercase tracking-wide opacity-60" style={{ color: theme.secondaryText }}>
+                            {getSpeedLabel(settings.rsvpSpeed)}
                         </span>
                       </div>
                       
@@ -463,6 +479,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = ({ book, on
 
                       <button 
                         onClick={() => adjustSpeed(25)}
+                        aria-label="Increase reading speed"
                         className="w-11 h-full flex items-center justify-center hover:bg-white/5 active:scale-90 transition-all outline-none"
                         style={{ color: theme.secondaryText }}
                       >

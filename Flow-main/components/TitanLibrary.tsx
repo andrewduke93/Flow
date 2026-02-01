@@ -315,6 +315,7 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
            }
            setShowSettings(true);
          }}
+         aria-label="Open settings"
          className="absolute top-6 right-6 z-40 p-3 rounded-full hover:bg-black/5 transition-colors"
          style={{ color: theme.secondaryText }}
       >
@@ -346,9 +347,11 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
 
              {/* VIEW TOGGLE */}
              {books.length > 0 && (
-                 <div className="flex p-0.5 rounded-xl border" style={{ borderColor: theme.borderColor, backgroundColor: theme.surface }}>
+                 <div className="flex p-0.5 rounded-xl border" role="group" aria-label="View mode" style={{ borderColor: theme.borderColor, backgroundColor: theme.surface }}>
                      <button
                         onClick={() => setViewMode('grid')}
+                        aria-label="Grid view"
+                        aria-pressed={viewMode === 'grid'}
                         className={`p-2 rounded-lg transition-all active:scale-90 ${viewMode === 'grid' ? 'shadow-sm' : 'opacity-40 hover:opacity-70'}`}
                         style={{ backgroundColor: viewMode === 'grid' ? theme.background : 'transparent', color: theme.primaryText }}
                      >
@@ -356,6 +359,8 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
                      </button>
                      <button
                         onClick={() => setViewMode('shelf')}
+                        aria-label="Shelf view"
+                        aria-pressed={viewMode === 'shelf'}
                         className={`p-2 rounded-lg transition-all active:scale-90 ${viewMode === 'shelf' ? 'shadow-sm' : 'opacity-40 hover:opacity-70'}`}
                         style={{ backgroundColor: viewMode === 'shelf' ? theme.background : 'transparent', color: theme.primaryText }}
                      >

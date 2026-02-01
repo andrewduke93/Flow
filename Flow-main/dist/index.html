@@ -1,15 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <!-- Preload book cover image for LCP optimization (first book as example) -->
-    <link rel="preload" as="image" href="./public/cover.jpg" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="A quiet place to read. No distractions, just your books." />
     
-    <!-- PWA Capabilities -->
-    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- iOS PWA Capabilities -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Flow" />
     
@@ -27,24 +25,17 @@
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
-      // Register the Service Worker for PWA functionality (guarded to avoid 404s)
+      // Register the Service Worker for PWA functionality
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           // Get the base path from the current location
           const basePath = window.location.pathname.split('/Flow')[0] + '/Flow';
-          const swUrl = basePath + '/sw.js';
-          // Check script exists before attempting registration to avoid 404 errors
-          fetch(swUrl, { method: 'HEAD' })
-            .then(res => {
-              if (res.ok) {
-                return navigator.serviceWorker.register(swUrl, { scope: basePath + '/' })
-                  .then(registration => console.log('Flow Service Worker registered:', registration));
-              }
-              // Skip registration when sw.js is not present
-              console.warn('sw.js not found at', swUrl);
+          navigator.serviceWorker.register(basePath + '/sw.js', { scope: basePath + '/' })
+            .then(registration => {
+              console.log('Flow Service Worker registered:', registration);
             })
             .catch(err => {
-              console.error('Flow Service Worker registration failed (fetch/check):', err);
+              console.error('Flow Service Worker registration failed:', err);
             });
         });
       }
@@ -85,6 +76,25 @@
       .no-tap-highlight {
         -webkit-tap-highlight-color: transparent;
       }
+      /* Focus indicators for accessibility */
+      button:focus-visible,
+      [role="button"]:focus-visible,
+      a:focus-visible,
+      input:focus-visible {
+        outline: 2px solid #E25822;
+        outline-offset: 2px;
+        border-radius: 8px;
+      }
+      /* Reduced motion support */
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
       /* Animation: slideUp - only plays once on mount */
       @keyframes slideUp {
         from { transform: translateY(100%); opacity: 0; }
@@ -108,8 +118,12 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="./assets/index-BGHs0FZb.js"></script>
-  <link rel="modulepreload" crossorigin href="./assets/reader-Dypa2sRS.js">
+  <script type="module" crossorigin src="/Flow/assets/index-pmSlcZEe.js"></script>
+  <link rel="modulepreload" crossorigin href="/Flow/assets/animations-CJNRPifJ.js">
+  <link rel="modulepreload" crossorigin href="/Flow/assets/vendor-react-uhaD0WpH.js">
+  <link rel="modulepreload" crossorigin href="/Flow/assets/cloud-DrQWYDJ0.js">
+  <link rel="modulepreload" crossorigin href="/Flow/assets/icons-DwYAKgFV.js">
+  <link rel="modulepreload" crossorigin href="/Flow/assets/rsvp-ByJD-rm3.js">
 </head>
   <body>
     <div id="root"></div>

@@ -8,6 +8,7 @@ import { IngestionService } from './services/ingestionService';
 import { TitanStorage } from './services/titanStorage';
 import { SyncManager, SyncStatus } from './services/syncManager';
 import { generateMockBooks } from './services/mockData';
+import { CoverService } from './services/coverService';
 import { Book } from './types';
 import { useTitanTheme } from './services/titanTheme';
 import { SyncToast } from './components/SyncToast';
@@ -103,6 +104,29 @@ const App: React.FC = () => {
             
             setBooks(hydrated);
             booksRef.current = hydrated;
+
+            // COVER RESTORATION: Restore blob URLs for cached covers
+            // This runs in the background to avoid blocking initial render
+            (async () => {
+                const restoredBooks = await Promise.all(
+                    hydrated.map(async (book) => {
+                        if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
+                            // Try to get cached cover blob
+                            const cachedUrl = await CoverService.getCachedCover(book.id);
+                            if (cachedUrl) {
+                                return { ...book, coverUrl: cachedUrl };
+                            }
+                        }
+                        return book;
+                    })
+                );
+                
+                // Only update if any covers were restored
+                if (restoredBooks.some((b, i) => b.coverUrl !== hydrated[i].coverUrl)) {
+                    setBooks(restoredBooks);
+                    booksRef.current = restoredBooks;
+                }
+            })();
 
             // Init Sync Subscription
             syncer.subscribe({

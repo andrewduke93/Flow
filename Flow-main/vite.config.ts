@@ -12,16 +12,54 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
-        hmr: {
-          // Disable HMR websocket in Codespaces (causes connection errors)
-          // Hot reload still works via polling
+        hmr: isDev ? {
           clientPort: 443,
           protocol: 'wss',
-        },
+        } : false,
       },
       build: {
         outDir: 'dist',
         sourcemap: false,
+        // Enable minification and tree-shaking
+        minify: 'esbuild',
+        target: 'es2020',
+        // Code-splitting for better caching and faster loads
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              // Core React vendor chunk (rarely changes)
+              'vendor-react': ['react', 'react-dom'],
+              // RSVP feature chunk (loaded on demand)
+              'rsvp': [
+                './services/rsvpConductor',
+                './services/rsvpHeartbeat', 
+                './services/rsvpProcessor',
+                './services/rsvpScrubber',
+                './services/rsvpGrammarEngine',
+                './services/rsvpHaptics',
+                './services/rsvpAligner'
+              ],
+              // Cloud/sync feature chunk
+              'cloud': [
+                './services/cloudService',
+                './services/googleDriveService',
+                './services/syncManager'
+              ],
+              // Animation library (only if needed)
+              'animations': ['framer-motion'],
+              // Icons library
+              'icons': ['lucide-react']
+            },
+            // Better chunk naming for caching
+            chunkFileNames: 'assets/[name]-[hash].js',
+            entryFileNames: 'assets/[name]-[hash].js',
+            assetFileNames: 'assets/[name]-[hash].[ext]'
+          }
+        },
+        // Report compressed size
+        reportCompressedSize: true,
+        // Chunk size warning threshold (500kb)
+        chunkSizeWarningLimit: 500
       },
       plugins: [react()],
       define: {
@@ -30,9 +68,13 @@ export default defineConfig(({ mode }) => {
       },
       resolve: {
         alias: {
-          // Fix: __dirname is not available in ES modules. Use import.meta.url to derive the path.
           '@': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.'),
         }
+      },
+      // Optimize dependencies
+      optimizeDeps: {
+        include: ['react', 'react-dom', 'jszip'],
+        exclude: ['framer-motion'] // Tree-shake unused parts
       }
     };
 });

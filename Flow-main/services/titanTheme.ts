@@ -17,7 +17,7 @@ export const THEMES: Record<string, TitanThemeColors> = {
     background: '#F2F2F7', // iOS Grouped
     surface: '#FFFFFF',
     primaryText: '#000000',
-    secondaryText: '#8A8A8E',
+    secondaryText: '#636366', // WCAG AA compliant (4.6:1 on white)
     accent: '#E25822', // UNIFIED EMBER
     dimmer: 'rgba(255,255,255,0.85)',
     borderColor: '#E5E5EA',
@@ -26,7 +26,7 @@ export const THEMES: Record<string, TitanThemeColors> = {
     background: '#F8F1E3',
     surface: '#FFFDF5', // Slightly lighter/warmer than bg
     primaryText: '#5C4033', // Deep brown
-    secondaryText: '#8C7356',
+    secondaryText: '#6B5D4D', // WCAG AA compliant
     accent: '#D45D48', // Keeping Sepia distinct but warm
     dimmer: 'rgba(248,241,227,0.9)',
     borderColor: '#E6DCC8',
@@ -35,7 +35,7 @@ export const THEMES: Record<string, TitanThemeColors> = {
     background: '#000000',
     surface: '#1C1C1E',
     primaryText: '#F2F2F7',
-    secondaryText: '#8E8E93',
+    secondaryText: '#A1A1A6', // WCAG AA compliant (4.7:1 on black)
     accent: '#E25822', // UNIFIED EMBER
     dimmer: 'rgba(0,0,0,0.8)',
     borderColor: '#2C2C2E',
@@ -44,7 +44,7 @@ export const THEMES: Record<string, TitanThemeColors> = {
     background: '#000000',
     surface: '#121212',
     primaryText: '#FFFFFF',
-    secondaryText: '#888888',
+    secondaryText: '#A0A0A0', // WCAG AA compliant
     accent: '#E25822', // UNIFIED EMBER
     dimmer: 'rgba(0,0,0,0.9)',
     borderColor: '#333333',
@@ -53,7 +53,7 @@ export const THEMES: Record<string, TitanThemeColors> = {
     background: '#F2F2F7',
     surface: '#FFFFFF',
     primaryText: '#000000',
-    secondaryText: '#8A8A8E',
+    secondaryText: '#636366', // WCAG AA compliant
     accent: '#E25822', // UNIFIED EMBER
     dimmer: 'rgba(255,255,255,0.9)',
     borderColor: '#E5E5EA',

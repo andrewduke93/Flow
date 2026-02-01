@@ -28,10 +28,10 @@ const LightweightWord = memo(({
 }) => {
   return (
     <span
-      id={`w-$${token.globalIndex}`} 
-      data-idx={token.globalIndex}
-      data-off={token.startOffset}
-      className={`inline py-0.5 rounded-[2px] cursor-pointer select-none transition-colors duration-200 $${isActive ? '' : 'hover:opacity-60'}`}
+    id={`w-$${token.globalIndex}`} 
+    data-idx={token.globalIndex}
+    data-off={token.startOffset}
+    className={`inline py-0.5 rounded-[2px] cursor-pointer select-none transition-colors duration-200 $${isActive ? '' : 'hover:opacity-60'}`}
       style={{
           backgroundColor: isActive ? theme.accent : 'transparent',
           color: isActive ? '#FFFFFF' : 'inherit',
@@ -118,11 +118,11 @@ const ParagraphChunk = memo(({
 
   return (
     <p 
-      id={`p-$${startTokenIndex}`}
+    id={`p-$${startTokenIndex}`}
       data-start-index={startTokenIndex}
       onClick={handleDelegatedClick}
       className="max-w-[60ch] mx-auto box-border relative scroll-mt-32"
-      style={{
+          style={{
         fontSize: `$${settings.fontSize}px`,
         lineHeight: settings.lineHeight,
         marginBottom: settings.paragraphSpacing,
@@ -249,7 +249,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       if (!containerRef.current) return;
       
       // 1. Try to find the specific word span (only exists if near active window)
-      let element = document.getElementById(`w-$${index}`);
+      let element = document.getElementById(`w-${index}`);
       
       // 2. FALLBACK: If word not rendered (StaticParagraph), find the paragraph container
       if (!element) {
@@ -654,7 +654,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
                           // Try to fetch the stored source blob for this book
                           const src = await storage.getSource(book.id);
                           if (src) {
-                            const file = new File([src], `$${book.title || 'book'}.epub`, { type: 'application/epub+zip' });
+                            const file = new File([src], `${book.title || 'book'}.epub`, { type: 'application/epub+zip' });
                             const repaired = await ingestion.ingest(file);
                             // Persist repaired book and reopen
                             await storage.saveBook(repaired);

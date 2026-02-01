@@ -54,9 +54,16 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   const rewindIndexRef = useRef(0);
   const wordPositions = useRef<Map<number, { left: number, width: number, center: number }>>(new Map());
   
+  // Debounce refs to prevent rapid gesture spam
+  const lastTapTimeRef = useRef(0);
+  const lastSeekTimeRef = useRef(0);
+  const isProcessingGestureRef = useRef(false);
+  
   // Constants
   const HOLD_THRESHOLD_MS = 300;
   const TAP_THRESHOLD_PX = 10;
+  const TAP_DEBOUNCE_MS = 100; // Minimum time between taps
+  const SEEK_DEBOUNCE_MS = 50; // Minimum time between word seeks
   const FOCUS_COLOR = '#E25822';
   const RETICLE_POSITION = 35.5;
   const FONT_SIZE = "clamp(2.5rem, 10vw, 4rem)";
@@ -195,22 +202,45 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
 
   const handlePointerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
+    
+    // Debounce rapid taps to prevent race conditions
+    const now = Date.now();
+    if (isProcessingGestureRef.current || now - lastTapTimeRef.current < TAP_DEBOUNCE_MS) {
+      return;
+    }
+    lastTapTimeRef.current = now;
+    
     (e.target as Element).setPointerCapture?.(e.pointerId);
     
     const target = e.target as HTMLElement;
     const clickedWordIdx = target.dataset.idx ? parseInt(target.dataset.idx) : null;
     
-    // If clicked directly on a word - jump to it
+    // If clicked directly on a word - jump to it (with debounce)
     if (clickedWordIdx !== null) {
-      heartbeat.seek(clickedWordIdx);
-      setCurrentIndex(clickedWordIdx);
-      RSVPHapticEngine.impactMedium();
+      if (now - lastSeekTimeRef.current >= SEEK_DEBOUNCE_MS) {
+        lastSeekTimeRef.current = now;
+        isProcessingGestureRef.current = true;
+        
+        heartbeat.seek(clickedWordIdx);
+        setCurrentIndex(clickedWordIdx);
+        RSVPHapticEngine.impactMedium();
+        
+        // Release lock after a frame to allow state to settle
+        requestAnimationFrame(() => {
+          isProcessingGestureRef.current = false;
+        });
+      }
       return;
     }
     
     // If paused and tapped empty area - exit to scroll view
     if (!isPlaying) {
+      isProcessingGestureRef.current = true;
       onLongPressExit?.();
+      // Release after delay to prevent double-exit
+      setTimeout(() => {
+        isProcessingGestureRef.current = false;
+      }, 300);
       return;
     }
     
@@ -234,7 +264,19 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
         rewindIndexRef.current = Math.max(0, rewindIndexRef.current - 1);
         setCurrentIndex(rewindIndexRef.current);
         RSVPHapticEngine.selectionChanged();
+        
+        // Auto-stop at beginning to prevent stuck state
+        if (rewindIndexRef.current <= 0) {
+          stopRewind();
+        }
       }, 300);
+      
+      // Safety timeout: auto-stop rewind after 30 seconds to prevent stuck state
+      setTimeout(() => {
+        if (isRewinding) {
+          stopRewind();
+        }
+      }, 30000);
     }, HOLD_THRESHOLD_MS);
   };
 
@@ -324,6 +366,9 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   return (
     <div 
       ref={containerRef}
+      role="application"
+      aria-label="Speed reading view. Tap to pause, swipe to navigate, hold to exit."
+      aria-live="off"
       className="absolute inset-0 select-none overflow-hidden touch-none"
       style={{ backgroundColor: theme.background }}
       onPointerDown={handlePointerDown}

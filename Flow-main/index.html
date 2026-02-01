@@ -76,6 +76,25 @@
       .no-tap-highlight {
         -webkit-tap-highlight-color: transparent;
       }
+      /* Focus indicators for accessibility */
+      button:focus-visible,
+      [role="button"]:focus-visible,
+      a:focus-visible,
+      input:focus-visible {
+        outline: 2px solid #E25822;
+        outline-offset: 2px;
+        border-radius: 8px;
+      }
+      /* Reduced motion support */
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
       /* Animation: slideUp - only plays once on mount */
       @keyframes slideUp {
         from { transform: translateY(100%); opacity: 0; }
