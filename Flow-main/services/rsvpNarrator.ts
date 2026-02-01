@@ -1,18 +1,17 @@
 /**
  * RSVPNarrator - AI-Style Text-to-Speech Engine
  * 
- * A high-speed, natural-sounding narrator for RSVP mode.
+ * A natural-sounding narrator for RSVP mode.
  * Uses the Web Speech API with optimized settings for:
- * - Fast playback (2-3x normal speech rate)
+ * - Smooth, continuous speech (not rushed bursts)
  * - Natural voice selection (prefers neural/AI voices)
- * - Phrase-based buffering for natural flow
+ * - Sentence-based buffering for natural flow
  * 
  * Features:
  * - Automatic voice quality ranking
- * - Phrase-based chunking for natural rhythm
- * - Speed sync with RSVP WPM setting
+ * - Sentence-based speaking for natural rhythm
+ * - Moderate speech rate for clarity
  * - Pause/resume support
- * - Intelligent word grouping for smoother audio
  */
 
 export type NarratorVoice = {
@@ -25,13 +24,6 @@ export type NarratorVoice = {
 
 type NarratorState = 'idle' | 'speaking' | 'paused' | 'buffering';
 
-// Phrase chunk for natural-sounding speech
-type PhraseChunk = {
-  text: string;
-  startIndex: number;  // Word index in token array
-  endIndex: number;    // Word index in token array
-};
-
 export class RSVPNarrator {
   private static instance: RSVPNarrator;
   
@@ -43,17 +35,14 @@ export class RSVPNarrator {
   // State
   private _isEnabled: boolean = false;
   private _state: NarratorState = 'idle';
-  private _rate: number = 2.0; // Default fast rate (1.0 = normal)
+  private _rate: number = 1.0; // Natural rate (1.0 = normal speech)
   private _pitch: number = 1.0;
   private _volume: number = 1.0;
   
-  // Phrase-based chunking
-  private phrases: PhraseChunk[] = [];
-  private currentPhraseIndex: number = 0;
-  private phraseEndCallback: (() => void) | null = null;
-  
-  // Word tracking for sync
-  private lastSpokenWordIndex: number = -1;
+  // Sentence-based reading
+  private sentences: string[] = [];
+  private currentSentenceIndex: number = 0;
+  private isAutoAdvancing: boolean = false;
   
   // Callbacks
   private listeners: Set<() => void> = new Set();
@@ -200,26 +189,31 @@ export class RSVPNarrator {
   }
 
   /**
-   * Set speech rate. Higher = faster.
-   * Typical range: 0.5 (slow) to 3.0 (very fast)
-   * Default for RSVP: 2.0-2.5
+   * Set speech rate. 
+   * Range: 0.7 (relaxed) to 1.3 (brisk)
+   * Default: 1.0 (natural speaking pace)
    */
   public setRate(rate: number) {
-    this._rate = Math.max(0.5, Math.min(3.0, rate));
+    this._rate = Math.max(0.7, Math.min(1.3, rate));
     this.notify();
   }
 
   /**
    * Sync rate with RSVP WPM setting
-   * Converts WPM to speech rate
+   * Maps WPM to a gentle speech rate adjustment
    */
   public syncWithWPM(wpm: number) {
-    // Normal speaking rate is ~150 WPM at rate 1.0
-    // Map WPM to speech rate, but cap it for intelligibility
-    const baseWPM = 150;
-    const rate = wpm / baseWPM;
-    // Cap at 2.5x for reasonable intelligibility
-    this.setRate(Math.max(1.5, Math.min(2.5, rate)));
+    // Keep speech rate natural - don't try to match RSVP speed exactly
+    // Just slightly adjust based on user preference
+    if (wpm <= 150) {
+      this.setRate(0.9);  // Relaxed
+    } else if (wpm <= 250) {
+      this.setRate(1.0);  // Normal
+    } else if (wpm <= 350) {
+      this.setRate(1.1);  // Slightly faster
+    } else {
+      this.setRate(1.2);  // Brisk but still natural
+    }
   }
 
   public setVolume(volume: number) {
@@ -228,93 +222,62 @@ export class RSVPNarrator {
   }
 
   /**
-   * Speak a single word
+   * Load text and split into sentences for smooth reading
    */
-  public speakWord(word: string) {
-    if (!this._isEnabled || !this.selectedVoice) return;
+  public loadContent(text: string) {
+    // Split into sentences, keeping punctuation
+    this.sentences = text
+      .replace(/([.!?])\s+/g, '$1|SPLIT|')
+      .split('|SPLIT|')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+    this.currentSentenceIndex = 0;
+  }
+
+  /**
+   * Start continuous reading from current position
+   */
+  public startReading() {
+    if (!this._isEnabled || !this.selectedVoice || this.sentences.length === 0) return;
     
-    // Cancel any ongoing speech
-    this.synth.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(word);
-    utterance.voice = this.selectedVoice;
-    utterance.rate = this._rate;
-    utterance.pitch = this._pitch;
-    utterance.volume = this._volume;
-    
-    this._state = 'speaking';
-    this.synth.speak(utterance);
-    
-    utterance.onend = () => {
+    this.isAutoAdvancing = true;
+    this.speakNextSentence();
+  }
+
+  /**
+   * Speak the next sentence and auto-advance
+   */
+  private speakNextSentence() {
+    if (!this.isAutoAdvancing || this.currentSentenceIndex >= this.sentences.length) {
       this._state = 'idle';
-    };
-  }
-
-  /**
-   * Build phrase chunks from words for natural flow
-   * Groups 3-8 words into natural phrases based on punctuation
-   */
-  public buildPhrases(words: string[]): PhraseChunk[] {
-    const phrases: PhraseChunk[] = [];
-    const PHRASE_SIZE = 5; // Target phrase size
-    const MAX_PHRASE = 8;
-    
-    let currentPhrase: string[] = [];
-    let startIndex = 0;
-    
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      currentPhrase.push(word);
-      
-      // Check for natural break points
-      const hasEndPunctuation = /[.!?;:,—]$/.test(word);
-      const hitMaxSize = currentPhrase.length >= MAX_PHRASE;
-      const hitTargetWithPause = currentPhrase.length >= PHRASE_SIZE && hasEndPunctuation;
-      
-      if (hitMaxSize || hitTargetWithPause || i === words.length - 1) {
-        phrases.push({
-          text: currentPhrase.join(' '),
-          startIndex,
-          endIndex: i
-        });
-        currentPhrase = [];
-        startIndex = i + 1;
-      }
-    }
-    
-    this.phrases = phrases;
-    this.currentPhraseIndex = 0;
-    return phrases;
-  }
-
-  /**
-   * Speak a phrase with callback when done
-   */
-  public speakPhrase(phrase: PhraseChunk, onEnd?: () => void) {
-    if (!this._isEnabled || !this.selectedVoice) {
-      onEnd?.();
+      this.isAutoAdvancing = false;
+      this.notify();
       return;
     }
-    
-    this.synth.cancel();
+
+    const sentence = this.sentences[this.currentSentenceIndex];
     this._state = 'speaking';
     
-    const utterance = new SpeechSynthesisUtterance(phrase.text);
+    const utterance = new SpeechSynthesisUtterance(sentence);
     utterance.voice = this.selectedVoice;
     utterance.rate = this._rate;
     utterance.pitch = this._pitch;
     utterance.volume = this._volume;
     
     utterance.onend = () => {
-      this._state = 'idle';
-      this.notify();
-      onEnd?.();
+      this.currentSentenceIndex++;
+      // Small pause between sentences for natural rhythm
+      setTimeout(() => {
+        if (this.isAutoAdvancing) {
+          this.speakNextSentence();
+        }
+      }, 150);
     };
     
     utterance.onerror = () => {
       this._state = 'idle';
+      this.isAutoAdvancing = false;
       this.notify();
-      onEnd?.();
     };
     
     this.utterance = utterance;
@@ -323,37 +286,19 @@ export class RSVPNarrator {
   }
 
   /**
-   * Get the current phrase for a word index
+   * Seek to approximate position based on word index
    */
-  public getPhraseForIndex(wordIndex: number): PhraseChunk | null {
-    return this.phrases.find(p => wordIndex >= p.startIndex && wordIndex <= p.endIndex) || null;
-  }
-
-  /**
-   * Check if we should start speaking a new phrase
-   */
-  public shouldSpeakAtIndex(wordIndex: number): boolean {
-    const phrase = this.getPhraseForIndex(wordIndex);
-    if (!phrase) return false;
+  public seekToWordIndex(wordIndex: number, totalWords: number) {
+    if (this.sentences.length === 0) return;
     
-    // Speak when we hit the start of a new phrase
-    return wordIndex === phrase.startIndex && this.lastSpokenWordIndex < phrase.startIndex;
-  }
-
-  /**
-   * Speak the phrase containing the given word index
-   */
-  public speakAtIndex(wordIndex: number, onEnd?: () => void) {
-    const phrase = this.getPhraseForIndex(wordIndex);
-    if (!phrase) return;
-    
-    if (wordIndex === phrase.startIndex && this.lastSpokenWordIndex < phrase.startIndex) {
-      this.lastSpokenWordIndex = phrase.endIndex;
-      this.speakPhrase(phrase, onEnd);
-    }
+    // Estimate sentence position based on word ratio
+    const ratio = wordIndex / Math.max(1, totalWords);
+    this.currentSentenceIndex = Math.floor(ratio * this.sentences.length);
+    this.currentSentenceIndex = Math.max(0, Math.min(this.currentSentenceIndex, this.sentences.length - 1));
   }
 
   public pause() {
+    this.isAutoAdvancing = false;
     if (this.synth.speaking) {
       this.synth.pause();
       this._state = 'paused';
@@ -363,28 +308,30 @@ export class RSVPNarrator {
 
   public resume() {
     if (this.synth.paused) {
+      this.isAutoAdvancing = true;
       this.synth.resume();
       this._state = 'speaking';
       this.notify();
+    } else if (this._state === 'idle' || this._state === 'paused') {
+      this.startReading();
     }
   }
 
   public stop() {
+    this.isAutoAdvancing = false;
     this.synth.cancel();
     this._state = 'idle';
-    this.lastSpokenWordIndex = -1;
-    this.currentPhraseIndex = 0;
+    this.currentSentenceIndex = 0;
     this.notify();
   }
 
   /**
-   * Reset tracking for a new reading session
+   * Reset for a new book/chapter
    */
   public reset() {
     this.stop();
-    this.phrases = [];
-    this.lastSpokenWordIndex = -1;
-    this.currentPhraseIndex = 0;
+    this.sentences = [];
+    this.currentSentenceIndex = 0;
   }
 
   // -- Subscriptions --

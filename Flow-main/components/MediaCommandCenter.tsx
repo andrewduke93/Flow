@@ -152,46 +152,33 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   }, []);
 
   // Build phrases when tokens change and narrator is enabled
+  // Initialize narrator with full text content when enabled
   useEffect(() => {
     if (!isNarratorEnabled || !isRSVPActive || heartbeat.tokens.length === 0) return;
     
-    // Build phrase chunks from tokens for natural-sounding speech
-    const words = heartbeat.tokens.map(t => t.originalText);
-    narrator.buildPhrases(words);
+    // Load full text for sentence-based smooth reading
+    const fullText = heartbeat.tokens.map(t => t.originalText).join(' ');
+    narrator.loadContent(fullText);
     narrator.syncWithWPM(settings.rsvpSpeed);
   }, [isNarratorEnabled, isRSVPActive, heartbeat.tokens.length, settings.rsvpSpeed]);
 
-  // Narrator sync effect - speaks phrases for natural flow
+  // Narrator play/pause control - continuous sentence reading
   useEffect(() => {
     if (!isNarratorEnabled || !isRSVPActive) return;
     
-    const syncNarrator = () => {
-      if (!heartbeat.isPlaying) return;
-      
-      const idx = heartbeat.currentIndex;
-      
-      // Check if we should start a new phrase
-      if (narrator.shouldSpeakAtIndex(idx)) {
-        narrator.speakAtIndex(idx);
-      }
-    };
-    
-    const unsubHeartbeat = heartbeat.subscribe(syncNarrator);
-    return () => {
-      unsubHeartbeat();
-      narrator.stop();
-    };
-  }, [isNarratorEnabled, isRSVPActive]);
-
-  // Reset narrator on pause/stop
-  useEffect(() => {
-    if (!isPlaying && isNarratorEnabled) {
+    // Start/stop narrator reading based on play state
+    if (isPlaying) {
+      // Sync position before starting
+      narrator.seekToWordIndex(heartbeat.currentIndex, heartbeat.tokens.length);
+      narrator.startReading();
+    } else {
       narrator.pause();
     }
-    if (isPlaying && isNarratorEnabled && narrator.state === 'paused') {
-      narrator.resume();
-    }
-  }, [isPlaying, isNarratorEnabled]);
+    
+    return () => {
+      narrator.stop();
+    };
+  }, [isPlaying, isNarratorEnabled, isRSVPActive]);
 
   // Narrator state sync
   useEffect(() => {
