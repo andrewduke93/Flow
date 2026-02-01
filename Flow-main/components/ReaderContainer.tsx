@@ -201,7 +201,6 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
           // Force jump listeners to fire for scroll sync
           if (engine.totalTokens > 0) {
               const pct = currentTokenIndex / engine.totalTokens;
-              // Trigger jump listeners directly to ensure scroll view syncs
               engine.jump(pct);
           }
           
@@ -216,26 +215,22 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     }
   };
 
-  // MARK: - Gesture Handling moved to RSVPTeleprompter (unified tap/hold/swipe)
-
   // Handle tap from teleprompter - toggle play/pause
   const handleTeleprompterTap = useCallback(() => {
     if (conductor.state === RSVPState.PLAYING) {
-      conductor.pause(true); // Skip context rewind for quick tap-pause
+      conductor.pause(true);
     } else {
       conductor.play();
     }
   }, []);
 
-  // Handle long press exit from RSVP - exit to scroll view with word highlighted
+  // Handle long press exit - no longer used but kept for interface compatibility
   const handleLongPressExit = useCallback(() => {
     if (!engine.isRSVPMode) return;
-    
-    // Exit RSVP mode and scroll to current word
     handleModeToggle(false);
   }, []);
 
-  // Handle settings open - memoized to prevent MediaCommandCenter re-renders
+  // Handle settings open
   const handleSettingsClick = useCallback(() => {
     if (!isHandlingPopState.current) {
       window.history.pushState({ modal: 'settings' }, '', window.location.href);
@@ -243,17 +238,17 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     setShowSettings(true);
   }, []);
 
-  // Handle toggle chrome visibility - memoized for TitanReaderView
+  // Handle toggle chrome visibility
   const handleToggleChrome = useCallback(() => {
     setIsChromeVisible(p => !p);
   }, []);
 
-  // Handle RSVP request from reader - memoized
+  // Handle RSVP request from reader
   const handleRequestRSVP = useCallback((offset?: number, index?: number) => {
     handleModeToggle(true, offset, index);
   }, []);
 
-  // Handle toggle from MediaCommandCenter - memoized
+  // Handle toggle from MediaCommandCenter
   const handleMediaToggle = useCallback((startOffset?: number) => {
     handleModeToggle(undefined, startOffset);
   }, []);
@@ -335,17 +330,12 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             }}
         >
           <button 
-            onClick={isRSVP ? handleLongPressExit : handleExit} 
+            onClick={isRSVP ? () => handleModeToggle(false) : handleExit} 
             className="w-11 h-11 -ml-1 rounded-full flex items-center justify-center transition-all active:scale-95"
             style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
           >
             <ChevronLeft size={20} />
           </button>
-          {isRSVP && (
-            <span className="text-xs font-medium" style={{ color: theme.secondaryText }}>
-              Tap to exit RSVP
-            </span>
-          )}
         </div>
       </div>
 

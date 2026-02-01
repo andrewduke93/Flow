@@ -191,8 +191,9 @@ export class CloudService {
         });
 
         // Filter for quality and downloadability
+        // Check for any text/plain format variant (us-ascii, utf-8, etc.)
         return merged
-            .filter(b => b.formats["text/plain"] || b.formats["text/plain; charset=utf-8"])
+            .filter(b => Object.keys(b.formats).some(k => k.startsWith("text/plain")))
             .slice(0, 20) // Slightly more results for discovery
             .map(b => {
                 const authorName = b.authors.length > 0 ? b.authors[0].name.replace(/,/, "") : "Unknown Author";

@@ -13,17 +13,13 @@ interface RSVPTeleprompterProps {
 }
 
 /**
- * RSVPTeleprompter - Unified Word Stream
+ * RSVPTeleprompter - Minimal Word Stream
  * 
- * Display modes:
- * - PLAYING + toggle OFF: Only focus word visible
- * - PLAYING + toggle ON: Focus word + context words before/after
- * - PAUSED: Focus word + context words always visible
- * 
- * Gestures:
- * - TAP on word: Jump to that word
- * - SWIPE LEFT/RIGHT: Move through words (natural scrubbing)
- * - LONG PRESS: Exit to scroll view
+ * SIMPLIFIED UX:
+ * - No gestures on the teleprompter itself
+ * - All controls via MediaCommandCenter pill
+ * - Clean, focused reading experience
+ * - Tap anywhere to pause/play
  */
 export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   onTap,
@@ -43,32 +39,20 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   const [tokens, setTokens] = useState<RSVPToken[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [ribbonOffset, setRibbonOffset] = useState(0);
-  const [isRewinding, setIsRewinding] = useState(false);
   
   // Refs
   const lastIndexRef = useRef(-1);
   const tokensRef = useRef<RSVPToken[]>([]);
-  const pointerStart = useRef({ x: 0, y: 0, time: 0 });
-  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rewindIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const rewindIndexRef = useRef(0);
   const wordPositions = useRef<Map<number, { left: number, width: number, center: number }>>(new Map());
   
-  // Debounce refs to prevent rapid gesture spam
-  const lastTapTimeRef = useRef(0);
-  const lastSeekTimeRef = useRef(0);
-  const isProcessingGestureRef = useRef(false);
-  
-  // Constants
-  const HOLD_THRESHOLD_MS = 300;
-  const TAP_THRESHOLD_PX = 10;
-  const TAP_DEBOUNCE_MS = 100; // Minimum time between taps
-  const SEEK_DEBOUNCE_MS = 50; // Minimum time between word seeks
+  // Constants - Refined for polish
   const FOCUS_COLOR = '#E25822';
   const RETICLE_POSITION = 35.5;
-  const FONT_SIZE = "clamp(2.5rem, 10vw, 4rem)";
+  // Dynamic font size based on user settings - scales proportionally
+  const baseFontSize = settings.fontSize || 18;
+  const FONT_SIZE = `clamp(${baseFontSize * 1.8}px, 8vw, ${baseFontSize * 3}px)`;
 
-  // Sync with heartbeat
+  // Sync with heartbeat - simplified
   useEffect(() => {
     setTokens(heartbeat.tokens);
     tokensRef.current = heartbeat.tokens;
@@ -83,15 +67,12 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       
       setIsPlaying(playing);
       
-      const tokensChanged = hbTokens !== tokensRef.current;
-      const indexChanged = idx !== lastIndexRef.current;
-      
-      if (tokensChanged) {
+      if (hbTokens !== tokensRef.current) {
         setTokens(hbTokens);
         tokensRef.current = hbTokens;
       }
       
-      if (indexChanged) {
+      if (idx !== lastIndexRef.current) {
         lastIndexRef.current = idx;
         setCurrentIndex(idx);
       }
@@ -104,21 +85,17 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     return () => { unsubC(); unsubH(); };
   }, []);
 
-  // Focus token - always use current index
+  // Focus token
   const focusToken = useMemo(() => tokens[currentIndex] || null, [tokens, currentIndex]);
 
-  // Determine what to show:
-  // - Paused: always show context
-  // - Playing + toggle ON: show context
-  // - Playing + toggle OFF: only focus
+  // Show context when paused or when ghost preview is enabled
   const showContext = !isPlaying || settings.showGhostPreview;
-  const contextCount = 5;
+  const contextCount = 4;
 
   // Build token window
   const streamTokens = useMemo(() => {
     if (tokens.length === 0) return [];
     if (!showContext) {
-      // Only focus word
       return focusToken ? [{ token: focusToken, globalIdx: currentIndex }] : [];
     }
     
@@ -131,7 +108,14 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     }));
   }, [tokens, currentIndex, showContext, contextCount, focusToken]);
 
-  // Position ribbon - align focus letter precisely with reticle
+  // ORP calculation - Optimal Recognition Point (~30% into word)
+  const getORP = (text: string) => {
+    const len = Math.max(1, text.length);
+    if (len <= 3) return 0;
+    return Math.min(len - 1, Math.max(0, Math.floor(len * 0.3)));
+  };
+
+  // Position ribbon - align focus letter with reticle
   useLayoutEffect(() => {
     if (!ribbonRef.current) return;
     
@@ -148,33 +132,24 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       const ribbonRect = ribbon.getBoundingClientRect();
       const left = rect.left - ribbonRect.left;
       
-      // Calculate the pixel position of the focus letter (center character)
-      // by measuring the character width and position within the word
       let focusLetterPos = left + rect.width / 2;
       
-      // If this is the focus word, try to find the precise ORP character DOM
       if (idx === currentIndex && focusToken) {
         const text = focusToken.originalText;
         const focusCharIdx = getORP(text);
 
-        // Prefer exact DOM measurement of the ORP character when available
         try {
-          const orpSpan = (child.querySelector && (child.querySelector('span:nth-child(2)') as HTMLElement)) || null;
-          if (orpSpan && orpSpan.getBoundingClientRect) {
+          const orpSpan = child.querySelector?.('span:nth-child(2)') as HTMLElement;
+          if (orpSpan?.getBoundingClientRect) {
             const orpRect = orpSpan.getBoundingClientRect();
-            const orpCenter = (orpRect.left + orpRect.right) / 2;
-            focusLetterPos = orpCenter - ribbonRect.left;
+            focusLetterPos = (orpRect.left + orpRect.right) / 2 - ribbonRect.left;
           } else if (text.length > 0) {
-            // Fallback: estimate letter width based on word width and length
             const estimatedCharWidth = rect.width / text.length;
-            const charOffset = focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
-            focusLetterPos = left + charOffset;
+            focusLetterPos = left + focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
           }
-        } catch (e) {
-          // Fallback to estimation on any error
+        } catch {
           const estimatedCharWidth = rect.width / Math.max(1, text.length);
-          const charOffset = focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
-          focusLetterPos = left + charOffset;
+          focusLetterPos = left + focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
         }
       }
       
@@ -183,180 +158,17 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     
     const activePos = wordPositions.current.get(currentIndex);
     if (activePos) {
-      // Align the focus letter position with the reticle
       setRibbonOffset(reticleX - activePos.center);
     }
   }, [streamTokens, currentIndex, focusToken]);
 
-  // Cleanup
-  useEffect(() => {
-    return () => { 
-      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-      if (rewindIntervalRef.current) clearInterval(rewindIntervalRef.current);
-    };
-  }, []);
-
-  // ═══════════════════════════════════════════════════════════════════
-  // PRESS & HOLD TO REWIND (nice and slow)
-  // ═══════════════════════════════════════════════════════════════════
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    
-    // Debounce rapid taps to prevent race conditions
-    const now = Date.now();
-    if (isProcessingGestureRef.current || now - lastTapTimeRef.current < TAP_DEBOUNCE_MS) {
-      return;
-    }
-    lastTapTimeRef.current = now;
-    
-    (e.target as Element).setPointerCapture?.(e.pointerId);
-    
-    const target = e.target as HTMLElement;
-    const clickedWordIdx = target.dataset.idx ? parseInt(target.dataset.idx) : null;
-    
-    // If clicked directly on a word - jump to it (with debounce)
-    if (clickedWordIdx !== null) {
-      if (now - lastSeekTimeRef.current >= SEEK_DEBOUNCE_MS) {
-        lastSeekTimeRef.current = now;
-        isProcessingGestureRef.current = true;
-        
-        heartbeat.seek(clickedWordIdx);
-        setCurrentIndex(clickedWordIdx);
-        RSVPHapticEngine.impactMedium();
-        
-        // Release lock after a frame to allow state to settle
-        requestAnimationFrame(() => {
-          isProcessingGestureRef.current = false;
-        });
-      }
-      return;
-    }
-    
-    // If paused and tapped empty area - exit to scroll view
-    if (!isPlaying) {
-      isProcessingGestureRef.current = true;
-      onLongPressExit?.();
-      // Release after delay to prevent double-exit
-      setTimeout(() => {
-        isProcessingGestureRef.current = false;
-      }, 300);
-      return;
-    }
-    
-    // Otherwise start hold timer for rewind
-    pointerStart.current = {
-      x: e.clientX,
-      y: e.clientY,
-      time: Date.now()
-    };
-    
-    holdTimerRef.current = setTimeout(() => {
-      setIsRewinding(true);
-      RSVPHapticEngine.impactLight();
-      rewindIndexRef.current = currentIndex;
-      
-      // Pause the conductor to prevent it from advancing while rewinding
-      conductor.pause();
-      
-      // Start slow rewind - 1 word every 300ms (nice and slow)
-      rewindIntervalRef.current = setInterval(() => {
-        rewindIndexRef.current = Math.max(0, rewindIndexRef.current - 1);
-        setCurrentIndex(rewindIndexRef.current);
-        RSVPHapticEngine.selectionChanged();
-        
-        // Auto-stop at beginning to prevent stuck state
-        if (rewindIndexRef.current <= 0) {
-          stopRewind();
-        }
-      }, 300);
-      
-      // Safety timeout: auto-stop rewind after 30 seconds to prevent stuck state
-      setTimeout(() => {
-        if (isRewinding) {
-          stopRewind();
-        }
-      }, 30000);
-    }, HOLD_THRESHOLD_MS);
+  // Simple tap handler - toggle play/pause
+  const handleTap = () => {
+    RSVPHapticEngine.impactLight();
+    onTap?.();
   };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    // Cancel rewind if pointer moves significantly away
-    if (isRewinding) {
-      const dx = Math.abs(e.clientX - pointerStart.current.x);
-      const dy = Math.abs(e.clientY - pointerStart.current.y);
-      if (dx > 50 || dy > 50) {
-        stopRewind();
-      }
-    }
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    (e.target as Element).releasePointerCapture?.(e.pointerId);
-    
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-    
-    stopRewind();
-  };
-
-  const handlePointerCancel = (e: React.PointerEvent) => {
-    (e.target as Element).releasePointerCapture?.(e.pointerId);
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-    stopRewind();
-  };
-
-  const stopRewind = () => {
-    if (isRewinding) {
-      if (rewindIntervalRef.current) {
-        clearInterval(rewindIntervalRef.current);
-        rewindIntervalRef.current = null;
-      }
-      setIsRewinding(false);
-      
-      // Seek without auto-playing (seek will resume if was playing, but we'll handle that)
-      heartbeat.pause(); // Explicitly pause first
-      heartbeat.currentIndex = Math.max(0, Math.min(rewindIndexRef.current, heartbeat.tokens.length - 1));
-      heartbeat.notify();
-      
-      // Resume via conductor (handles state machine correctly)
-      conductor.play();
-      RSVPHapticEngine.impactMedium();
-    }
-  };
-
-  // When rewinding state changes, ensure we update from heartbeat
-  useEffect(() => {
-    if (!isRewinding && currentIndex !== heartbeat.currentIndex) {
-      setCurrentIndex(heartbeat.currentIndex);
-    }
-  }, [isRewinding]);
-
-  // Notify parent when rewind state changes so UI can update
-  useEffect(() => {
-    onRewindStateChange?.(isRewinding);
-  }, [isRewinding, onRewindStateChange]);
-
-  // ═══════════════════════════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════════════════════════
 
   if (!focusToken) return null;
-
-  // ORP calculation - use ~30% into the word (Optimal Recognition Point)
-  // This places the highlighted letter slightly left of center for faster recognition
-  const getORP = (text: string) => {
-    const len = Math.max(1, text.length);
-    // For very short words, pick first letter; otherwise use ~30% index
-    if (len <= 3) return 0;
-    const idx = Math.floor(len * 0.3);
-    return Math.min(len - 1, Math.max(0, idx));
-  };
 
   const orpIdx = getORP(focusToken.originalText);
   const leftPart = focusToken.originalText.slice(0, orpIdx);
@@ -367,87 +179,78 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     <div 
       ref={containerRef}
       role="application"
-      aria-label="Speed reading view. Tap to pause, swipe to navigate, hold to exit."
-      aria-live="off"
-      className="absolute inset-0 select-none overflow-hidden touch-none"
+      aria-label="Speed reading view. Tap to pause/play."
+      className="absolute inset-0 select-none overflow-hidden"
       style={{ backgroundColor: theme.background }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
-      onPointerLeave={handlePointerCancel}
+      onClick={handleTap}
     >
-      {/* Dark overlay for separation from scroll view */}
+      {/* Subtle gradient overlay for depth */}
       <div 
         className="absolute inset-0 pointer-events-none"
-        style={{ backgroundColor: theme.background, opacity: 0.95 }}
-      />
-
-      {/* Vignette */}
-      <div 
-        className="absolute inset-0 z-10 pointer-events-none"
         style={{ 
-          background: `radial-gradient(ellipse 80% 50% at ${RETICLE_POSITION}% 42%, transparent 0%, ${theme.background} 100%)`
+          background: `radial-gradient(ellipse 90% 60% at ${RETICLE_POSITION}% 42%, transparent 0%, ${theme.background}90 100%)`
         }}
       />
 
-      {/* Reticle - Glows during rewind */}
+      {/* Minimal reticle line */}
       <div 
-        className="absolute top-[20%] bottom-[20%] w-[2px] z-0 pointer-events-none transition-all duration-200"
+        className="absolute top-[25%] bottom-[25%] w-[1.5px] z-0 pointer-events-none"
         style={{ 
           left: `${RETICLE_POSITION}%`, 
           backgroundColor: FOCUS_COLOR, 
-          opacity: isRewinding ? 0.6 : 0.15,
-          boxShadow: isRewinding ? `0 0 30px ${FOCUS_COLOR}80` : 'none'
+          opacity: 0.12
         }}
       />
 
       {/* WORD STREAM */}
       <div className="absolute inset-x-0 top-[42%] -translate-y-1/2 flex items-center justify-start overflow-visible z-20">
-        {/* Edge fades - only when showing context */}
+        {/* Edge fades */}
         {showContext && (
           <>
             <div 
-              className="absolute left-0 top-[-50%] bottom-[-50%] w-32 z-30 pointer-events-none"
+              className="absolute left-0 top-[-50%] bottom-[-50%] w-24 z-30 pointer-events-none"
               style={{ background: `linear-gradient(to right, ${theme.background}, transparent)` }}
             />
             <div 
-              className="absolute right-0 top-[-50%] bottom-[-50%] w-32 z-30 pointer-events-none"
+              className="absolute right-0 top-[-50%] bottom-[-50%] w-24 z-30 pointer-events-none"
               style={{ background: `linear-gradient(to left, ${theme.background}, transparent)` }}
             />
           </>
         )}
 
-        {/* Word Ribbon */}
+        {/* Word Ribbon - GPU accelerated */}
         <div
           ref={ribbonRef}
-          className="flex items-baseline gap-5 whitespace-nowrap will-change-transform"
+          className="flex items-baseline gap-4 whitespace-nowrap"
           style={{
-            transform: `translateX(${ribbonOffset}px)`,
-            transition: isRewinding ? 'transform 0.05s linear' : 'none',
-            opacity: isRewinding ? 0.85 : 1
+            transform: `translate3d(${ribbonOffset}px, 0, 0)`,
+            willChange: 'transform'
           }}
         >
           {streamTokens.map(({ token, globalIdx }) => {
             const isFocus = globalIdx === currentIndex;
             const distance = Math.abs(globalIdx - currentIndex);
-            
-            // Context word opacity
-            const contextOpacity = Math.max(0.12, 0.55 - (distance * 0.1));
+            const contextOpacity = Math.max(0.08, 0.4 - (distance * 0.08));
             
             if (isFocus) {
               return (
                 <span
                   key={token.id}
                   data-idx={globalIdx}
-                  className="inline-flex items-baseline font-sans font-semibold cursor-pointer transition-opacity hover:opacity-100"
-                  style={{ fontSize: FONT_SIZE }}
+                  className="inline-flex items-baseline font-sans font-semibold"
+                  style={{ 
+                    fontSize: FONT_SIZE,
+                    fontFamily: settings.fontFamily === 'New York' ? 'Georgia, serif' : 'system-ui, sans-serif'
+                  }}
                 >
                   <span style={{ color: theme.primaryText }}>{leftPart}</span>
-                  <span style={{ color: FOCUS_COLOR, textShadow: isRewinding ? `0 0 10px ${FOCUS_COLOR}60` : `0 0 20px ${FOCUS_COLOR}40` }}>{orpChar}</span>
+                  <span style={{ 
+                    color: FOCUS_COLOR, 
+                    textShadow: `0 0 24px ${FOCUS_COLOR}30`
+                  }}>{orpChar}</span>
                   <span style={{ color: theme.primaryText }}>{rightPart}</span>
                   {token.punctuation && (
-                    <span style={{ color: theme.secondaryText, opacity: 0.5, marginLeft: '1px' }}>
+                    <span style={{ color: theme.secondaryText, opacity: 0.4, marginLeft: '2px' }}>
                       {token.punctuation}
                     </span>
                   )}
@@ -459,10 +262,11 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
               <span
                 key={token.id}
                 data-idx={globalIdx}
-                className="font-sans cursor-pointer transition-opacity hover:opacity-100"
+                className="font-sans"
                 style={{
                   fontSize: FONT_SIZE,
                   fontWeight: 400,
+                  fontFamily: settings.fontFamily === 'New York' ? 'Georgia, serif' : 'system-ui, sans-serif',
                   color: theme.primaryText,
                   opacity: contextOpacity,
                 }}
@@ -472,6 +276,17 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
             );
           })}
         </div>
+      </div>
+
+      {/* Progress indicator - subtle bottom line */}
+      <div className="absolute bottom-8 left-8 right-8 h-[2px] rounded-full overflow-hidden opacity-20">
+        <div 
+          className="h-full rounded-full transition-all duration-100"
+          style={{ 
+            width: `${tokens.length > 0 ? (currentIndex / tokens.length) * 100 : 0}%`,
+            backgroundColor: FOCUS_COLOR 
+          }}
+        />
       </div>
     </div>
   );

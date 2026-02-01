@@ -94,24 +94,47 @@ const App: React.FC = () => {
                 }
                 loadedBooks = mocks;
             } else {
-                // REPAIR: Check if the welcome book exists but has missing content
-                // This can happen if a previous version corrupted the data
+                // REPAIR: Ensure welcome book always exists with valid content
+                // This handles: missing welcome book, corrupted content, or deleted by user
                 const welcomeBookId = 'guide-book-v1';
                 const welcomeBookMeta = loadedBooks.find(b => b.id === welcomeBookId);
-                if (welcomeBookMeta) {
+                
+                let needsRepair = false;
+                let existingProgress = 0;
+                let existingTokenIndex: number | undefined;
+                let existingLastOpened: Date | undefined;
+                
+                if (!welcomeBookMeta) {
+                    // Welcome book completely missing - restore it
+                    console.warn('[App] Welcome book missing, restoring...');
+                    needsRepair = true;
+                } else {
+                    // Welcome book metadata exists - check content integrity
                     const fullWelcome = await storage.getFullBook(welcomeBookId);
                     if (!fullWelcome || !fullWelcome.chapters || fullWelcome.chapters.length === 0) {
-                        console.warn('[App] Welcome book content missing, repairing...');
-                        const mocks = generateMockBooks();
-                        const freshWelcome = mocks.find(b => b.id === welcomeBookId);
-                        if (freshWelcome) {
-                            // Preserve user's progress if any
-                            freshWelcome.bookmarkProgress = welcomeBookMeta.bookmarkProgress || 0;
-                            freshWelcome.lastTokenIndex = welcomeBookMeta.lastTokenIndex;
-                            freshWelcome.lastOpened = welcomeBookMeta.lastOpened;
-                            await storage.saveBook(freshWelcome);
-                            // Update loaded metadata list
+                        console.warn('[App] Welcome book content corrupted, repairing...');
+                        needsRepair = true;
+                        existingProgress = welcomeBookMeta.bookmarkProgress || 0;
+                        existingTokenIndex = welcomeBookMeta.lastTokenIndex;
+                        existingLastOpened = welcomeBookMeta.lastOpened;
+                    }
+                }
+                
+                if (needsRepair) {
+                    const mocks = generateMockBooks();
+                    const freshWelcome = mocks.find(b => b.id === welcomeBookId);
+                    if (freshWelcome) {
+                        // Preserve any existing progress
+                        freshWelcome.bookmarkProgress = existingProgress;
+                        freshWelcome.lastTokenIndex = existingTokenIndex;
+                        freshWelcome.lastOpened = existingLastOpened || new Date();
+                        await storage.saveBook(freshWelcome);
+                        
+                        // Update or append to loaded books list
+                        if (welcomeBookMeta) {
                             loadedBooks = loadedBooks.map(b => b.id === welcomeBookId ? freshWelcome : b);
+                        } else {
+                            loadedBooks = [freshWelcome, ...loadedBooks];
                         }
                     }
                 }

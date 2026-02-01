@@ -10,73 +10,62 @@ interface TitanReaderViewProps {
   book: Book;
   onToggleChrome: () => void;
   onRequestRSVP?: (startOffset: number, tokenIndex: number) => void; 
-  isActive: boolean; // New prop for hibernation
+  isActive: boolean;
 }
 
 /**
- * LightweightWord
- * Renders a single interactive word token.
- */
-const LightweightWord = memo(({ 
-  token, 
-  isActive, 
-  theme
-}: { 
-  token: RSVPToken, 
-  isActive: boolean, 
-  theme: TitanThemeColors
-}) => {
-  return (
-    <span
-    id={`w-$${token.globalIndex}`} 
-    data-idx={token.globalIndex}
-    data-off={token.startOffset}
-    className={`inline py-0.5 rounded-[2px] cursor-pointer select-none transition-colors duration-200 $${isActive ? '' : 'hover:opacity-60'}`}
-      style={{
-          backgroundColor: isActive ? theme.accent : 'transparent',
-          color: isActive ? '#FFFFFF' : 'inherit',
-          boxDecorationBreak: 'clone',
-          WebkitBoxDecorationBreak: 'clone'
-      }}
-    >
-      {token.originalText}
-    </span>
-  );
-});
-
-/**
- * StaticParagraph
- * Optimization: Renders text as a simple string for paragraphs outside the active window.
- * Added: Text Justification and Hyphenation for book-like rendering.
+ * StaticParagraph - Optimized for reading comfort
+ * Book-like typography with proper justification and hyphenation
  */
 const StaticParagraph = memo(({
     text,
-    settings,
+    fontSize,
+    lineHeight,
+    paragraphSpacing,
+    fontFamily,
+    textColor,
     startTokenIndex,
     onParagraphClick
 }: {
     text: string,
-    settings: any,
+    fontSize: number,
+    lineHeight: number,
+    paragraphSpacing: number,
+    fontFamily: string,
+    textColor: string,
     startTokenIndex: number,
     onParagraphClick: (startTokenIndex: number) => void
 }) => {
     return (
         <p
-            id={`p-$${startTokenIndex}`}
+            id={`p-${startTokenIndex}`}
             data-start-index={startTokenIndex}
             onClick={() => onParagraphClick(startTokenIndex)}
-            className="max-w-[60ch] mx-auto box-border relative cursor-pointer hover:opacity-100 transition-opacity scroll-mt-32"
+            className="reader-paragraph cursor-pointer transition-opacity hover:opacity-100"
             style={{
-                fontSize: `$${settings.fontSize}px`,
-                lineHeight: settings.lineHeight,
-                marginBottom: settings.paragraphSpacing,
-                fontFamily: settings.fontFamily === 'New York' ? 'serif' : 'sans-serif',
-                color: 'inherit',
-                opacity: 0.9,
-                whiteSpace: 'pre-line', 
+                fontSize: `${fontSize}px`,
+                lineHeight: lineHeight,
+                marginBottom: `${paragraphSpacing}px`,
+                fontFamily: fontFamily === 'New York' ? '"New York", "Iowan Old Style", Georgia, serif' : 
+                           fontFamily === 'OpenDyslexic' ? '"OpenDyslexic", sans-serif' :
+                           fontFamily === 'Atkinson Hyperlegible' ? '"Atkinson Hyperlegible", sans-serif' :
+                           'system-ui, -apple-system, sans-serif',
+                color: textColor,
+                opacity: 0.92,
+                // Book-quality typography
                 textAlign: 'justify',
+                textJustify: 'inter-word',
                 hyphens: 'auto',
-                WebkitHyphens: 'auto'
+                WebkitHyphens: 'auto',
+                wordBreak: 'break-word',
+                overflowWrap: 'break-word',
+                // Optical adjustments
+                letterSpacing: '-0.01em',
+                wordSpacing: '0.02em',
+                fontKerning: 'normal',
+                fontVariantLigatures: 'common-ligatures',
+                textRendering: 'optimizeLegibility',
+                WebkitFontSmoothing: 'antialiased'
             }}
         >
             {text}
@@ -85,21 +74,26 @@ const StaticParagraph = memo(({
 });
 
 /**
- * ParagraphChunk
- * The expensive, interactive version.
+ * ParagraphChunk - Interactive version with word highlighting
  */
 const ParagraphChunk = memo(({ 
   tokens, 
   activeIndex, 
   onWordClick,
-  settings,
+  fontSize,
+  lineHeight,
+  paragraphSpacing,
+  fontFamily,
   theme,
   startTokenIndex
 }: { 
   tokens: RSVPToken[], 
   activeIndex: number, 
   onWordClick: (index: number, startOffset: number) => void,
-  settings: any,
+  fontSize: number,
+  lineHeight: number,
+  paragraphSpacing: number,
+  fontFamily: string,
   theme: TitanThemeColors,
   startTokenIndex: number
 }) => {
@@ -110,38 +104,59 @@ const ParagraphChunk = memo(({
           e.stopPropagation();
           const idx = parseInt(target.dataset.idx || "-1");
           const offset = parseInt(target.dataset.off || "0");
-          if (idx >= 0) {
-              onWordClick(idx, offset);
-          }
+          if (idx >= 0) onWordClick(idx, offset);
       }
   }, [onWordClick]);
 
   return (
     <p 
-    id={`p-$${startTokenIndex}`}
+      id={`p-${startTokenIndex}`}
       data-start-index={startTokenIndex}
       onClick={handleDelegatedClick}
-      className="max-w-[60ch] mx-auto box-border relative scroll-mt-32"
-          style={{
-        fontSize: `$${settings.fontSize}px`,
-        lineHeight: settings.lineHeight,
-        marginBottom: settings.paragraphSpacing,
-        fontFamily: settings.fontFamily === 'New York' ? 'serif' : 'sans-serif',
-        opacity: 0.9,
-        whiteSpace: 'pre-line',
+      className="reader-paragraph"
+      style={{
+        fontSize: `${fontSize}px`,
+        lineHeight: lineHeight,
+        marginBottom: `${paragraphSpacing}px`,
+        fontFamily: fontFamily === 'New York' ? '"New York", "Iowan Old Style", Georgia, serif' : 
+                   fontFamily === 'OpenDyslexic' ? '"OpenDyslexic", sans-serif' :
+                   fontFamily === 'Atkinson Hyperlegible' ? '"Atkinson Hyperlegible", sans-serif' :
+                   'system-ui, -apple-system, sans-serif',
+        opacity: 0.92,
         textAlign: 'justify',
+        textJustify: 'inter-word',
         hyphens: 'auto',
         WebkitHyphens: 'auto',
+        wordBreak: 'break-word',
+        overflowWrap: 'break-word',
+        letterSpacing: '-0.01em',
+        wordSpacing: '0.02em',
+        fontKerning: 'normal',
+        fontVariantLigatures: 'common-ligatures',
+        textRendering: 'optimizeLegibility',
+        WebkitFontSmoothing: 'antialiased'
       }}
     >
-      {tokens.map((token, i) => {
+      {tokens.map((token) => {
+         const isActive = token.globalIndex === activeIndex;
          return (
            <React.Fragment key={token.id}>
-             <LightweightWord 
-                token={token} 
-                isActive={token.globalIndex === activeIndex} 
-                theme={theme}
-             />
+             <span
+               id={`w-${token.globalIndex}`} 
+               data-idx={token.globalIndex}
+               data-off={token.startOffset}
+               className="inline rounded-sm cursor-pointer select-none transition-colors duration-150"
+               style={{
+                 backgroundColor: isActive ? theme.accent : 'transparent',
+                 color: isActive ? '#FFFFFF' : 'inherit',
+                 padding: isActive ? '0.1em 0.15em' : '0',
+                 margin: isActive ? '-0.1em -0.15em' : '0',
+                 boxDecorationBreak: 'clone',
+                 WebkitBoxDecorationBreak: 'clone'
+               }}
+             >
+               {token.originalText}
+             </span>
              {" "}
            </React.Fragment>
          )
@@ -151,8 +166,7 @@ const ParagraphChunk = memo(({
 });
 
 /**
- * ParagraphSection
- * Groups paragraphs to reduce React reconciliation overhead on long books.
+ * ParagraphSection - Groups paragraphs for efficient rendering
  */
 const ParagraphSection = memo(({ 
     sectionIndex,
@@ -161,7 +175,10 @@ const ParagraphSection = memo(({
     activeIndex, 
     onWordClick, 
     onParagraphClick,
-    settings, 
+    fontSize,
+    lineHeight,
+    paragraphSpacing,
+    fontFamily,
     theme 
 }: {
     sectionIndex: number,
@@ -170,13 +187,12 @@ const ParagraphSection = memo(({
     activeIndex: number,
     onWordClick: any,
     onParagraphClick: any,
-    settings: any,
-    theme: any
+    fontSize: number,
+    lineHeight: number,
+    paragraphSpacing: number,
+    fontFamily: string,
+    theme: TitanThemeColors
 }) => {
-    // Optimization: Skip rendering entirely if far from active window
-    // This is "soft virtualization" - keeps DOM structure but skips React work
-    const isSectionActive = Math.abs(sectionIndex - Math.floor(activeParagraphIndex / 30)) <= 2;
-    
     return (
         <div>
             {paragraphs.map((p, i) => {
@@ -191,7 +207,10 @@ const ParagraphSection = memo(({
                             tokens={p.tokens} 
                             activeIndex={activeIndex}
                             onWordClick={onWordClick}
-                            settings={settings}
+                            fontSize={fontSize}
+                            lineHeight={lineHeight}
+                            paragraphSpacing={paragraphSpacing}
+                            fontFamily={fontFamily}
                             theme={theme}
                         />
                     );
@@ -200,7 +219,11 @@ const ParagraphSection = memo(({
                         <StaticParagraph 
                             key={globalIndex}
                             text={p.plainText}
-                            settings={settings}
+                            fontSize={fontSize}
+                            lineHeight={lineHeight}
+                            paragraphSpacing={paragraphSpacing}
+                            fontFamily={fontFamily}
+                            textColor={theme.primaryText}
                             startTokenIndex={p.startIndex}
                             onParagraphClick={onParagraphClick}
                         />
@@ -212,31 +235,36 @@ const ParagraphSection = memo(({
 });
 
 /**
- * TitanReaderView (Nuclear Option Edition)
+ * TitanReaderView - Premium Reading Experience
+ * 
+ * Features:
+ * - Book-quality typography with justification
+ * - Universal pinch-to-zoom for text size
+ * - Smooth scroll tracking
+ * - Word-level interaction for RSVP entry
  */
 export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggleChrome, onRequestRSVP, isActive }) => {
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
   const theme = useTitanTheme();
-  const { settings } = useTitanSettings();
+  const { settings, updateSettings } = useTitanSettings();
   
   const containerRef = useRef<HTMLDivElement>(null);
   
   // State
   const [tokens, setTokens] = useState<RSVPToken[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const activeIndexRef = useRef(-1); // Stable ref
+  const activeIndexRef = useRef(-1);
   const [isReady, setIsReady] = useState(false); 
   const [loadingProgress, setLoadingProgress] = useState(0);
-  
   const [isRestored, setIsRestored] = useState(false);
   const isProgrammaticScroll = useRef(false);
-  
-  // Intersection Observer for Smooth Scroll Tracking
-  const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // Sync Ref signal
+  // Pinch-to-zoom state
+  const initialPinchDistance = useRef<number | null>(null);
+  const initialFontSize = useRef<number>(settings.fontSize);
+
   const pendingJumpIndex = useRef<number | null>(null);
 
   const updateActiveIndex = useCallback((idx: number) => {
@@ -244,23 +272,19 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       activeIndexRef.current = idx;
   }, []);
 
-  // SCROLL ENGINE: The critical piece for navigation
+  // Scroll to token
   const scrollToToken = useCallback((index: number, smooth: boolean) => {
       if (!containerRef.current) return;
       
-      // 1. Try to find the specific word span (only exists if near active window)
       let element = document.getElementById(`w-${index}`);
       
-      // 2. FALLBACK: If word not rendered (StaticParagraph), find the paragraph container
       if (!element) {
-          // We look for the paragraph with the largest start-index that is <= index
           const allParas = Array.from(containerRef.current.querySelectorAll('p[data-start-index]')) as HTMLElement[];
           let best: HTMLElement | null = null;
           let bestStart = -1;
           
           for (const p of allParas) {
               const s = parseInt(p.dataset.startIndex || "-1");
-              // Find the paragraph that *contains* this index (starts before or at it)
               if (s <= index && s > bestStart) {
                   best = p;
                   bestStart = s;
@@ -270,8 +294,6 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       }
 
       if (!element) {
-          // Last resort: Just scroll percentage if DOM is missing (rare but possible on load)
-          // We calculate approximate height based on token ratio
           if (core.totalTokens > 0) {
              const ratio = index / core.totalTokens;
              const totalH = containerRef.current.scrollHeight;
@@ -282,9 +304,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       }
 
       isProgrammaticScroll.current = true;
-
       const container = containerRef.current;
-      // Offset by 15% of screen height to place text comfortably near top but not hidden
       const opticalCenter = container.clientHeight * 0.15; 
       
       let offsetTop = element.offsetTop;
@@ -295,20 +315,63 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       }
 
       const targetScroll = offsetTop - opticalCenter;
-      
       container.scrollTo({
           top: Math.max(0, targetScroll),
           behavior: smooth ? 'smooth' : 'instant'
       });
 
-      // Release lock after animation
       setTimeout(() => {
           isProgrammaticScroll.current = false;
       }, smooth ? 600 : 100);
-
   }, []);
 
-  // -- 1. Initialization --
+  // Pinch-to-zoom handlers
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      initialPinchDistance.current = Math.sqrt(dx * dx + dy * dy);
+      initialFontSize.current = settings.fontSize;
+    }
+  }, [settings.fontSize]);
+
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (e.touches.length === 2 && initialPinchDistance.current !== null) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const currentDistance = Math.sqrt(dx * dx + dy * dy);
+      
+      const scale = currentDistance / initialPinchDistance.current;
+      const newFontSize = Math.round(Math.max(12, Math.min(40, initialFontSize.current * scale)));
+      
+      if (newFontSize !== settings.fontSize) {
+        updateSettings({ fontSize: newFontSize });
+      }
+    }
+  }, [settings.fontSize, updateSettings]);
+
+  const handleTouchEnd = useCallback(() => {
+    initialPinchDistance.current = null;
+  }, []);
+
+  // Setup pinch-to-zoom listeners
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
+
+  // Initialization
   useEffect(() => {
     if ('scrollRestoration' in history) {
         history.scrollRestoration = 'manual';
@@ -330,21 +393,13 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
     });
     
     const init = async () => {
-      // RESET COMPONENT STATE
       setIsReady(false);
       setIsRestored(false);
       setLoadingProgress(0);
       setTokens([]);
 
-      // CRITICAL VALIDATION: Check if book has chapters before loading
       if (!book.chapters || book.chapters.length === 0) {
-          console.error("[TitanReaderView] Book has no chapters! This indicates a data loading issue.", {
-              bookId: book.id,
-              title: book.title,
-              hasChapters: !!book.chapters,
-              chaptersLength: book.chapters?.length
-          });
-          // Still mark as ready so UI shows (with empty content vs infinite loading)
+          console.error("[TitanReaderView] Book has no chapters!", { bookId: book.id, title: book.title });
           setIsReady(true);
           setIsRestored(true);
           return;
@@ -353,22 +408,13 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       try {
           await core.load(book);
           const fullText = core.contentStorage.string;
-          
-          if (!fullText) {
-              console.warn("[TitanReaderView] Loaded book has no content string.");
-          }
-
           await conductor.prepare(fullText, { progress: 0 }); 
       } catch (e) {
-          console.error("[TitanReaderView] Initialization pipeline failed:", e);
+          console.error("[TitanReaderView] Initialization failed:", e);
       } finally {
           const loadedTokens = heartbeat.tokens;
           setTokens(loadedTokens);
-          
-          // CRITICAL: Only mark as ready if we actually have tokens or if we've definitely finished trying
           setIsReady(true);
-          
-          // Give the DOM a tiny beat to paint before showing
           requestAnimationFrame(() => {
               setIsRestored(true);
           });
@@ -379,174 +425,81 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
     return () => progressUnsub();
   }, [book.id, updateActiveIndex]);
 
-  // -- 2. LIVE SYNC (Core -> View) --
-  // Always listen for chapter jumps to keep background in sync, even during RSVP
+  // Live sync
   useEffect(() => {
       const handleCoreUpdate = () => {
           const targetIndex = core.currentBook?.lastTokenIndex;
           if (targetIndex === undefined) return;
           
-          // CRITICAL: Detect Jumps
           const diff = Math.abs(targetIndex - activeIndexRef.current);
           
           if (diff > 0) {
               updateActiveIndex(targetIndex);
-              
-              // Trigger auto-scroll for significant jumps (chapter changes)
-              // In RSVP mode: smooth scroll for visual continuity in background
-              // In scroll mode: instant snap for responsiveness
               if (diff > 10) {
                    const useSmooth = core.isRSVPMode;
                    scrollToToken(targetIndex, useSmooth);
               }
           }
       };
-      
-      // Handle explicit jump requests (chapter selection)
-      const handleJump = (percentage: number) => {
-          if (core.totalTokens > 0) {
-              const targetIndex = Math.floor(percentage * core.totalTokens);
-              updateActiveIndex(targetIndex);
-              scrollToToken(targetIndex, core.isRSVPMode);
-          }
-      };
-      
-      const unsub = core.subscribe(handleCoreUpdate);
-      const unsubJump = core.onJump(handleJump);
-      return () => {
-          unsub();
-          unsubJump();
-      };
+
+      const unsub = core.onJump(handleCoreUpdate);
+      return () => unsub();
   }, [updateActiveIndex, scrollToToken]);
 
-  // -- 2b. RSVP SYNC (Heartbeat -> View) --
-  // When RSVP pauses, sync the exact word position to the scroll view
-  useEffect(() => {
-      const conductor = RSVPConductor.getInstance();
-      const heartbeat = RSVPHeartbeat.getInstance();
-      
-      let lastConductorState = conductor.state;
-      
-      const handleRSVPStateChange = () => {
-          const currentState = conductor.state;
-          
-          // When RSVP pauses (was playing, now paused), sync the exact position
-          if (lastConductorState === 'PLAYING' && currentState === 'PAUSED') {
-              const currentTokenIndex = heartbeat.currentIndex;
-              updateActiveIndex(currentTokenIndex);
-              // Smooth scroll to show current word in background
-              scrollToToken(currentTokenIndex, true);
-          }
-          
-          lastConductorState = currentState;
-      };
-      
-      const unsubConductor = conductor.subscribe(handleRSVPStateChange);
-      return () => unsubConductor();
-  }, [updateActiveIndex, scrollToToken]);
-
-  // -- 3. RESTORATION --
+  // Initial scroll restoration
   useLayoutEffect(() => {
-      if (!isReady || tokens.length === 0) return;
-
-      const performRestoration = () => {
-          const targetIndex = (core.currentBook?.id === book.id ? core.currentBook.lastTokenIndex : book.lastTokenIndex) ?? -1;
-          if (targetIndex <= 10) {
-              if (containerRef.current) containerRef.current.scrollTop = 0;
-              setTimeout(() => { setIsRestored(true); isProgrammaticScroll.current = false; }, 100);
-          } else {
-             scrollToToken(targetIndex, false);
-             setTimeout(() => setIsRestored(true), 100);
-          }
-      };
-      requestAnimationFrame(performRestoration);
-  }, [isReady, tokens.length, book.id, scrollToToken]);
-
-  // Debounced save for scroll tracking - prevents excessive writes
-  const scrollSaveTimer = useRef<number | null>(null);
-  const pendingSaveIndex = useRef<number>(-1);
-
-  const debouncedScrollSave = useCallback((idx: number) => {
-      // Always update in-memory state immediately for responsiveness
-      pendingSaveIndex.current = idx;
+      if (!isReady || !isRestored || tokens.length === 0) return;
       
-      // Clear existing timer
-      if (scrollSaveTimer.current) {
-          clearTimeout(scrollSaveTimer.current);
+      const targetIndex = activeIndex >= 0 ? activeIndex : (book.lastTokenIndex ?? 0);
+      if (targetIndex > 0) {
+          requestAnimationFrame(() => {
+              scrollToToken(targetIndex, false);
+              isProgrammaticScroll.current = false;
+          });
+      } else {
+          isProgrammaticScroll.current = false;
       }
+  }, [isReady, isRestored, tokens.length]);
+
+  // Scroll tracking
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !isRestored || tokens.length === 0) return;
+    
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (isProgrammaticScroll.current || ticking) return;
       
-      // Batch writes: save after 500ms of scroll inactivity
-      scrollSaveTimer.current = window.setTimeout(() => {
-          if (pendingSaveIndex.current >= 0) {
-              core.saveProgress(pendingSaveIndex.current);
+      ticking = true;
+      requestAnimationFrame(() => {
+        if (!isProgrammaticScroll.current && container) {
+          const scrollPct = container.scrollTop / Math.max(1, container.scrollHeight - container.clientHeight);
+          const newIndex = Math.floor(scrollPct * (tokens.length - 1));
+          
+          if (Math.abs(newIndex - activeIndexRef.current) > 50) {
+            updateActiveIndex(newIndex);
+            core.saveProgress(newIndex);
           }
-          scrollSaveTimer.current = null;
-      }, 500);
-  }, []);
-
-  // Cleanup scroll save timer on unmount
-  useEffect(() => {
-      return () => {
-          if (scrollSaveTimer.current) {
-              // Flush pending save on unmount
-              if (pendingSaveIndex.current >= 0) {
-                  core.saveProgress(pendingSaveIndex.current);
-              }
-              clearTimeout(scrollSaveTimer.current);
-          }
-      };
-  }, []);
-
-  // -- 4. SCROLL TRACKING (OBSERVER) --
-  useEffect(() => {
-    if (!isRestored || !isActive) {
-        if (observerRef.current) observerRef.current.disconnect();
-        return;
-    }
-
-    if (observerRef.current) observerRef.current.disconnect();
-
-    const callback = (entries: IntersectionObserverEntry[]) => {
-        if (isProgrammaticScroll.current) return;
-
-        // Find the first element intersecting the optical zone (top 30%)
-        for (const entry of entries) {
-            if (entry.isIntersecting) {
-                const target = entry.target as HTMLElement;
-                const idx = parseInt(target.dataset.startIndex || "-1");
-                if (idx >= 0) {
-                    updateActiveIndex(idx);
-                    debouncedScrollSave(idx); // Debounced instead of immediate
-                    break;
-                }
-            }
         }
+        ticking = false;
+      });
     };
 
-    const options = {
-        root: containerRef.current,
-        // Active zone is between 10% and 40% of view height.
-        rootMargin: '-10% 0px -60% 0px', 
-        threshold: 0
-    };
-
-    observerRef.current = new IntersectionObserver(callback, options);
-
-    const paragraphs = containerRef.current?.querySelectorAll('p[data-start-index]');
-    paragraphs?.forEach(p => observerRef.current?.observe(p));
-
-    return () => observerRef.current?.disconnect();
-
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
   }, [isRestored, tokens.length, updateActiveIndex]);
 
-  // -- 5. Memoized Paragraphs --
+  // Paragraph grouping
   const paragraphs = useMemo(() => {
+    if (tokens.length === 0) return [];
+    
     const result: { tokens: RSVPToken[], startIndex: number, plainText: string }[] = [];
     let currentPara: RSVPToken[] = [];
     let startIndex = -1;
-
+    
     for (const token of tokens) {
-      if (currentPara.length === 0) startIndex = token.globalIndex;
+      if (startIndex === -1) startIndex = token.globalIndex;
       currentPara.push(token);
       
       if (token.isParagraphEnd) {
@@ -556,6 +509,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
             plainText: currentPara.map(t => t.originalText).join(" ") 
         });
         currentPara = [];
+        startIndex = -1;
       }
     }
     if (currentPara.length > 0) {
@@ -586,7 +540,6 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       );
   }, [paragraphs, activeIndex]);
 
-  // Sectioning logic: chunk paragraphs into blocks of 30
   const sections = useMemo(() => {
       const result = [];
       for (let i = 0; i < paragraphs.length; i += 30) {
@@ -598,13 +551,13 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   return (
     <div 
       ref={containerRef}
-      className="absolute inset-0 z-10 w-full h-full overflow-y-auto overflow-x-hidden custom-scrollbar box-border"
+      className="absolute inset-0 z-10 w-full h-full overflow-y-auto overflow-x-hidden custom-scrollbar"
       style={{ 
         backgroundColor: theme.background,
         color: theme.primaryText,
         scrollBehavior: 'auto', 
         WebkitOverflowScrolling: 'touch',
-        touchAction: 'pan-y',
+        touchAction: 'pan-y pinch-zoom',
         overscrollBehaviorY: 'contain',
         transform: 'translateZ(0)'
       }}
@@ -612,7 +565,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
         if (e.target === e.currentTarget) onToggleChrome();
       }}
     >
-      {/* LOADING OVERLAY */}
+      {/* Loading Overlay */}
       {!isReady && (
           <div 
               className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-auto"
@@ -634,7 +587,7 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
           </div>
       )}
 
-      {/* EMPTY STATE: No content loaded */}
+      {/* Empty State */}
       {isReady && tokens.length === 0 && (
           <div 
               className="fixed inset-0 flex items-center justify-center z-[50] pointer-events-auto"
@@ -644,59 +597,20 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
                   <div className="text-4xl opacity-30">📖</div>
                   <span className="text-lg font-medium" style={{ color: theme.secondaryText }}>No content available</span>
                   <span className="text-sm opacity-60" style={{ color: theme.secondaryText }}>This book appears to be empty or failed to load.</span>
-                  <div className="mt-4 flex gap-3">
-                    <button
-                      className="px-4 py-2 rounded bg-zune-ember text-white text-sm shadow"
-                      onClick={async () => {
-                        try {
-                          const storage = (await import('../services/titanStorage')).TitanStorage.getInstance();
-                          const ingestion = (await import('../services/ingestionService')).IngestionService.getInstance();
-                          // Try to fetch the stored source blob for this book
-                          const src = await storage.getSource(book.id);
-                          if (src) {
-                            const file = new File([src], `${book.title || 'book'}.epub`, { type: 'application/epub+zip' });
-                            const repaired = await ingestion.ingest(file);
-                            // Persist repaired book and reopen
-                            await storage.saveBook(repaired);
-                            await storage.saveSource(repaired.id, src);
-                            // Force UI update by navigating to repaired book id
-                            window.location.reload();
-                            return;
-                          }
-
-                          // Fallback: re-seed welcome book if it's the guide
-                          if (book.id === 'guide-book-v1') {
-                            const mocks = (await import('../services/mockData')).generateMockBooks();
-                            const welcome = mocks.find(m => m.id === 'guide-book-v1');
-                            if (welcome) {
-                              await storage.saveBook(welcome);
-                              window.location.reload();
-                              return;
-                            }
-                          }
-
-                          alert('Repair failed: no source available to re-ingest. Try re-importing the book or use the Library to open a different title.');
-                        } catch (err) {
-                          console.error('Repair failed', err);
-                          alert('Repair failed — see console for details.');
-                        }
-                      }}
-                    >
-                      Repair book
-                    </button>
-
-                    <button
-                      className="px-4 py-2 rounded border border-neutral-700 text-sm"
-                      onClick={() => { if (containerRef.current) containerRef.current.scrollTop = 0; }}
-                    >
-                      Scroll to top
-                    </button>
-                  </div>
               </div>
           </div>
       )}
 
-      <div className="w-full min-h-[100dvh] px-6 md:px-0 py-24 md:py-32 box-border relative">
+      {/* Content */}
+      <div 
+        className="w-full min-h-[100dvh] box-border relative"
+        style={{
+          // Optimal reading width with generous padding
+          maxWidth: '680px',
+          margin: '0 auto',
+          padding: '80px 24px 160px 24px'
+        }}
+      >
            {sections.map((section, idx) => (
                <ParagraphSection 
                   key={idx}
@@ -706,12 +620,25 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
                   activeIndex={activeIndex}
                   onWordClick={handleWordClick}
                   onParagraphClick={handleParagraphClick}
-                  settings={settings}
+                  fontSize={settings.fontSize}
+                  lineHeight={settings.lineHeight}
+                  paragraphSpacing={settings.paragraphSpacing}
+                  fontFamily={settings.fontFamily}
                   theme={theme}
                />
            ))}
            <div className="h-[40vh]" /> 
       </div>
+
+      {/* Font size indicator during pinch */}
+      {initialPinchDistance.current !== null && (
+        <div 
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-6 py-3 rounded-2xl shadow-2xl z-[200] backdrop-blur-xl"
+          style={{ backgroundColor: `${theme.surface}ee`, border: `1px solid ${theme.borderColor}` }}
+        >
+          <span className="text-2xl font-bold" style={{ color: theme.primaryText }}>{settings.fontSize}px</span>
+        </div>
+      )}
     </div>
   );
 };
