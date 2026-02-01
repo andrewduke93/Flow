@@ -35,7 +35,6 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
   // Initial Load of Featured
   useEffect(() => {
       const featured = service.getFeaturedBooks();
-      console.log('TitanCloudLibrary: Loading featured books', featured.length, featured);
       setResults(featured);
   }, []);
 

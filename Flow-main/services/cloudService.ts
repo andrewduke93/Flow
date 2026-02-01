@@ -226,7 +226,6 @@ export class CloudService {
    * then fetches the raw text content. Reliable, CORS-friendly, no proxies.
    */
   public async downloadBook(cloudBook: CloudBook): Promise<Book> {
-    console.log(`[CloudService] Initiating acquisition for: ${cloudBook.title} (ID: ${cloudBook.gutenbergId})`);
 
     if (!cloudBook.gutenbergId) {
         throw new Error("Cannot download book without Gutenberg ID");
@@ -238,7 +237,6 @@ export class CloudService {
         // Step 1: Find the GITenberg Repo via GitHub API
         // We search for repositories belonging to user 'GITenberg' with the ID in the name.
         const searchUrl = `https://api.github.com/search/repositories?q=${id}+in:name+user:GITenberg`;
-        console.log(`[CloudService] Locating repo: ${searchUrl}`);
         
         const searchRes = await fetch(searchUrl);
         if (!searchRes.ok) throw new Error("Could not locate book repository.");
@@ -256,7 +254,6 @@ export class CloudService {
         // Step 2: Construct Raw URL
         // Pattern: https://raw.githubusercontent.com/GITenberg/[RepoName]/[Branch]/[ID].txt
         const rawUrl = `https://raw.githubusercontent.com/GITenberg/${repoName}/${defaultBranch}/${id}.txt`;
-        console.log(`[CloudService] Fetching raw text from: ${rawUrl}`);
 
         // Step 3: Fetch Content
         const textResponse = await fetch(rawUrl);

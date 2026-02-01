@@ -186,7 +186,6 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = ({ books, onBookSelect,
         return;
       }
       
-      console.log(`[TitanLibrary] Successfully imported "${newBook.title}" with ${newBook.chapters.length} chapters`);
       onBookImported(newBook);
     } catch (error) {
       console.error('[TitanLibrary] Import error:', error);

@@ -252,7 +252,6 @@ export class SyncManager {
 
           if (existingLocal) {
               // Found a match! Just link them. No download needed.
-              console.log(`[Sync] Linking existing book "${existingLocal.title}" to Drive ID: ${file.id}`);
               existingLocal.driveId = file.id;
               await this.storage.saveBook(existingLocal);
               continue;
@@ -260,7 +259,6 @@ export class SyncManager {
 
           // Real Download
           try {
-              console.log(`[Sync] Downloading new book: ${file.name}`);
               const buffer = await this.drive.downloadFile(file.id);
               
               let book: Book;
@@ -293,7 +291,6 @@ export class SyncManager {
               try {
                   const source = await this.storage.getSource(book.id);
                   if (source) {
-                      console.log(`[Sync] Uploading: ${book.title}`);
                       
                       let blob: Blob;
                       let name: string;

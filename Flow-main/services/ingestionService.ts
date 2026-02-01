@@ -39,7 +39,6 @@ export class IngestionService {
 
   public async ingest(file: File): Promise<Book> {
     try {
-      console.log(`[Ingestion] Starting import of: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
       
       this.validateFile(file);
       
@@ -47,23 +46,18 @@ export class IngestionService {
       let arrayBuffer: ArrayBuffer;
       try {
         arrayBuffer = await file.arrayBuffer();
-        console.log(`[Ingestion] File loaded into memory: ${arrayBuffer.byteLength} bytes`);
       } catch (e) {
         console.error('[Ingestion] Failed to read file:', e);
         throw new IngestionError(IngestionErrorType.UNKNOWN, `Failed to read file: ${e instanceof Error ? e.message : 'Unknown error'}`);
       }
       
       const zip = await this.unzipFromBuffer(arrayBuffer);
-      console.log(`[Ingestion] ZIP extracted, files:`, Object.keys(zip.files).length);
       
       const opfPath = await this.parseContainer(zip);
-      console.log(`[Ingestion] OPF path: ${opfPath}`);
       
       const opfData = await this.parseOPF(zip, opfPath);
-      console.log(`[Ingestion] OPF parsed - Title: "${opfData.metadata.title}", Spine items: ${opfData.spine.length}`);
 
       const book = await this.constructBookFromZip(zip, opfData);
-      console.log(`[Ingestion] Book constructed with ${book.chapters.length} chapters`);
       
       // Universal Cover Fallback
       if (!book.coverUrl) {
@@ -82,7 +76,6 @@ export class IngestionService {
       book.sourceType = 'epub';
       
       await this.persistBook(book, arrayBuffer);
-      console.log(`[Ingestion] Book persisted to storage`);
       return book;
 
     } catch (error) {
@@ -250,7 +243,6 @@ export class IngestionService {
     const chapters: Chapter[] = [];
     const BATCH_SIZE = 20; 
 
-    console.log(`[Ingestion] Processing ${data.spine.length} spine items for "${data.metadata.title}"`);
 
     // Optimized parallel processing
     for (let i = 0; i < data.spine.length; i += BATCH_SIZE) {
@@ -264,7 +256,6 @@ export class IngestionService {
         if (i + BATCH_SIZE < data.spine.length) await new Promise(r => setTimeout(r, 0));
     }
 
-    console.log(`[Ingestion] Extracted ${chapters.length} chapters from "${data.metadata.title}"`);
     
     // FALLBACK: If no chapters extracted, try less aggressive filtering
     if (chapters.length === 0 && data.spine.length > 0) {
@@ -273,7 +264,6 @@ export class IngestionService {
             const chapter = await this.processEpubChapterPermissive(zip, data.spine[i], i);
             if (chapter) chapters.push(chapter);
         }
-        console.log(`[Ingestion] Permissive mode extracted ${chapters.length} chapters`);
     }
 
     return {
@@ -394,9 +384,7 @@ export class IngestionService {
   private async unzipFromBuffer(buffer: ArrayBuffer): Promise<JSZip> {
     try {
       const zip = new JSZip();
-      console.log(`[Ingestion] Loading ZIP from ArrayBuffer (${buffer.byteLength} bytes)...`);
       const result = await zip.loadAsync(buffer);
-      console.log(`[Ingestion] ZIP loaded successfully`);
       return result;
     } catch (e) {
       console.error('[Ingestion] ZIP extraction failed:', e);
@@ -441,7 +429,6 @@ export class IngestionService {
         }
     }
     
-    console.log(`[Ingestion] Manifest has ${manifestMap.size} items`);
 
     // Spine parsing - handle self-closing tags
     const spineHrefs: string[] = [];
@@ -455,7 +442,6 @@ export class IngestionService {
         }
     }
     
-    console.log(`[Ingestion] Spine has ${spineHrefs.length} items`);
     
     // FALLBACK: If spine is empty, try to find HTML/XHTML files from manifest
     if (spineHrefs.length === 0) {
@@ -467,7 +453,6 @@ export class IngestionService {
         }
         // Sort by filename to maintain some order
         spineHrefs.sort();
-        console.log(`[Ingestion] Fallback found ${spineHrefs.length} HTML files`);
     }
 
     // Cover
