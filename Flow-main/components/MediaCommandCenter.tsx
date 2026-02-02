@@ -154,7 +154,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   // Build phrases when tokens change and narrator is enabled
   // Initialize narrator with tokens for word-level sync
   useEffect(() => {
-    if (!isNarratorEnabled || !isRSVPActive || heartbeat.tokens.length === 0) return;
+    if (!isRSVPActive || heartbeat.tokens.length === 0) return;
     
     // Load tokens for word-by-word synchronized speech
     const words = heartbeat.tokens.map(t => t.originalText);
@@ -168,21 +168,29 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
         heartbeat.seek(wordIndex);
       }
     });
-  }, [isNarratorEnabled, isRSVPActive, heartbeat.tokens.length, settings.rsvpSpeed]);
+  }, [isRSVPActive, heartbeat.tokens.length, settings.rsvpSpeed]);
 
-  // Narrator controls visual when enabled - narrator drives the heartbeat
+  // Sync narrator with play/pause - narrator supplements heartbeat, doesn't replace it
   useEffect(() => {
-    if (!isNarratorEnabled || !isRSVPActive) return;
+    if (!isRSVPActive) {
+      narrator.stop();
+      return;
+    }
+    
+    // Only control narrator if it's enabled
+    if (!isNarratorEnabled) {
+      narrator.stop();
+      return;
+    }
     
     if (isPlaying) {
-      // Pause heartbeat's auto-advance - narrator will control word advancement
-      heartbeat.pause();
-      // Start narrator from current position
+      // Start narrator from current position when playing
       narrator.startFromIndex(heartbeat.currentIndex);
     } else {
       narrator.pause();
     }
     
+    // Cleanup: stop narrator when effect is destroyed
     return () => {
       narrator.stop();
     };
@@ -196,9 +204,11 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     return unsub;
   }, []);
 
+  // Main state sync - SINGLE SOURCE OF TRUTH from conductor
   useEffect(() => {
     const syncState = () => {
-      setIsPlaying(conductor.state === RSVPState.PLAYING);
+      const playing = conductor.state === RSVPState.PLAYING;
+      setIsPlaying(playing);
     };
 
     const syncProgress = (pct: number) => {
@@ -212,6 +222,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
       }
     };
 
+    // Initial sync
     syncState();
     const initialPct = (core.isRSVPMode && heartbeat.tokens.length > 0) 
       ? heartbeat.currentIndex / heartbeat.tokens.length 
