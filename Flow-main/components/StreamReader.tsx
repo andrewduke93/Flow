@@ -159,25 +159,22 @@ const RSVPDisplay = memo(({
 
   // Karaoke/teleprompter style - current word locked with ORP, context flows around
   if (showGhost) {
-    const contextFontSize = rsvpFontSize * 0.55;
+    const contextFontSize = rsvpFontSize * 0.5;
+    const verticalGap = rsvpFontSize * 1.2; // Clear separation from main word
     
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
-        {/* Previous words - above, right-aligned to flow into current word */}
+        {/* Previous words - clearly above the main word */}
         {prevWords.length > 0 && (
           <div 
-            className="absolute text-right px-6"
+            className="absolute w-full text-center px-8"
             style={{ 
-              top: `calc(50% - ${rsvpFontSize * 0.9}px)`,
-              right: '50%',
-              marginRight: '8px',
+              bottom: `calc(50% + ${verticalGap}px)`,
               fontFamily: fontFamilyCSS,
               fontSize: `${contextFontSize}px`,
               color: textColor,
-              opacity: 0.35,
-              maxWidth: '45vw',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden'
+              opacity: 0.3,
+              lineHeight: 1.4
             }}
           >
             {prevWords.map(w => w.text).join(' ')}
@@ -244,21 +241,17 @@ const RSVPDisplay = memo(({
           </div>
         </div>
 
-        {/* Next words - below, left-aligned to flow from current word */}
+        {/* Next words - clearly below the main word */}
         {nextWords.length > 0 && (
           <div 
-            className="absolute text-left px-6"
+            className="absolute w-full text-center px-8"
             style={{ 
-              top: `calc(50% + ${rsvpFontSize * 0.9}px)`,
-              left: '50%',
-              marginLeft: '8px',
+              top: `calc(50% + ${verticalGap}px)`,
               fontFamily: fontFamilyCSS,
               fontSize: `${contextFontSize}px`,
               color: textColor,
               opacity: 0.25,
-              maxWidth: '45vw',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden'
+              lineHeight: 1.4
             }}
           >
             {nextWords.map(w => w.text).join(' ')}
