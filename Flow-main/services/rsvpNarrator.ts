@@ -1,16 +1,30 @@
 /**
- * RSVPNarrator - Web Speech API based narration
+ * RSVPNarrator - ElevenLabs TTS Integration
  * 
- * Uses the browser's built-in speech synthesis for instant, zero-download TTS.
- * Not as natural as Kokoro but works immediately without any loading.
+ * Uses ElevenLabs API for industry-leading neural text-to-speech.
+ * Free tier: 10,000 characters/month with free account.
  * 
- * Speaks in sentence chunks for natural flow, syncs visual to audio.
+ * User provides their own API key (stored in localStorage).
  */
 
-type NarratorState = 'idle' | 'speaking';
+const API_KEY_STORAGE = 'flow_elevenlabs_api_key';
+const VOICE_STORAGE = 'flow_elevenlabs_voice';
 
-const VOICE_STORAGE_KEY = 'flow_narrator_voice';
-const RATE_STORAGE_KEY = 'flow_narrator_rate';
+type NarratorState = 'idle' | 'generating' | 'speaking';
+
+// ElevenLabs voice options (popular free-tier voices)
+const ELEVENLABS_VOICES = [
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah (Female)', style: 'Soft, warm' },
+  { id: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte (Female)', style: 'Natural, clear' },
+  { id: 'Xb7hH8MSUJpSbSDYk0k2', name: 'Alice (Female)', style: 'Confident' },
+  { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily (Female)', style: 'Warm, British' },
+  { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam (Male)', style: 'Articulate' },
+  { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam (Male)', style: 'Deep, narration' },
+  { id: 'ErXwobaYiN019PkySvjV', name: 'Antoni (Male)', style: 'Warm, friendly' },
+  { id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold (Male)', style: 'Crisp, American' },
+  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel (Female)', style: 'Calm, American' },
+  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi (Female)', style: 'Strong, clear' },
+] as const;
 
 export type NarratorVoice = {
   id: string;
@@ -22,22 +36,23 @@ export type NarratorVoice = {
 export class RSVPNarrator {
   private static instance: RSVPNarrator;
   
-  private synth: SpeechSynthesis;
-  private voices: SpeechSynthesisVoice[] = [];
-  private _selectedVoiceId: string = '';
+  private _apiKey: string | null = null;
+  private _selectedVoice: string = 'EXAVITQu4vr4xnSDxMaL'; // Sarah
   private _isEnabled: boolean = false;
   private _state: NarratorState = 'idle';
-  private _rate: number = 1.2; // Slightly faster than default
+  private _rate: number = 1.0;
   private _volume: number = 1.0;
   
-  private currentUtterance: SpeechSynthesisUtterance | null = null;
+  // Audio playback
+  private audioElement: HTMLAudioElement | null = null;
+  private currentAudioUrl: string | null = null;
   
-  // Sentence queue for continuous reading
+  // Sentence queue
   private sentences: string[] = [];
   private currentSentenceIndex: number = 0;
   private isAutoPlaying: boolean = false;
   
-  // Word sync callback
+  // Word sync
   private onWordCallback: ((wordIndex: number) => void) | null = null;
   private baseWordIndex: number = 0;
   private wordSyncInterval: ReturnType<typeof setInterval> | null = null;
@@ -45,34 +60,13 @@ export class RSVPNarrator {
   private listeners: Set<() => void> = new Set();
 
   private constructor() {
-    this.synth = window.speechSynthesis;
-    this._selectedVoiceId = localStorage.getItem(VOICE_STORAGE_KEY) || '';
-    this._rate = parseFloat(localStorage.getItem(RATE_STORAGE_KEY) || '1.2');
+    this._apiKey = localStorage.getItem(API_KEY_STORAGE);
+    this._selectedVoice = localStorage.getItem(VOICE_STORAGE) || 'EXAVITQu4vr4xnSDxMaL';
     
-    // Load voices
-    this.loadVoices();
-    
-    // Voices may load async in some browsers
-    if (this.synth.onvoiceschanged !== undefined) {
-      this.synth.onvoiceschanged = () => this.loadVoices();
-    }
-  }
-
-  private loadVoices() {
-    this.voices = this.synth.getVoices();
-    
-    // If no voice selected, pick best English voice
-    if (!this._selectedVoiceId && this.voices.length > 0) {
-      const preferred = this.voices.find(v => 
-        v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Microsoft') || v.name.includes('Samantha'))
-      ) || this.voices.find(v => v.lang.startsWith('en')) || this.voices[0];
-      
-      if (preferred) {
-        this._selectedVoiceId = preferred.voiceURI;
-      }
-    }
-    
-    console.log(`[Narrator] Loaded ${this.voices.length} voices`);
+    // Create audio element
+    this.audioElement = new Audio();
+    this.audioElement.addEventListener('ended', () => this.onAudioEnded());
+    this.audioElement.addEventListener('error', (e) => this.onAudioError(e));
   }
 
   public static getInstance(): RSVPNarrator {
@@ -82,39 +76,49 @@ export class RSVPNarrator {
     return RSVPNarrator.instance;
   }
 
+  // -- API Key Management --
+
   public get hasApiKey(): boolean {
-    // No API key needed for Web Speech API
-    return true;
+    return !!this._apiKey && this._apiKey.length > 0;
+  }
+
+  public setApiKey(key: string) {
+    this._apiKey = key;
+    localStorage.setItem(API_KEY_STORAGE, key);
+    this.notify();
+  }
+
+  public clearApiKey() {
+    this._apiKey = null;
+    localStorage.removeItem(API_KEY_STORAGE);
+    this.notify();
   }
 
   // -- Voice Selection --
 
   public getAvailableVoices(): NarratorVoice[] {
-    return this.voices
-      .filter(v => v.lang.startsWith('en'))
-      .map(v => ({
-        id: v.voiceURI,
-        name: v.name,
-        lang: v.lang,
-        quality: v.name.includes('Google') || v.name.includes('Microsoft') ? 'A' : 
-                 v.name.includes('Samantha') || v.name.includes('Daniel') ? 'B' : 'C'
-      }));
+    return ELEVENLABS_VOICES.map(v => ({
+      id: v.id,
+      name: v.name,
+      lang: 'en-US',
+      quality: v.style
+    }));
   }
 
   public setVoice(voiceId: string) {
-    this._selectedVoiceId = voiceId;
-    localStorage.setItem(VOICE_STORAGE_KEY, voiceId);
+    this._selectedVoice = voiceId;
+    localStorage.setItem(VOICE_STORAGE, voiceId);
     this.notify();
   }
 
   public get currentVoice(): NarratorVoice | null {
-    const voice = this.voices.find(v => v.voiceURI === this._selectedVoiceId);
+    const voice = ELEVENLABS_VOICES.find(v => v.id === this._selectedVoice);
     if (!voice) return null;
     return {
-      id: voice.voiceURI,
+      id: voice.id,
       name: voice.name,
-      lang: voice.lang,
-      quality: 'B'
+      lang: 'en-US',
+      quality: voice.style
     };
   }
 
@@ -142,30 +146,22 @@ export class RSVPNarrator {
 
   public setRate(rate: number) {
     this._rate = Math.max(0.5, Math.min(2.0, rate));
-    localStorage.setItem(RATE_STORAGE_KEY, this._rate.toString());
-  }
-
-  public get rate(): number {
-    return this._rate;
   }
 
   public setVolume(volume: number) {
     this._volume = Math.max(0, Math.min(1, volume));
+    if (this.audioElement) {
+      this.audioElement.volume = this._volume;
+    }
   }
 
-  /**
-   * Set callback for word sync (called as words are spoken)
-   */
   public onWord(callback: (wordIndex: number) => void) {
     this.onWordCallback = callback;
   }
 
-  /**
-   * Load text and split into sentences
-   */
   public loadText(text: string, startWordIndex: number = 0) {
-    // Split into sentences, keeping them reasonably short
-    const MAX_CHARS = 150;
+    // Split into sentences, keep under ~500 chars for API efficiency
+    const MAX_CHARS = 500;
     
     let sentences = text
       .replace(/([.!?])\s+/g, '$1|SPLIT|')
@@ -173,7 +169,7 @@ export class RSVPNarrator {
       .map(s => s.trim())
       .filter(s => s.length > 0);
     
-    // Split long sentences at commas
+    // Split long sentences
     this.sentences = sentences.flatMap(s => {
       if (s.length <= MAX_CHARS) return [s];
       return s.split(/[,;]\s*/)
@@ -186,29 +182,19 @@ export class RSVPNarrator {
     console.log(`[Narrator] Loaded ${this.sentences.length} chunks`);
   }
 
-  /**
-   * Start reading from current position
-   */
   public async startReading() {
-    if (!this._isEnabled || this.sentences.length === 0) {
+    if (!this._isEnabled || !this._apiKey || this.sentences.length === 0) {
+      console.warn('[Narrator] Cannot start:', { enabled: this._isEnabled, hasKey: !!this._apiKey, sentences: this.sentences.length });
       return;
     }
     
-    if (this.isAutoPlaying) {
-      return;
-    }
-    
-    // Cancel any existing speech
-    this.synth.cancel();
+    if (this.isAutoPlaying) return;
     
     this.isAutoPlaying = true;
-    this.speakCurrentSentence();
+    await this.speakCurrentSentence();
   }
 
-  /**
-   * Speak the current sentence using Web Speech API
-   */
-  private speakCurrentSentence() {
+  private async speakCurrentSentence() {
     if (!this.isAutoPlaying || this.currentSentenceIndex >= this.sentences.length) {
       this._state = 'idle';
       this.isAutoPlaying = false;
@@ -217,67 +203,78 @@ export class RSVPNarrator {
     }
 
     const sentence = this.sentences[this.currentSentenceIndex];
-    this._state = 'speaking';
+    this._state = 'generating';
     this.notify();
 
-    // Create utterance
-    this.currentUtterance = new SpeechSynthesisUtterance(sentence);
-    
-    // Set voice
-    const voice = this.voices.find(v => v.voiceURI === this._selectedVoiceId);
-    if (voice) {
-      this.currentUtterance.voice = voice;
-    }
-    
-    this.currentUtterance.rate = this._rate;
-    this.currentUtterance.volume = this._volume;
-    this.currentUtterance.pitch = 1.0;
-    
-    // Word sync - estimate timing
-    const words = sentence.split(/\s+/);
-    this.startWordSync(words);
-    
-    // Handle completion
-    this.currentUtterance.onend = () => {
-      this.stopWordSync();
+    try {
+      console.log(`[Narrator] Generating: "${sentence.substring(0, 50)}..."`);
       
-      // Update base word index
-      this.baseWordIndex += words.length;
-      
-      // Move to next sentence
-      this.currentSentenceIndex++;
-      
-      if (this.isAutoPlaying && this.currentSentenceIndex < this.sentences.length) {
-        // Continue to next sentence
-        setTimeout(() => this.speakCurrentSentence(), 50);
-      } else {
-        this._state = 'idle';
-        this.isAutoPlaying = false;
-        this.notify();
+      // Call ElevenLabs API
+      const response = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${this._selectedVoice}`,
+        {
+          method: 'POST',
+          headers: {
+            'Accept': 'audio/mpeg',
+            'Content-Type': 'application/json',
+            'xi-api-key': this._apiKey!
+          },
+          body: JSON.stringify({
+            text: sentence,
+            model_id: 'eleven_monolingual_v1',
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75,
+              style: 0.0,
+              use_speaker_boost: true
+            }
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`ElevenLabs API Error: ${response.status} - ${error}`);
       }
-    };
-    
-    this.currentUtterance.onerror = (e) => {
-      console.error('[Narrator] Speech error:', e);
-      this.stopWordSync();
+
+      if (!this.isAutoPlaying) return;
+
+      // Create blob URL from audio response
+      const audioBlob = await response.blob();
+      
+      if (this.currentAudioUrl) {
+        URL.revokeObjectURL(this.currentAudioUrl);
+      }
+      this.currentAudioUrl = URL.createObjectURL(audioBlob);
+
+      if (this.audioElement) {
+        this.audioElement.src = this.currentAudioUrl;
+        this.audioElement.playbackRate = this._rate;
+        this.audioElement.volume = this._volume;
+        
+        this._state = 'speaking';
+        this.notify();
+        
+        // Start word sync
+        const words = sentence.split(/\s+/);
+        this.startWordSync(words);
+        
+        await this.audioElement.play();
+      }
+    } catch (error) {
+      console.error('[Narrator] TTS Error:', error);
       this._state = 'idle';
       this.isAutoPlaying = false;
       this.notify();
-    };
-    
-    // Speak
-    this.synth.speak(this.currentUtterance);
+    }
   }
 
-  /**
-   * Estimate word timing and sync visual display
-   */
   private startWordSync(words: string[]) {
     if (words.length === 0) return;
     
     this.stopWordSync();
     
-    // Estimate: ~150 WPM at rate 1.0, adjust for actual rate
+    // ElevenLabs speaks at roughly 150 WPM
     const wordsPerSecond = (150 / 60) * this._rate;
     const msPerWord = 1000 / wordsPerSecond;
     
@@ -309,28 +306,68 @@ export class RSVPNarrator {
     }
   }
 
+  private onAudioEnded() {
+    this.stopWordSync();
+    
+    // Update word index
+    const sentence = this.sentences[this.currentSentenceIndex];
+    if (sentence) {
+      this.baseWordIndex += sentence.split(/\s+/).length;
+    }
+    
+    this.currentSentenceIndex++;
+    
+    if (this.isAutoPlaying && this.currentSentenceIndex < this.sentences.length) {
+      setTimeout(() => this.speakCurrentSentence(), 50);
+    } else {
+      this._state = 'idle';
+      this.isAutoPlaying = false;
+      this.notify();
+    }
+  }
+
+  private onAudioError(e: Event) {
+    console.error('[Narrator] Audio error:', e);
+    this._state = 'idle';
+    this.isAutoPlaying = false;
+    this.notify();
+  }
+
   public pause() {
     this.isAutoPlaying = false;
     this.stopWordSync();
-    this.synth.cancel();
+    if (this.audioElement && !this.audioElement.paused) {
+      this.audioElement.pause();
+    }
     this._state = 'idle';
     this.notify();
   }
 
   public resume() {
-    if (this.sentences.length > 0 && this.currentSentenceIndex < this.sentences.length) {
+    if (this.audioElement && this.audioElement.paused && this.currentAudioUrl) {
+      this.isAutoPlaying = true;
+      this._state = 'speaking';
+      this.audioElement.play();
+      this.notify();
+    } else {
       this.startReading();
     }
   }
 
   public stop() {
     this.pause();
+    if (this.audioElement) {
+      this.audioElement.currentTime = 0;
+    }
+    if (this.currentAudioUrl) {
+      URL.revokeObjectURL(this.currentAudioUrl);
+      this.currentAudioUrl = null;
+    }
     this.currentSentenceIndex = 0;
     this.baseWordIndex = 0;
     this.sentences = [];
   }
 
-  // Subscriptions
   public subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -341,6 +378,6 @@ export class RSVPNarrator {
   }
 
   public static isSupported(): boolean {
-    return 'speechSynthesis' in window;
+    return true;
   }
 }
