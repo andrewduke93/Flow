@@ -53,7 +53,6 @@ const Paragraph = memo(({
     return (
       <p
         data-start={startIndex}
-        onClick={() => onWordTap(startIndex)}
         style={{
           fontSize: `${fontSize}px`,
           lineHeight,
@@ -63,7 +62,6 @@ const Paragraph = memo(({
           textAlign: 'justify',
           hyphens: 'auto',
           WebkitHyphens: 'auto',
-          cursor: 'pointer',
           opacity: 0.9
         }}
       >
@@ -93,17 +91,12 @@ const Paragraph = memo(({
           <React.Fragment key={word.index}>
             <span
               data-idx={word.index}
-              onClick={(e) => {
-                e.stopPropagation();
-                onWordTap(word.index);
-              }}
               style={{
                 backgroundColor: isActive ? accentColor : 'transparent',
                 color: isActive ? '#FFFFFF' : 'inherit',
                 padding: isActive ? '2px 4px' : '0',
                 margin: isActive ? '-2px -4px' : '0',
                 borderRadius: isActive ? '4px' : '0',
-                cursor: 'pointer',
                 transition: 'background-color 0.1s ease'
               }}
             >
@@ -118,7 +111,7 @@ const Paragraph = memo(({
 });
 
 // ============================================
-// RSVP DISPLAY - Minimal, focused, fast
+// RSVP DISPLAY - Fixed ORP position with focus line
 // ============================================
 const RSVPDisplay = memo(({ 
   word, 
@@ -158,18 +151,86 @@ const RSVPDisplay = memo(({
   const rsvpFontSize = Math.min(fontSize * 2.5, 72);
 
   return (
-    <div 
-      className="flex items-center justify-center select-none"
-      style={{ 
-        fontFamily: fontFamilyCSS,
-        fontSize: `${rsvpFontSize}px`,
-        fontWeight: 500,
-        letterSpacing: '0.02em'
-      }}
-    >
-      <span style={{ color: textColor, textAlign: 'right', minWidth: '40%' }}>{before}</span>
-      <span style={{ color: accentColor, fontWeight: 700 }}>{pivot}</span>
-      <span style={{ color: textColor, textAlign: 'left', minWidth: '40%' }}>{after}</span>
+    <div className="relative w-full h-full flex flex-col items-center justify-center select-none">
+      {/* Fixed focus line - always in exact same screen position */}
+      <div 
+        className="absolute left-1/2 -translate-x-1/2 w-[3px] pointer-events-none z-10"
+        style={{ 
+          backgroundColor: accentColor,
+          height: `${rsvpFontSize * 1.4}px`,
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          borderRadius: '2px',
+          boxShadow: `0 0 12px ${accentColor}60`
+        }}
+      />
+      
+      {/* Word display - positioned so ORP aligns with focus line */}
+      <div 
+        className="relative flex items-center"
+        style={{ 
+          fontFamily: fontFamilyCSS,
+          fontSize: `${rsvpFontSize}px`,
+          fontWeight: 500,
+          letterSpacing: '0.02em'
+        }}
+      >
+        {/* Before ORP - right-aligned to focus point */}
+        <span 
+          style={{ 
+            color: textColor, 
+            textAlign: 'right',
+            display: 'inline-block',
+            minWidth: '45vw',
+            paddingRight: '2px'
+          }}
+        >
+          {before}
+        </span>
+        
+        {/* Pivot/ORP letter - exactly at focus line */}
+        <span 
+          style={{ 
+            color: accentColor, 
+            fontWeight: 700,
+            position: 'relative',
+            zIndex: 5
+          }}
+        >
+          {pivot}
+        </span>
+        
+        {/* After ORP - left-aligned from focus point */}
+        <span 
+          style={{ 
+            color: textColor, 
+            textAlign: 'left',
+            display: 'inline-block',
+            minWidth: '45vw',
+            paddingLeft: '2px'
+          }}
+        >
+          {after}
+        </span>
+      </div>
+      
+      {/* Subtle guide markers above and below */}
+      <div 
+        className="absolute left-1/2 -translate-x-1/2 w-[2px]"
+        style={{ 
+          backgroundColor: `${accentColor}30`,
+          height: '30px',
+          top: `calc(50% - ${rsvpFontSize * 0.7 + 35}px)`
+        }}
+      />
+      <div 
+        className="absolute left-1/2 -translate-x-1/2 w-[2px]"
+        style={{ 
+          backgroundColor: `${accentColor}30`,
+          height: '30px',
+          top: `calc(50% + ${rsvpFontSize * 0.7 + 5}px)`
+        }}
+      />
     </div>
   );
 });
@@ -393,15 +454,78 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
   // ============================================
   // HANDLERS
   // ============================================
+  
+  // Track tap vs drag for better interaction
+  const touchStartPos = useRef<{ x: number; y: number; time: number } | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   const handleWordTap = useCallback((index: number) => {
     RSVPHapticEngine.impactLight();
     engine.position = index;
-    scrollToPosition(index, true);
-  }, [scrollToPosition]);
+    // Start playing from this word
+    engine.play();
+  }, []);
 
   const handlePlayToggle = useCallback(() => {
     RSVPHapticEngine.impactMedium();
     engine.toggle();
+  }, []);
+  
+  // Universal tap handler - works on text and empty space
+  const handleTapStart = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    touchStartPos.current = { x: clientX, y: clientY, time: Date.now() };
+    
+    // Long press detection (for word selection)
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = setTimeout(() => {
+      // Long press - could select word for later features
+      RSVPHapticEngine.impactLight();
+    }, 500);
+  }, []);
+  
+  const handleTapEnd = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    
+    if (!touchStartPos.current) return;
+    
+    const clientX = 'changedTouches' in e ? e.changedTouches[0].clientX : e.clientX;
+    const clientY = 'changedTouches' in e ? e.changedTouches[0].clientY : e.clientY;
+    
+    const dx = Math.abs(clientX - touchStartPos.current.x);
+    const dy = Math.abs(clientY - touchStartPos.current.y);
+    const dt = Date.now() - touchStartPos.current.time;
+    
+    // It's a tap if: short duration, small movement
+    const isTap = dt < 300 && dx < 15 && dy < 15;
+    
+    if (isTap) {
+      // Check if we're clicking on a word (has data-idx)
+      const target = e.target as HTMLElement;
+      const wordIndex = target.dataset?.idx;
+      
+      if (wordIndex !== undefined) {
+        // Tapped on a word - start RSVP from here
+        handleWordTap(parseInt(wordIndex));
+      } else {
+        // Tapped on empty space or paragraph - toggle chrome
+        onToggleChrome();
+      }
+    }
+    
+    touchStartPos.current = null;
+  }, [handleWordTap, onToggleChrome]);
+  
+  const handleTapCancel = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    touchStartPos.current = null;
   }, []);
 
   // ============================================
@@ -453,14 +577,16 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
         WebkitOverflowScrolling: 'touch',
         overscrollBehavior: 'contain'
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onToggleChrome();
-      }}
+      onTouchStart={handleTapStart}
+      onTouchEnd={handleTapEnd}
+      onTouchCancel={handleTapCancel}
+      onMouseDown={handleTapStart}
+      onMouseUp={handleTapEnd}
     >
       {/* RSVP Overlay - Shows when playing */}
       {isPlaying && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center"
+          className="fixed inset-0 z-50"
           style={{ backgroundColor: theme.background }}
           onClick={handlePlayToggle}
         >
