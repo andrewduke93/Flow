@@ -1,56 +1,54 @@
 /**
- * RSVPNarrator - Google Cloud TTS Integration
+ * RSVPNarrator - Kokoro TTS Integration
  * 
- * Uses Google Cloud Text-to-Speech API for high-quality, natural narration.
- * Speaks in sentence chunks for natural flow, syncs visual to audio.
+ * Uses Kokoro TTS (kokoro-js) for high-quality, browser-based narration.
+ * Runs entirely client-side via WebAssembly/WebGPU - no API key needed!
  * 
- * User provides their own API key (stored in localStorage).
- * Free tier: 4M chars/month (Standard), 1M chars/month (WaveNet/Neural2)
+ * Model is downloaded on first use (~80MB) and cached in browser.
  */
 
-const STORAGE_KEY = 'flow_google_tts_api_key';
-const VOICE_STORAGE_KEY = 'flow_google_tts_voice';
+type NarratorState = 'idle' | 'loading-model' | 'generating' | 'speaking';
+
+// Kokoro voice options
+const KOKORO_VOICES = [
+  { id: 'af_heart', name: 'Heart (Female)', lang: 'en-us', quality: 'A' },
+  { id: 'af_bella', name: 'Bella (Female)', lang: 'en-us', quality: 'A-' },
+  { id: 'af_nicole', name: 'Nicole (Female)', lang: 'en-us', quality: 'B+' },
+  { id: 'af_sarah', name: 'Sarah (Female)', lang: 'en-us', quality: 'B' },
+  { id: 'af_sky', name: 'Sky (Female)', lang: 'en-us', quality: 'C-' },
+  { id: 'am_fenrir', name: 'Fenrir (Male)', lang: 'en-us', quality: 'C+' },
+  { id: 'am_michael', name: 'Michael (Male)', lang: 'en-us', quality: 'B-' },
+  { id: 'bf_emma', name: 'Emma (British F)', lang: 'en-gb', quality: 'B' },
+  { id: 'bm_george', name: 'George (British M)', lang: 'en-gb', quality: 'C' },
+  { id: 'bm_fable', name: 'Fable (British M)', lang: 'en-gb', quality: 'C' },
+] as const;
 
 export type NarratorVoice = {
   id: string;
   name: string;
   lang: string;
-  isNeural: boolean;
-  quality: number;
+  quality: string;
 };
 
-type NarratorState = 'idle' | 'speaking' | 'loading';
-
-// Google TTS voice options (Neural2 are highest quality)
-const GOOGLE_VOICES = [
-  { name: 'en-US-Neural2-A', label: 'Neural2 A (Female)', isNeural: true },
-  { name: 'en-US-Neural2-C', label: 'Neural2 C (Female)', isNeural: true },
-  { name: 'en-US-Neural2-D', label: 'Neural2 D (Male)', isNeural: true },
-  { name: 'en-US-Neural2-F', label: 'Neural2 F (Female)', isNeural: true },
-  { name: 'en-US-Neural2-J', label: 'Neural2 J (Male)', isNeural: true },
-  { name: 'en-US-Wavenet-A', label: 'WaveNet A (Male)', isNeural: true },
-  { name: 'en-US-Wavenet-B', label: 'WaveNet B (Male)', isNeural: true },
-  { name: 'en-US-Wavenet-C', label: 'WaveNet C (Female)', isNeural: true },
-  { name: 'en-US-Wavenet-D', label: 'WaveNet D (Male)', isNeural: true },
-  { name: 'en-US-Wavenet-F', label: 'WaveNet F (Female)', isNeural: true },
-  { name: 'en-US-Standard-A', label: 'Standard A (Male)', isNeural: false },
-  { name: 'en-US-Standard-B', label: 'Standard B (Male)', isNeural: false },
-  { name: 'en-US-Standard-C', label: 'Standard C (Female)', isNeural: false },
-  { name: 'en-US-Standard-D', label: 'Standard D (Male)', isNeural: false },
-];
+const VOICE_STORAGE_KEY = 'flow_kokoro_voice';
 
 export class RSVPNarrator {
   private static instance: RSVPNarrator;
   
-  private _apiKey: string | null = null;
-  private _selectedVoice: string = 'en-US-Neural2-D';
+  private _selectedVoice: string = 'af_heart';
   private _isEnabled: boolean = false;
   private _state: NarratorState = 'idle';
   private _rate: number = 1.0;
   private _volume: number = 1.0;
+  private _modelLoadProgress: number = 0;
   
-  private audioElement: HTMLAudioElement | null = null;
-  private currentAudioUrl: string | null = null;
+  // Kokoro TTS instance
+  private tts: any = null;
+  private isModelLoading: boolean = false;
+  
+  // Audio playback
+  private audioContext: AudioContext | null = null;
+  private currentSource: AudioBufferSourceNode | null = null;
   
   // Sentence queue for continuous reading
   private sentences: string[] = [];
@@ -60,18 +58,12 @@ export class RSVPNarrator {
   // Word sync callback
   private onWordCallback: ((wordIndex: number) => void) | null = null;
   private baseWordIndex: number = 0;
+  private wordSyncInterval: ReturnType<typeof setInterval> | null = null;
   
   private listeners: Set<() => void> = new Set();
 
   private constructor() {
-    // Load saved API key
-    this._apiKey = localStorage.getItem(STORAGE_KEY);
-    this._selectedVoice = localStorage.getItem(VOICE_STORAGE_KEY) || 'en-US-Neural2-D';
-    
-    // Create audio element
-    this.audioElement = new Audio();
-    this.audioElement.addEventListener('ended', () => this.onAudioEnded());
-    this.audioElement.addEventListener('error', (e) => this.onAudioError(e));
+    this._selectedVoice = localStorage.getItem(VOICE_STORAGE_KEY) || 'af_heart';
   }
 
   public static getInstance(): RSVPNarrator {
@@ -81,51 +73,105 @@ export class RSVPNarrator {
     return RSVPNarrator.instance;
   }
 
-  // -- API Key Management --
+  // -- Model Loading --
+
+  private async ensureModelLoaded(): Promise<boolean> {
+    if (this.tts) return true;
+    if (this.isModelLoading) {
+      // Wait for current load to complete
+      return new Promise((resolve) => {
+        const checkLoaded = setInterval(() => {
+          if (this.tts) {
+            clearInterval(checkLoaded);
+            resolve(true);
+          } else if (!this.isModelLoading) {
+            clearInterval(checkLoaded);
+            resolve(false);
+          }
+        }, 100);
+      });
+    }
+
+    this.isModelLoading = true;
+    this._state = 'loading-model';
+    this._modelLoadProgress = 0;
+    this.notify();
+
+    try {
+      console.log('[Narrator] Loading Kokoro TTS model...');
+      
+      // Dynamic import to enable code splitting
+      const { KokoroTTS } = await import('kokoro-js');
+      
+      // Detect WebGPU support
+      const hasWebGPU = typeof navigator !== 'undefined' && 
+                        'gpu' in navigator && 
+                        await (navigator as any).gpu?.requestAdapter?.() !== null;
+      
+      const device = hasWebGPU ? 'webgpu' : 'wasm';
+      const dtype = device === 'webgpu' ? 'fp32' : 'q8'; // q8 for WASM is faster
+      
+      console.log(`[Narrator] Using device: ${device}, dtype: ${dtype}`);
+      
+      this.tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+        dtype,
+        device,
+        progress_callback: (progress: any) => {
+          if (progress.progress !== undefined) {
+            this._modelLoadProgress = progress.progress;
+            this.notify();
+          }
+        }
+      });
+      
+      console.log('[Narrator] Model loaded successfully!');
+      this._state = 'idle';
+      this.isModelLoading = false;
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error('[Narrator] Failed to load model:', error);
+      this._state = 'idle';
+      this.isModelLoading = false;
+      this.notify();
+      return false;
+    }
+  }
+
+  public get modelLoadProgress(): number {
+    return this._modelLoadProgress;
+  }
 
   public get hasApiKey(): boolean {
-    return !!this._apiKey && this._apiKey.length > 0;
-  }
-
-  public setApiKey(key: string) {
-    this._apiKey = key;
-    localStorage.setItem(STORAGE_KEY, key);
-    this.notify();
-  }
-
-  public clearApiKey() {
-    this._apiKey = null;
-    localStorage.removeItem(STORAGE_KEY);
-    this.notify();
+    // No API key needed for Kokoro!
+    return true;
   }
 
   // -- Voice Selection --
 
   public getAvailableVoices(): NarratorVoice[] {
-    return GOOGLE_VOICES.map(v => ({
-      id: v.name,
-      name: v.label,
-      lang: 'en-US',
-      isNeural: v.isNeural,
-      quality: v.isNeural ? 90 : 70
+    return KOKORO_VOICES.map(v => ({
+      id: v.id,
+      name: v.name,
+      lang: v.lang,
+      quality: v.quality
     }));
   }
 
-  public setVoice(voiceName: string) {
-    this._selectedVoice = voiceName;
-    localStorage.setItem(VOICE_STORAGE_KEY, voiceName);
+  public setVoice(voiceId: string) {
+    this._selectedVoice = voiceId;
+    localStorage.setItem(VOICE_STORAGE_KEY, voiceId);
     this.notify();
   }
 
   public get currentVoice(): NarratorVoice | null {
-    const voice = GOOGLE_VOICES.find(v => v.name === this._selectedVoice);
+    const voice = KOKORO_VOICES.find(v => v.id === this._selectedVoice);
     if (!voice) return null;
     return {
-      id: voice.name,
-      name: voice.label,
-      lang: 'en-US',
-      isNeural: voice.isNeural,
-      quality: voice.isNeural ? 90 : 70
+      id: voice.id,
+      name: voice.name,
+      lang: voice.lang,
+      quality: voice.quality
     };
   }
 
@@ -157,9 +203,6 @@ export class RSVPNarrator {
 
   public setVolume(volume: number) {
     this._volume = Math.max(0, Math.min(1, volume));
-    if (this.audioElement) {
-      this.audioElement.volume = this._volume;
-    }
   }
 
   /**
@@ -188,8 +231,15 @@ export class RSVPNarrator {
    * Start reading from current position
    */
   public async startReading() {
-    if (!this._isEnabled || !this._apiKey || this.sentences.length === 0) {
-      console.warn('[Narrator] Cannot start: enabled=', this._isEnabled, 'hasKey=', !!this._apiKey, 'sentences=', this.sentences.length);
+    if (!this._isEnabled || this.sentences.length === 0) {
+      console.warn('[Narrator] Cannot start: enabled=', this._isEnabled, 'sentences=', this.sentences.length);
+      return;
+    }
+    
+    // Ensure model is loaded
+    const loaded = await this.ensureModelLoaded();
+    if (!loaded) {
+      console.error('[Narrator] Model failed to load');
       return;
     }
     
@@ -198,7 +248,7 @@ export class RSVPNarrator {
   }
 
   /**
-   * Speak the current sentence using Google TTS
+   * Speak the current sentence using Kokoro TTS
    */
   private async speakCurrentSentence() {
     if (!this.isAutoPlaying || this.currentSentenceIndex >= this.sentences.length) {
@@ -209,34 +259,46 @@ export class RSVPNarrator {
     }
 
     const sentence = this.sentences[this.currentSentenceIndex];
-    this._state = 'loading';
+    this._state = 'generating';
     this.notify();
 
     try {
-      const audioContent = await this.synthesizeSpeech(sentence);
+      console.log(`[Narrator] Generating speech for: "${sentence.substring(0, 50)}..."`);
       
-      if (!this.isAutoPlaying) return; // Stopped while loading
+      // Generate audio with Kokoro
+      const audio = await this.tts.generate(sentence, {
+        voice: this._selectedVoice,
+        speed: this._rate
+      });
       
-      // Clean up previous audio
-      if (this.currentAudioUrl) {
-        URL.revokeObjectURL(this.currentAudioUrl);
-      }
+      if (!this.isAutoPlaying) return; // Stopped while generating
       
-      // Create audio blob and play
-      const audioBlob = this.base64ToBlob(audioContent, 'audio/mp3');
-      this.currentAudioUrl = URL.createObjectURL(audioBlob);
+      this._state = 'speaking';
+      this.notify();
       
-      if (this.audioElement) {
-        this.audioElement.src = this.currentAudioUrl;
-        this.audioElement.playbackRate = this._rate;
-        this.audioElement.volume = this._volume;
-        this._state = 'speaking';
+      // Start word sync timer
+      const words = sentence.split(/\s+/);
+      this.startWordSync(words);
+      
+      // Play audio
+      await this.playAudio(audio);
+      
+      // Audio finished playing
+      this.stopWordSync();
+      
+      // Update base word index for next sentence
+      this.baseWordIndex += words.length;
+      
+      // Move to next sentence
+      this.currentSentenceIndex++;
+      
+      if (this.isAutoPlaying && this.currentSentenceIndex < this.sentences.length) {
+        // Small pause between sentences
+        setTimeout(() => this.speakCurrentSentence(), 50);
+      } else {
+        this._state = 'idle';
+        this.isAutoPlaying = false;
         this.notify();
-        
-        // Start word sync timer
-        this.startWordSync(sentence);
-        
-        await this.audioElement.play();
       }
     } catch (error) {
       console.error('[Narrator] TTS Error:', error);
@@ -247,20 +309,69 @@ export class RSVPNarrator {
   }
 
   /**
+   * Play audio using Web Audio API
+   */
+  private async playAudio(audio: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        // Create or resume audio context
+        if (!this.audioContext) {
+          this.audioContext = new AudioContext();
+        }
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume();
+        }
+        
+        // Get audio data - Kokoro returns { audio: Float32Array, sampling_rate: number }
+        const audioData = audio.audio || audio.data || audio;
+        const sampleRate = audio.sampling_rate || audio.sample_rate || 24000;
+        
+        // Create audio buffer
+        const audioBuffer = this.audioContext.createBuffer(1, audioData.length, sampleRate);
+        audioBuffer.copyToChannel(audioData, 0);
+        
+        // Create source node
+        this.currentSource = this.audioContext.createBufferSource();
+        this.currentSource.buffer = audioBuffer;
+        
+        // Create gain node for volume
+        const gainNode = this.audioContext.createGain();
+        gainNode.gain.value = this._volume;
+        
+        // Connect nodes
+        this.currentSource.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        
+        // Handle completion
+        this.currentSource.onended = () => {
+          this.currentSource = null;
+          resolve();
+        };
+        
+        // Start playback
+        this.currentSource.start(0);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
    * Estimate word timing and sync visual display
    */
-  private startWordSync(sentence: string) {
-    const words = sentence.split(/\s+/);
-    if (words.length === 0 || !this.audioElement) return;
+  private startWordSync(words: string[]) {
+    if (words.length === 0) return;
     
-    // Estimate duration per word (Google TTS speaks ~150 WPM at 1.0x)
-    const estimatedDuration = this.audioElement.duration || (words.length / 2.5); // ~150 WPM
-    const msPerWord = (estimatedDuration * 1000) / words.length / this._rate;
+    this.stopWordSync();
+    
+    // Estimate duration (~150 WPM at 1.0x speed, adjusted for actual rate)
+    const wordsPerSecond = (150 / 60) * this._rate;
+    const msPerWord = 1000 / wordsPerSecond;
     
     let wordIndex = 0;
-    const syncInterval = setInterval(() => {
-      if (!this.isAutoPlaying || !this.audioElement || this.audioElement.paused) {
-        clearInterval(syncInterval);
+    this.wordSyncInterval = setInterval(() => {
+      if (!this.isAutoPlaying) {
+        this.stopWordSync();
         return;
       }
       
@@ -273,115 +384,47 @@ export class RSVPNarrator {
       }
       
       if (wordIndex >= words.length) {
-        clearInterval(syncInterval);
+        this.stopWordSync();
       }
     }, msPerWord);
   }
 
-  /**
-   * Call Google Cloud TTS API
-   */
-  private async synthesizeSpeech(text: string): Promise<string> {
-    const response = await fetch(
-      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${this._apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          input: { text },
-          voice: {
-            languageCode: 'en-US',
-            name: this._selectedVoice,
-          },
-          audioConfig: {
-            audioEncoding: 'MP3',
-            speakingRate: 1.0, // We control rate via playbackRate for instant changes
-            pitch: 0,
-          },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`TTS API Error: ${response.status} - ${error}`);
+  private stopWordSync() {
+    if (this.wordSyncInterval) {
+      clearInterval(this.wordSyncInterval);
+      this.wordSyncInterval = null;
     }
-
-    const data = await response.json();
-    return data.audioContent;
-  }
-
-  private base64ToBlob(base64: string, mimeType: string): Blob {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: mimeType });
-  }
-
-  private onAudioEnded() {
-    // Update base word index for next sentence
-    const currentSentence = this.sentences[this.currentSentenceIndex];
-    if (currentSentence) {
-      this.baseWordIndex += currentSentence.split(/\s+/).length;
-    }
-    
-    // Move to next sentence
-    this.currentSentenceIndex++;
-    
-    if (this.isAutoPlaying && this.currentSentenceIndex < this.sentences.length) {
-      // Small pause between sentences
-      setTimeout(() => this.speakCurrentSentence(), 100);
-    } else {
-      this._state = 'idle';
-      this.isAutoPlaying = false;
-      this.notify();
-    }
-  }
-
-  private onAudioError(e: Event) {
-    console.error('[Narrator] Audio error:', e);
-    this._state = 'idle';
-    this.isAutoPlaying = false;
-    this.notify();
   }
 
   public pause() {
     this.isAutoPlaying = false;
-    if (this.audioElement && !this.audioElement.paused) {
-      this.audioElement.pause();
+    this.stopWordSync();
+    
+    // Stop current audio
+    if (this.currentSource) {
+      try {
+        this.currentSource.stop();
+      } catch (e) {
+        // Ignore - might already be stopped
+      }
+      this.currentSource = null;
     }
+    
     this._state = 'idle';
     this.notify();
   }
 
   public resume() {
-    if (this.audioElement && this.audioElement.paused && this.currentAudioUrl) {
-      this.isAutoPlaying = true;
-      this._state = 'speaking';
-      this.audioElement.play();
-      this.notify();
-    } else {
+    if (this.sentences.length > 0 && this.currentSentenceIndex < this.sentences.length) {
       this.startReading();
     }
   }
 
   public stop() {
-    this.isAutoPlaying = false;
-    if (this.audioElement) {
-      this.audioElement.pause();
-      this.audioElement.currentTime = 0;
-    }
-    if (this.currentAudioUrl) {
-      URL.revokeObjectURL(this.currentAudioUrl);
-      this.currentAudioUrl = null;
-    }
-    this._state = 'idle';
-    this.notify();
+    this.pause();
+    this.currentSentenceIndex = 0;
+    this.baseWordIndex = 0;
+    this.sentences = [];
   }
 
   // Subscriptions
@@ -395,6 +438,7 @@ export class RSVPNarrator {
   }
 
   public static isSupported(): boolean {
-    return true; // Google TTS is always available (with API key)
+    // Kokoro works in any modern browser with WASM support
+    return typeof WebAssembly !== 'undefined';
   }
 }

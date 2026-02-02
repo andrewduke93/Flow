@@ -50,8 +50,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   const [showChapterSelector, setShowChapterSelector] = useState(false);
   const [isRewindHeld, setIsRewindHeld] = useState(false);
   const [isNarratorEnabled, setIsNarratorEnabled] = useState(narrator.isEnabled);
-  const [showApiKeyPrompt, setShowApiKeyPrompt] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [narratorState, setNarratorState] = useState(narrator.state);
   const showChapterSelectorRef = useRef(false);
   const wasPlayingBeforeRewind = useRef(false);
   
@@ -211,6 +210,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   useEffect(() => {
     const unsub = narrator.subscribe(() => {
       setIsNarratorEnabled(narrator.isEnabled);
+      setNarratorState(narrator.state);
     });
     return unsub;
   }, []);
@@ -613,28 +613,25 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
 
           {/* Right: Narrator + Ghost Preview + Settings */}
           <div className="flex items-center justify-end gap-2">
-            {/* Narrator Toggle - Google Cloud TTS */}
+            {/* Narrator Toggle - Kokoro TTS */}
             {isRSVPActive && (
               <button 
-                className="flex items-center justify-center w-11 h-11 rounded-xl border transition-all outline-none active:scale-95"
+                className="flex items-center justify-center w-11 h-11 rounded-xl border transition-all outline-none active:scale-95 relative"
                 style={{ 
                   borderColor: isNarratorEnabled ? theme.accent + '40' : theme.borderColor, 
                   backgroundColor: isNarratorEnabled ? `${theme.accent}15` : `${theme.primaryText}05`,
                   color: isNarratorEnabled ? theme.accent : theme.secondaryText
                 }}
-                onClick={(e) => { 
+                onClick={(e) => {
                   e.stopPropagation(); 
                   RSVPHapticEngine.impactLight();
-                  // If no API key, show prompt instead of toggling
-                  if (!narrator.hasApiKey) {
-                    setShowApiKeyPrompt(true);
-                    return;
-                  }
                   narrator.toggleEnabled();
                 }}
-                title={isNarratorEnabled ? "Disable narrator" : "Enable AI narrator (Google Cloud TTS)"}
+                title={isNarratorEnabled ? "Disable narrator" : "Enable AI narrator (Kokoro TTS)"}
               >
-                {isNarratorEnabled ? (
+                {narratorState === 'loading-model' || narratorState === 'generating' ? (
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : isNarratorEnabled ? (
                   <Volume2 size={16} className="fill-current" />
                 ) : (
                   <VolumeX size={16} />
@@ -676,75 +673,6 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
           </div>
         </div>
       </div>
-      
-      {/* Google Cloud TTS API Key Modal */}
-      {showApiKeyPrompt && (
-        <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowApiKeyPrompt(false)}
-        >
-          <div 
-            className="w-full max-w-md mx-4 rounded-2xl p-6 shadow-2xl"
-            style={{ backgroundColor: theme.cardBackground, borderColor: theme.borderColor, border: '1px solid' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-lg font-semibold mb-2" style={{ color: theme.primaryText }}>
-              Google Cloud TTS API Key
-            </h2>
-            <p className="text-sm mb-4" style={{ color: theme.secondaryText }}>
-              To use the AI narrator, you need a Google Cloud Text-to-Speech API key.
-              Free tier includes 1M characters/month for Neural voices.
-            </p>
-            <a 
-              href="https://console.cloud.google.com/apis/credentials" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-sm underline mb-4 block"
-              style={{ color: theme.accent }}
-            >
-              Get your API key from Google Cloud Console →
-            </a>
-            <input
-              type="password"
-              placeholder="Paste your API key here"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl mb-4 outline-none border"
-              style={{ 
-                backgroundColor: `${theme.primaryText}05`, 
-                borderColor: theme.borderColor,
-                color: theme.primaryText
-              }}
-            />
-            <div className="flex gap-3">
-              <button
-                className="flex-1 py-3 rounded-xl border transition-all active:scale-95"
-                style={{ borderColor: theme.borderColor, color: theme.secondaryText }}
-                onClick={() => {
-                  setShowApiKeyPrompt(false);
-                  setApiKeyInput('');
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                className="flex-1 py-3 rounded-xl transition-all active:scale-95"
-                style={{ backgroundColor: theme.accent, color: '#fff' }}
-                onClick={() => {
-                  if (apiKeyInput.trim()) {
-                    narrator.setApiKey(apiKeyInput.trim());
-                    narrator.setEnabled(true);
-                    setShowApiKeyPrompt(false);
-                    setApiKeyInput('');
-                  }
-                }}
-              >
-                Save & Enable
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 });
