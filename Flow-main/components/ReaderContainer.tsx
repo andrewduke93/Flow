@@ -5,8 +5,7 @@ import { TitanReaderView } from './TitanReaderView';
 import { RSVPTeleprompter } from './RSVPTeleprompter'; 
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
-import { ChevronLeft } from 'lucide-react';
-import { MediaCommandCenter } from './MediaCommandCenter';
+import { MiniPlayerPill } from './MiniPlayerPill';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { SettingsSheet } from './SettingsSheet';
@@ -31,7 +30,6 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const [isChromeVisible, setIsChromeVisible] = useState(true);
   const [isRSVP, setIsRSVP] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isRewinding, setIsRewinding] = useState(false);
   const [currentProgress, setCurrentProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [closingSettings, setClosingSettings] = useState(false);
@@ -290,7 +288,6 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
          <RSVPTeleprompter 
              onTap={handleTeleprompterTap}
              onLongPressExit={handleLongPressExit}
-             onRewindStateChange={setIsRewinding}
          />
 
       <style>{`
@@ -299,45 +296,32 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       `}</style>
       </div>
 
-      {/* LAYER 2 (Z-50): UI DOCK (Absolute Bottom Injection) */}
+      {/* LAYER 2 (Z-50): MINI PLAYER PILL */}
       <div 
-        className="absolute left-1/2 -translate-x-1/2 w-[90%] max-w-[450px] z-50 pointer-events-auto"
+        className={`absolute left-1/2 -translate-x-1/2 w-[92%] max-w-[400px] z-50 pointer-events-auto transition-all duration-300 ${
+          (isChromeVisible || !isPlaying) ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+        }`}
         style={{
-            bottom: 'calc(2rem + env(safe-area-inset-bottom))'
+            bottom: 'calc(1.5rem + env(safe-area-inset-bottom))',
+            transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)'
         }}
       >
-         <MediaCommandCenter 
+         <MiniPlayerPill 
             book={book} 
-            onToggleRSVP={handleMediaToggle}
             isRSVPActive={isRSVP}
-            isRewinding={isRewinding}
+            onBack={isRSVP ? () => handleModeToggle(false) : handleExit}
+            onToggleRSVP={handleMediaToggle}
             onSettingsClick={handleSettingsClick}
          />
       </div>
 
-      {/* LAYER 3 (Z-60): TOP CHROME - Shows in scroll view AND RSVP (when paused or chrome visible) */}
-      <div 
-        className={`absolute top-0 left-0 right-0 z-[60] transition-transform duration-400 pointer-events-none ${
-          (isChromeVisible || (isRSVP && !isPlaying)) ? 'translate-y-0' : '-translate-y-full'
-        }`}
-        style={{transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)'}}
-      >
+      {/* Tap zone to show chrome when hidden during RSVP playback */}
+      {isRSVP && isPlaying && !isChromeVisible && (
         <div 
-            className="backdrop-blur-2xl border-b pt-safe-top py-4 px-5 flex items-center justify-between pointer-events-auto"
-            style={{ 
-                backgroundColor: theme.dimmer,
-                borderColor: theme.borderColor
-            }}
-        >
-          <button 
-            onClick={isRSVP ? () => handleModeToggle(false) : handleExit} 
-            className="w-11 h-11 -ml-1 rounded-full flex items-center justify-center transition-all active:scale-95"
-            style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
-          >
-            <ChevronLeft size={20} />
-          </button>
-        </div>
-      </div>
+          className="absolute bottom-0 left-0 right-0 h-24 z-40"
+          onClick={() => setIsChromeVisible(true)}
+        />
+      )}
 
       {/* SETTINGS OVERLAY */}
       {(showSettings || closingSettings) && (

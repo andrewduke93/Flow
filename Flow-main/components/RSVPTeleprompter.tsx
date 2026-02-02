@@ -9,22 +9,19 @@ import { RSVPHapticEngine } from '../services/rsvpHaptics';
 interface RSVPTeleprompterProps {
   onTap?: () => void;
   onLongPressExit?: () => void;
-  onRewindStateChange?: (isRewinding: boolean) => void;
 }
 
 /**
  * RSVPTeleprompter - Minimal Word Stream
  * 
  * SIMPLIFIED UX:
- * - No gestures on the teleprompter itself
- * - All controls via MediaCommandCenter pill
- * - Clean, focused reading experience
  * - Tap anywhere to pause/play
+ * - Clean, focused reading experience
+ * - All controls via MiniPlayerPill
  */
 export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
   onTap,
-  onLongPressExit,
-  onRewindStateChange
+  onLongPressExit
 }) => {
   const conductor = RSVPConductor.getInstance();
   const heartbeat = RSVPHeartbeat.getInstance();
