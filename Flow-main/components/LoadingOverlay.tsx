@@ -11,7 +11,7 @@ interface LoadingOverlayProps {
 
 export function LoadingOverlay({ 
   visible, 
-  message = 'Loading...', 
+  message = 'loading~', 
   progress,
   status = 'loading' 
 }: LoadingOverlayProps) {
@@ -19,17 +19,23 @@ export function LoadingOverlay({
 
   if (!visible) return null;
 
+  // Fun loading messages rotation
+  const funMessages = ['brewing words...', 'almost there~', 'gathering pages...', 'preparing flow...'];
+  const displayMessage = message === 'loading~' && status === 'loading'
+    ? funMessages[Math.floor(Date.now() / 2000) % funMessages.length]
+    : message;
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-busy={status === 'loading'}
-      aria-label={message}
+      aria-label={displayMessage}
       className="fixed inset-0 z-[9998] flex flex-col items-center justify-center backdrop-blur-sm transition-opacity duration-200"
-      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
     >
       <div
-        className="flex flex-col items-center gap-4 p-8 rounded-3xl"
+        className="flex flex-col items-center gap-4 p-8 rounded-3xl shadow-xl"
         style={{ backgroundColor: theme.surface }}
       >
         {/* Icon */}
@@ -38,30 +44,23 @@ export function LoadingOverlay({
           style={{ backgroundColor: `${theme.accent}15` }}
         >
           {status === 'loading' ? (
-            <Loader2 
-              size={32} 
-              className="animate-spin" 
-              style={{ color: theme.accent }} 
-            />
+            <div className="text-3xl animate-bounce">🌊</div>
           ) : status === 'success' ? (
             <CheckCircle2 
               size={32} 
               style={{ color: '#34C759' }} 
             />
           ) : (
-            <BookOpen 
-              size={32} 
-              style={{ color: theme.accent }} 
-            />
+            <div className="text-3xl">📖</div>
           )}
         </div>
 
         {/* Message */}
         <p 
-          className="text-sm font-medium text-center max-w-[200px]"
+          className="text-sm font-medium text-center max-w-[200px] lowercase"
           style={{ color: theme.primaryText }}
         >
-          {message}
+          {displayMessage}
         </p>
 
         {/* Progress bar */}
@@ -74,7 +73,8 @@ export function LoadingOverlay({
               className="h-full rounded-full transition-all duration-300"
               style={{ 
                 width: `${progress}%`,
-                backgroundColor: theme.accent 
+                backgroundColor: theme.accent,
+                boxShadow: `0 0 8px ${theme.accent}50`
               }}
             />
           </div>

@@ -63,7 +63,8 @@ const Paragraph = memo(({
           textAlign: 'justify',
           hyphens: 'auto',
           WebkitHyphens: 'auto',
-          opacity: 0.9
+          textRendering: 'optimizeLegibility',
+          WebkitFontSmoothing: 'antialiased'
         }}
       >
         {plainText}
@@ -83,7 +84,9 @@ const Paragraph = memo(({
         color: textColor,
         textAlign: 'justify',
         hyphens: 'auto',
-        WebkitHyphens: 'auto'
+        WebkitHyphens: 'auto',
+        textRendering: 'optimizeLegibility',
+        WebkitFontSmoothing: 'antialiased'
       }}
     >
       {words.map((word, i) => {
@@ -95,10 +98,11 @@ const Paragraph = memo(({
               style={{
                 backgroundColor: isActive ? accentColor : 'transparent',
                 color: isActive ? '#FFFFFF' : 'inherit',
-                padding: isActive ? '2px 4px' : '0',
-                margin: isActive ? '-2px -4px' : '0',
-                borderRadius: isActive ? '4px' : '0',
-                transition: 'background-color 0.1s ease'
+                padding: isActive ? '3px 6px' : '0',
+                margin: isActive ? '-3px -6px' : '0',
+                borderRadius: isActive ? '6px' : '0',
+                transition: 'all 0.15s ease-out',
+                boxShadow: isActive ? `0 2px 8px ${accentColor}40` : 'none'
               }}
             >
               {word.text}
@@ -183,7 +187,7 @@ const RSVPDisplay = memo(({
 
         {/* Main word display with ORP alignment - LOCKED */}
         <div className="relative flex items-center justify-center w-full">
-          {/* Focus line */}
+          {/* Focus line with subtle glow */}
           <div 
             className="absolute w-0.5 rounded-full"
             style={{ 
@@ -191,7 +195,8 @@ const RSVPDisplay = memo(({
               height: `${rsvpFontSize * 1.3}px`,
               left: '50%',
               transform: 'translateX(-50%)',
-              opacity: 0.8
+              opacity: 0.85,
+              boxShadow: `0 0 8px ${accentColor}50, 0 0 16px ${accentColor}20`
             }}
           />
           
@@ -662,8 +667,9 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
         style={{ backgroundColor: theme.background }}
       >
         <div className="text-center px-8">
-          <div className="text-4xl mb-4">📖</div>
-          <p style={{ color: theme.secondaryText }}>No content available</p>
+          <div className="text-5xl mb-4 animate-bounce">🍃</div>
+          <p className="text-lg font-medium" style={{ color: theme.secondaryText }}>nothing here yet~</p>
+          <p className="text-sm mt-2 opacity-60" style={{ color: theme.secondaryText }}>this book seems empty!</p>
         </div>
       </div>
     );
@@ -691,6 +697,15 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
           style={{ backgroundColor: theme.background }}
           onClick={handlePlayToggle}
         >
+          {/* Subtle film grain overlay for cozy reading vibe */}
+          <div 
+            className="absolute inset-0 pointer-events-none opacity-[0.03]"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'repeat'
+            }}
+          />
+          
           <RSVPDisplay
             word={engine.getCurrentWord()}
             nextWords={engine.getRange(position + 1, 6)}
@@ -702,18 +717,20 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
             showGhost={showGhostWords}
           />
           
-          {/* Minimal progress indicator */}
+          {/* Breathing progress indicator */}
           <div className="absolute bottom-6 left-6 right-6 pointer-events-none">
             <div 
-              className="h-0.5 rounded-full overflow-hidden"
-              style={{ backgroundColor: `${theme.primaryText}10` }}
+              className="h-1 rounded-full overflow-hidden"
+              style={{ backgroundColor: `${theme.primaryText}08` }}
             >
               <div 
                 className="h-full rounded-full"
                 style={{ 
-                  backgroundColor: `${theme.accent}60`,
+                  backgroundColor: theme.accent,
+                  opacity: 0.5,
                   width: `${engine.progress * 100}%`,
-                  transition: 'width 0.1s linear'
+                  transition: 'width 0.15s ease-out',
+                  boxShadow: `0 0 12px ${theme.accent}40`
                 }}
               />
             </div>

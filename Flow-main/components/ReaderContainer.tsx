@@ -200,12 +200,12 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
                 background: `linear-gradient(to right, ${theme.accent} ${progress * 100}%, ${theme.borderColor} ${progress * 100}%)`
               }}
             />
-            <div className="flex justify-between mt-1 px-0.5">
-              <span className="text-[10px] tabular-nums" style={{ color: theme.secondaryText, opacity: 0.5 }}>
-                {Math.round(progress * 100)}%
+            <div className="flex justify-between mt-1.5 px-0.5">
+              <span className="text-[10px] tabular-nums" style={{ color: theme.secondaryText, opacity: 0.6 }}>
+                {Math.round(progress * 100)}% 🌱
               </span>
-              <span className="text-[10px] tabular-nums" style={{ color: theme.secondaryText, opacity: 0.5 }}>
-                {Math.round((1 - progress) * engine.total / Math.max(1, wpm))}m
+              <span className="text-[10px] tabular-nums" style={{ color: theme.secondaryText, opacity: 0.6 }}>
+                ~{Math.round((1 - progress) * engine.total / Math.max(1, wpm))}m left
               </span>
             </div>
           </div>
@@ -236,12 +236,13 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
             {/* WPM Display */}
             <div 
-              className="h-9 px-2 rounded-xl flex items-center justify-center min-w-[60px]"
+              className="h-9 px-2 rounded-xl flex items-center justify-center gap-1 min-w-[70px]"
               style={{ backgroundColor: `${theme.primaryText}06` }}
             >
-              <span className="text-sm font-semibold tabular-nums" style={{ color: theme.primaryText }}>
+              <span className="text-sm font-bold tabular-nums" style={{ color: theme.primaryText }}>
                 {wpm}
               </span>
+              <span className="text-[10px] lowercase opacity-50" style={{ color: theme.secondaryText }}>wpm</span>
             </div>
 
             {/* Speed + */}
@@ -259,13 +260,13 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             {/* Play/Pause - Main action */}
             <button
               onClick={handlePlayPause}
-              className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl font-semibold text-white shadow-md active:scale-[0.98] transition-transform text-sm"
+              className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl font-semibold text-white shadow-md active:scale-[0.97] transition-all duration-150 text-sm hover:brightness-105"
               style={{ backgroundColor: theme.accent, minWidth: '80px' }}
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying 
                 ? <><Pause size={16} /> <span className="lowercase">pause</span></>
-                : <><Play size={16} className="ml-0.5" /> <span className="lowercase">play</span></>
+                : <><Play size={16} className="ml-0.5" /> <span className="lowercase">flow~</span></>
               }
             </button>
 
