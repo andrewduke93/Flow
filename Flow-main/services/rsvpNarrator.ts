@@ -1,18 +1,18 @@
 /**
- * RSVPNarrator - AI-Style Text-to-Speech Engine
+ * RSVPNarrator - Synchronized Text-to-Speech Engine
  * 
- * A natural-sounding narrator for RSVP mode.
- * Uses the Web Speech API with optimized settings for:
- * - Smooth, continuous speech (not rushed bursts)
- * - Natural voice selection (prefers neural/AI voices)
- * - Sentence-based buffering for natural flow
+ * A narrator for RSVP mode that stays LOCKED IN SYNC with the visual display.
+ * Uses the Web Speech API with word boundary events to advance the visual
+ * word display exactly as each word is spoken.
  * 
  * Features:
+ * - Word-level synchronization with RSVP display
  * - Automatic voice quality ranking
- * - Sentence-based speaking for natural rhythm
- * - Moderate speech rate for clarity
- * - Pause/resume support
+ * - Natural speech rate
+ * - Pause/resume support with position sync
  */
+
+import { RSVPHeartbeat } from './rsvpHeartbeat';
 
 export type NarratorVoice = {
   id: string;
@@ -35,17 +35,19 @@ export class RSVPNarrator {
   // State
   private _isEnabled: boolean = false;
   private _state: NarratorState = 'idle';
-  private _rate: number = 1.0; // Natural rate (1.0 = normal speech)
+  private _rate: number = 1.0;
   private _pitch: number = 1.0;
   private _volume: number = 1.0;
   
-  // Sentence-based reading
-  private sentences: string[] = [];
-  private currentSentenceIndex: number = 0;
-  private isAutoAdvancing: boolean = false;
+  // Word-level sync tracking
+  private tokens: string[] = [];
+  private currentWordIndex: number = 0;
+  private textToSpeak: string = '';
+  private charToWordMap: number[] = []; // Maps character position to word index
   
   // Callbacks
   private listeners: Set<() => void> = new Set();
+  private onWordCallback: ((wordIndex: number) => void) | null = null;
 
   private constructor() {
     this.synth = window.speechSynthesis;
@@ -222,61 +224,100 @@ export class RSVPNarrator {
   }
 
   /**
-   * Load text and split into sentences for smooth reading
+   * Set callback for word boundary events - used to sync visual display
    */
-  public loadContent(text: string) {
-    // Split into sentences, keeping punctuation
-    this.sentences = text
-      .replace(/([.!?])\s+/g, '$1|SPLIT|')
-      .split('|SPLIT|')
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-    this.currentSentenceIndex = 0;
+  public onWord(callback: (wordIndex: number) => void) {
+    this.onWordCallback = callback;
   }
 
   /**
-   * Start continuous reading from current position
+   * Load tokens and build character-to-word mapping for sync
    */
-  public startReading() {
-    if (!this._isEnabled || !this.selectedVoice || this.sentences.length === 0) return;
+  public loadContent(tokens: string[]) {
+    this.tokens = tokens;
+    this.textToSpeak = tokens.join(' ');
+    this.currentWordIndex = 0;
     
-    this.isAutoAdvancing = true;
-    this.speakNextSentence();
+    // Build character position to word index mapping
+    this.charToWordMap = [];
+    let charPos = 0;
+    for (let i = 0; i < tokens.length; i++) {
+      const word = tokens[i];
+      // Map each character in this word to its word index
+      for (let j = 0; j < word.length; j++) {
+        this.charToWordMap[charPos + j] = i;
+      }
+      charPos += word.length;
+      // Account for space after word
+      if (i < tokens.length - 1) {
+        this.charToWordMap[charPos] = i;
+        charPos++;
+      }
+    }
   }
 
   /**
-   * Speak the next sentence and auto-advance
+   * Start speaking from a specific word index
    */
-  private speakNextSentence() {
-    if (!this.isAutoAdvancing || this.currentSentenceIndex >= this.sentences.length) {
-      this._state = 'idle';
-      this.isAutoAdvancing = false;
-      this.notify();
-      return;
+  public startFromIndex(startIndex: number) {
+    if (!this._isEnabled || !this.selectedVoice || this.tokens.length === 0) return;
+    
+    this.stop(); // Clear any ongoing speech
+    
+    // Build text from startIndex onwards
+    this.currentWordIndex = Math.max(0, Math.min(startIndex, this.tokens.length - 1));
+    const textFromHere = this.tokens.slice(this.currentWordIndex).join(' ');
+    
+    // Rebuild char map for the substring
+    this.charToWordMap = [];
+    let charPos = 0;
+    for (let i = this.currentWordIndex; i < this.tokens.length; i++) {
+      const word = this.tokens[i];
+      for (let j = 0; j < word.length; j++) {
+        this.charToWordMap[charPos + j] = i;
+      }
+      charPos += word.length;
+      if (i < this.tokens.length - 1) {
+        this.charToWordMap[charPos] = i;
+        charPos++;
+      }
     }
-
-    const sentence = this.sentences[this.currentSentenceIndex];
+    
     this._state = 'speaking';
     
-    const utterance = new SpeechSynthesisUtterance(sentence);
+    const utterance = new SpeechSynthesisUtterance(textFromHere);
     utterance.voice = this.selectedVoice;
     utterance.rate = this._rate;
     utterance.pitch = this._pitch;
     utterance.volume = this._volume;
     
-    utterance.onend = () => {
-      this.currentSentenceIndex++;
-      // Small pause between sentences for natural rhythm
-      setTimeout(() => {
-        if (this.isAutoAdvancing) {
-          this.speakNextSentence();
+    // CRITICAL: Word boundary event for sync
+    utterance.onboundary = (event) => {
+      if (event.name === 'word') {
+        // Map character index to word index
+        const wordIdx = this.charToWordMap[event.charIndex];
+        if (wordIdx !== undefined && wordIdx !== this.currentWordIndex) {
+          this.currentWordIndex = wordIdx;
+          // Notify visual display to update
+          if (this.onWordCallback) {
+            this.onWordCallback(this.currentWordIndex);
+          }
+          this.notify();
         }
-      }, 150);
+      }
     };
     
-    utterance.onerror = () => {
+    utterance.onend = () => {
       this._state = 'idle';
-      this.isAutoAdvancing = false;
+      this.notify();
+    };
+    
+    utterance.onerror = (e) => {
+      // Ignore 'interrupted' errors from pause/stop
+      if (e.error !== 'interrupted') {
+        console.warn('Narrator error:', e.error);
+      }
+      this._state = 'idle';
       this.notify();
     };
     
@@ -286,19 +327,18 @@ export class RSVPNarrator {
   }
 
   /**
-   * Seek to approximate position based on word index
+   * Seek to a word index (will restart speech from there)
    */
-  public seekToWordIndex(wordIndex: number, totalWords: number) {
-    if (this.sentences.length === 0) return;
-    
-    // Estimate sentence position based on word ratio
-    const ratio = wordIndex / Math.max(1, totalWords);
-    this.currentSentenceIndex = Math.floor(ratio * this.sentences.length);
-    this.currentSentenceIndex = Math.max(0, Math.min(this.currentSentenceIndex, this.sentences.length - 1));
+  public seekToWordIndex(wordIndex: number) {
+    const wasPlaying = this._state === 'speaking';
+    this.stop();
+    this.currentWordIndex = Math.max(0, Math.min(wordIndex, this.tokens.length - 1));
+    if (wasPlaying) {
+      this.startFromIndex(this.currentWordIndex);
+    }
   }
 
   public pause() {
-    this.isAutoAdvancing = false;
     if (this.synth.speaking) {
       this.synth.pause();
       this._state = 'paused';
@@ -308,20 +348,17 @@ export class RSVPNarrator {
 
   public resume() {
     if (this.synth.paused) {
-      this.isAutoAdvancing = true;
       this.synth.resume();
       this._state = 'speaking';
       this.notify();
-    } else if (this._state === 'idle' || this._state === 'paused') {
-      this.startReading();
+    } else if (this._state === 'idle' && this.tokens.length > 0) {
+      this.startFromIndex(this.currentWordIndex);
     }
   }
 
   public stop() {
-    this.isAutoAdvancing = false;
     this.synth.cancel();
     this._state = 'idle';
-    this.currentSentenceIndex = 0;
     this.notify();
   }
 
@@ -330,8 +367,14 @@ export class RSVPNarrator {
    */
   public reset() {
     this.stop();
-    this.sentences = [];
-    this.currentSentenceIndex = 0;
+    this.tokens = [];
+    this.charToWordMap = [];
+    this.currentWordIndex = 0;
+    this.textToSpeak = '';
+  }
+
+  public get currentIndex(): number {
+    return this.currentWordIndex;
   }
 
   // -- Subscriptions --

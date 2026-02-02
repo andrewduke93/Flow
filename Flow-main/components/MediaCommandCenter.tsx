@@ -152,25 +152,33 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   }, []);
 
   // Build phrases when tokens change and narrator is enabled
-  // Initialize narrator with full text content when enabled
+  // Initialize narrator with tokens for word-level sync
   useEffect(() => {
     if (!isNarratorEnabled || !isRSVPActive || heartbeat.tokens.length === 0) return;
     
-    // Load full text for sentence-based smooth reading
-    const fullText = heartbeat.tokens.map(t => t.originalText).join(' ');
-    narrator.loadContent(fullText);
+    // Load tokens for word-by-word synchronized speech
+    const words = heartbeat.tokens.map(t => t.originalText);
+    narrator.loadContent(words);
     narrator.syncWithWPM(settings.rsvpSpeed);
+    
+    // Set up word boundary callback to sync visual display
+    narrator.onWord((wordIndex) => {
+      // When narrator speaks a word, update the visual display to match
+      if (wordIndex !== heartbeat.currentIndex) {
+        heartbeat.seek(wordIndex);
+      }
+    });
   }, [isNarratorEnabled, isRSVPActive, heartbeat.tokens.length, settings.rsvpSpeed]);
 
-  // Narrator play/pause control - continuous sentence reading
+  // Narrator controls visual when enabled - narrator drives the heartbeat
   useEffect(() => {
     if (!isNarratorEnabled || !isRSVPActive) return;
     
-    // Start/stop narrator reading based on play state
     if (isPlaying) {
-      // Sync position before starting
-      narrator.seekToWordIndex(heartbeat.currentIndex, heartbeat.tokens.length);
-      narrator.startReading();
+      // Pause heartbeat's auto-advance - narrator will control word advancement
+      heartbeat.pause();
+      // Start narrator from current position
+      narrator.startFromIndex(heartbeat.currentIndex);
     } else {
       narrator.pause();
     }
