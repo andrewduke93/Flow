@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Book } from '../types';
 import { TitanReaderView } from './TitanReaderView';
 import { RSVPTeleprompter } from './RSVPTeleprompter'; 
@@ -9,6 +9,10 @@ import { MiniPlayerPill } from './MiniPlayerPill';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
+import { AnimatePresence, motion } from 'framer-motion';
+
+// Lazy load settings
+const SettingsSheet = lazy(() => import('./SettingsSheet').then(m => ({ default: m.SettingsSheet })));
 
 interface ReaderContainerProps {
   book: Book;
@@ -30,6 +34,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const [isRSVP, setIsRSVP] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentProgress, setCurrentProgress] = useState(0);
+  const [showSettings, setShowSettings] = useState(false);
 
   const isHandlingPopState = useRef(false);
 
@@ -222,6 +227,12 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     handleModeToggle(undefined, startOffset);
   }, []);
 
+  // Handle open settings
+  const handleOpenSettings = useCallback(() => {
+    RSVPHapticEngine.impactLight();
+    setShowSettings(true);
+  }, []);
+
   return (
     <div 
       className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden m-0 p-0 animate-fadeIn"
@@ -282,6 +293,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             isRSVPActive={isRSVP}
             onBack={isRSVP ? () => handleModeToggle(false) : handleExit}
             onToggleRSVP={handleMediaToggle}
+            onOpenSettings={handleOpenSettings}
          />
       </div>
 
@@ -292,6 +304,24 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
           onClick={() => setIsChromeVisible(true)}
         />
       )}
+
+      {/* LAYER 3 (Z-60): SETTINGS SHEET */}
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            className="absolute inset-0 z-[60]"
+            style={{ backgroundColor: theme.background }}
+          >
+            <Suspense fallback={<div className="h-full flex items-center justify-center" style={{ color: theme.secondaryText }}>Loading...</div>}>
+              <SettingsSheet onClose={() => setShowSettings(false)} />
+            </Suspense>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

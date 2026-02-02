@@ -3,7 +3,7 @@ import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { Play, Pause, RotateCcw } from 'lucide-react';
+import { Play, Pause, RotateCcw, Settings, Sparkles } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
@@ -13,6 +13,7 @@ interface MiniPlayerPillProps {
   isRSVPActive: boolean;
   onBack: () => void;
   onToggleRSVP: () => void;
+  onOpenSettings?: () => void;
 }
 
 // Speed presets - full range with meaningful steps
@@ -31,7 +32,8 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
   book,
   isRSVPActive,
   onBack,
-  onToggleRSVP
+  onToggleRSVP,
+  onOpenSettings
 }) => {
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
@@ -114,6 +116,12 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
     heartbeat.seek(targetIdx);
   }, []);
 
+  // Toggle ghost preview
+  const toggleGhostPreview = useCallback(() => {
+    RSVPHapticEngine.selectionChanged();
+    updateSettings({ showGhostPreview: !settings.showGhostPreview });
+  }, [settings.showGhostPreview, updateSettings]);
+
   // Progress scrubbing
   const handleScrub = useCallback((clientX: number) => {
     if (!trackRef.current) return;
@@ -166,7 +174,7 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
   if (!isRSVPActive) {
     return (
       <div className="flex flex-col items-center gap-3 w-full">
-        {/* Simple row: Back | Flow button | Time */}
+        {/* Simple row: Back | Settings | Flow button | Time */}
         <div className="flex items-center justify-between w-full px-2">
           {/* Left: Back to library */}
           <button
@@ -178,18 +186,35 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
             <span className="text-sm font-medium">library</span>
           </button>
 
-          {/* Center: Primary action - START FLOW */}
-          <button
-            onClick={handlePrimaryAction}
-            className="flex items-center gap-2 px-6 py-3 rounded-full active:scale-95 transition-transform shadow-lg"
-            style={{ 
-              backgroundColor: theme.accent,
-              color: '#fff'
-            }}
-          >
-            <Play size={18} className="fill-white" />
-            <span className="text-sm font-semibold tracking-wide">flow</span>
-          </button>
+          {/* Center group: Settings + Flow button */}
+          <div className="flex items-center gap-2">
+            {/* Settings */}
+            {onOpenSettings && (
+              <button
+                onClick={onOpenSettings}
+                className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                style={{ 
+                  backgroundColor: `${theme.primaryText}08`,
+                  color: theme.secondaryText
+                }}
+              >
+                <Settings size={18} />
+              </button>
+            )}
+
+            {/* Primary action - START FLOW */}
+            <button
+              onClick={handlePrimaryAction}
+              className="flex items-center gap-2 px-6 py-3 rounded-full active:scale-95 transition-transform shadow-lg"
+              style={{ 
+                backgroundColor: theme.accent,
+                color: '#fff'
+              }}
+            >
+              <Play size={18} className="fill-white" />
+              <span className="text-sm font-semibold tracking-wide">flow</span>
+            </button>
+          </div>
 
           {/* Right: Time estimate */}
           <div 
@@ -254,33 +279,45 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
           <span className="text-sm font-medium">book</span>
         </button>
 
-        {/* Center group: Back sentence + Play/Pause */}
-        <div className="flex items-center gap-3">
+        {/* Center group: Ghost toggle + Back sentence + Play/Pause */}
+        <div className="flex items-center gap-2">
+          {/* Ghost preview toggle */}
+          <button
+            onClick={toggleGhostPreview}
+            className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+            style={{ 
+              backgroundColor: settings.showGhostPreview ? `${theme.accent}20` : `${theme.primaryText}08`,
+              color: settings.showGhostPreview ? theme.accent : theme.secondaryText
+            }}
+          >
+            <Sparkles size={16} className={settings.showGhostPreview ? 'fill-current' : ''} />
+          </button>
+
           {/* Back sentence */}
           <button
             onClick={handleBackSentence}
-            className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+            className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
             style={{ 
-              backgroundColor: `${theme.primaryText}10`,
+              backgroundColor: `${theme.primaryText}08`,
               color: theme.secondaryText
             }}
           >
-            <RotateCcw size={18} />
+            <RotateCcw size={16} />
           </button>
 
           {/* Play/Pause - THE primary action */}
           <button
             onClick={handlePrimaryAction}
-            className="w-16 h-16 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-xl"
+            className="w-14 h-14 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-xl"
             style={{ 
               backgroundColor: theme.accent,
               color: '#fff'
             }}
           >
             {isPlaying ? (
-              <Pause size={28} className="fill-white" />
+              <Pause size={24} className="fill-white" />
             ) : (
-              <Play size={28} className="fill-white ml-1" />
+              <Play size={24} className="fill-white ml-1" />
             )}
           </button>
         </div>
