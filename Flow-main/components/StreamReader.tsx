@@ -143,7 +143,65 @@ const RSVPDisplay = memo(({
     ? '"Atkinson Hyperlegible", sans-serif'
     : 'system-ui, -apple-system, sans-serif';
 
-  // Find optimal recognition point (ORP)
+  const rsvpFontSize = Math.min(fontSize * 1.8, 42);
+
+  // Karaoke/teleprompter style - readable flowing text
+  if (showGhost) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center select-none overflow-hidden px-6">
+        <div 
+          className="text-center leading-relaxed"
+          style={{ 
+            fontFamily: fontFamilyCSS,
+            fontSize: `${rsvpFontSize}px`,
+            fontWeight: 400,
+            letterSpacing: '0.01em',
+            maxWidth: '90vw',
+            lineHeight: 1.6
+          }}
+        >
+          {/* Previous words - dimmed */}
+          {prevWords.map((w, i) => (
+            <span 
+              key={`prev-${i}`}
+              style={{ 
+                color: textColor,
+                opacity: 0.3 + (i * 0.05), // Gradual fade in
+              }}
+            >
+              {w.text}{' '}
+            </span>
+          ))}
+          
+          {/* Current word - highlighted */}
+          <span 
+            style={{ 
+              color: accentColor,
+              fontWeight: 700,
+              textShadow: `0 0 20px ${accentColor}40`
+            }}
+          >
+            {word.text}
+          </span>
+          
+          {/* Next words - dimmed */}
+          {nextWords.map((w, i) => (
+            <span 
+              key={`next-${i}`}
+              style={{ 
+                color: textColor,
+                opacity: 0.4 - (i * 0.05), // Gradual fade out
+              }}
+            >
+              {' '}{w.text}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Classic RSVP mode (ghost disabled) - single word with ORP
   const text = word.text;
   const orpIndex = text.length <= 1 ? 0 
     : text.length <= 5 ? 1 
@@ -155,25 +213,10 @@ const RSVPDisplay = memo(({
   const pivot = text[orpIndex] || '';
   const after = text.slice(orpIndex + 1);
 
-  const rsvpFontSize = Math.min(fontSize * 2.2, 56);
+  const classicFontSize = Math.min(fontSize * 2.2, 56);
 
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
-      {/* Ghost context - previous words */}
-      {showGhost && prevWords.length > 0 && (
-        <div 
-          className="absolute w-full text-center opacity-20 transition-opacity"
-          style={{ 
-            top: `calc(50% - ${rsvpFontSize * 1.8}px)`,
-            fontFamily: fontFamilyCSS,
-            fontSize: `${rsvpFontSize * 0.5}px`,
-            color: textColor
-          }}
-        >
-          {prevWords.map(w => w.text).join(' ')}
-        </div>
-      )}
-
       {/* Main word display with ORP alignment */}
       <div className="relative flex items-center justify-center w-full">
         {/* Single clean focus line */}
@@ -181,7 +224,7 @@ const RSVPDisplay = memo(({
           className="absolute w-0.5 rounded-full"
           style={{ 
             backgroundColor: accentColor,
-            height: `${rsvpFontSize * 1.3}px`,
+            height: `${classicFontSize * 1.3}px`,
             left: '50%',
             transform: 'translateX(-50%)',
             opacity: 0.8
@@ -193,7 +236,7 @@ const RSVPDisplay = memo(({
           className="flex items-baseline"
           style={{ 
             fontFamily: fontFamilyCSS,
-            fontSize: `${rsvpFontSize}px`,
+            fontSize: `${classicFontSize}px`,
             fontWeight: 500,
             letterSpacing: '0.01em'
           }}
@@ -233,21 +276,6 @@ const RSVPDisplay = memo(({
           </span>
         </div>
       </div>
-
-      {/* Ghost context - next words */}
-      {showGhost && nextWords.length > 0 && (
-        <div 
-          className="absolute w-full text-center opacity-15 transition-opacity"
-          style={{ 
-            top: `calc(50% + ${rsvpFontSize * 1.2}px)`,
-            fontFamily: fontFamilyCSS,
-            fontSize: `${rsvpFontSize * 0.45}px`,
-            color: textColor
-          }}
-        >
-          {nextWords.map(w => w.text).join(' ')}
-        </div>
-      )}
     </div>
   );
 });
