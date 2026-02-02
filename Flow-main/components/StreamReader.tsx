@@ -161,107 +161,80 @@ const RSVPDisplay = memo(({
   const pivot = text[orpIndex] || '';
   const after = text.slice(orpIndex + 1);
 
-  // Karaoke/teleprompter style - current word locked with ORP, context flows around
+  // Book-style justified layout - words flow naturally like a page
   if (showGhost) {
-    const contextFontSize = rsvpFontSize * 0.5;
-    const verticalGap = rsvpFontSize * 1.2; // Clear separation from main word
+    const blockFontSize = Math.min(fontSize * 1.6, 36);
     
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
-        {/* Previous words - clearly above the main word */}
-        {prevWords.length > 0 && (
-          <div 
-            className="absolute w-full text-center px-8"
-            style={{ 
-              bottom: `calc(50% + ${verticalGap}px)`,
-              fontFamily: fontFamilyCSS,
-              fontSize: `${contextFontSize}px`,
-              color: textColor,
-              opacity: 0.3,
-              lineHeight: 1.4
-            }}
-          >
-            {prevWords.map(w => w.text).join(' ')}
-          </div>
-        )}
-
-        {/* Main word display with ORP alignment - LOCKED */}
-        <div className="relative flex items-center justify-center w-full">
-          {/* Focus line with subtle glow */}
-          <div 
-            className="absolute w-0.5 rounded-full"
-            style={{ 
-              backgroundColor: accentColor,
-              height: `${rsvpFontSize * 1.3}px`,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              opacity: 0.85,
-              boxShadow: `0 0 8px ${accentColor}50, 0 0 16px ${accentColor}20`
-            }}
-          />
-          
-          {/* Word positioned so ORP aligns with center line */}
-          <div 
-            className="flex items-baseline"
-            style={{ 
-              fontFamily: fontFamilyCSS,
-              fontSize: `${rsvpFontSize}px`,
-              fontWeight: 500,
-              letterSpacing: '0.01em'
-            }}
-          >
-            {/* Before ORP - right-aligned */}
+      <div className="absolute inset-0 flex items-center justify-center select-none overflow-hidden px-6">
+        {/* Justified text block like a book page */}
+        <div 
+          className="relative max-w-md w-full"
+          style={{ 
+            fontFamily: fontFamilyCSS,
+            fontSize: `${blockFontSize}px`,
+            lineHeight: 1.7,
+            textAlign: 'justify',
+            textRendering: 'optimizeLegibility'
+          }}
+        >
+          {/* Previous words */}
+          {prevWords.map((w, i) => (
             <span 
-              className="text-right"
+              key={`prev-${i}`}
               style={{ 
                 color: textColor,
-                minWidth: '42vw',
-                paddingRight: '3px'
+                opacity: 0.25 + (i * 0.03)
               }}
             >
-              {before}
+              {w.text}{' '}
             </span>
-            
-            {/* Pivot letter - at the focus line */}
+          ))}
+          
+          {/* Current word - highlighted with ORP */}
+          <span 
+            className="relative inline-block"
+            style={{ 
+              fontWeight: 600
+            }}
+          >
+            <span style={{ color: textColor }}>{before}</span>
             <span 
+              className="relative"
               style={{ 
                 color: accentColor, 
                 fontWeight: 700
               }}
             >
               {pivot}
+              {/* Focus underline */}
+              <span 
+                className="absolute left-1/2 -translate-x-1/2 rounded-full"
+                style={{
+                  bottom: '-4px',
+                  width: '3px',
+                  height: '3px',
+                  backgroundColor: accentColor,
+                  boxShadow: `0 0 6px ${accentColor}`
+                }}
+              />
             </span>
-            
-            {/* After ORP - left-aligned */}
+            <span style={{ color: textColor }}>{after}</span>
+          </span>
+          
+          {/* Next words */}
+          {nextWords.map((w, i) => (
             <span 
-              className="text-left"
+              key={`next-${i}`}
               style={{ 
                 color: textColor,
-                minWidth: '42vw',
-                paddingLeft: '3px'
+                opacity: 0.3 - (i * 0.03)
               }}
             >
-              {after}
+              {' '}{w.text}
             </span>
-          </div>
+          ))}
         </div>
-
-        {/* Next words - clearly below the main word */}
-        {nextWords.length > 0 && (
-          <div 
-            className="absolute w-full text-center px-8"
-            style={{ 
-              top: `calc(50% + ${verticalGap}px)`,
-              fontFamily: fontFamilyCSS,
-              fontSize: `${contextFontSize}px`,
-              color: textColor,
-              opacity: 0.25,
-              lineHeight: 1.4
-            }}
-          >
-            {nextWords.map(w => w.text).join(' ')}
-          </div>
-        )}
       </div>
     );
   }
