@@ -214,7 +214,7 @@ export const FlowReader: React.FC<FlowReaderProps> = memo(({
     };
   }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
 
-  // Enhanced paragraph grouping with block type detection
+  // Simplified paragraph grouping
   const paragraphs = useMemo(() => {
     if (tokens.length === 0) return [];
     
@@ -223,16 +223,9 @@ export const FlowReader: React.FC<FlowReaderProps> = memo(({
       startIndex: number, 
       plainText: string,
       blockType: BlockType,
-      metadata?: { isFirstInChapter?: boolean }
     }[] = [];
     let currentPara: RSVPToken[] = [];
     let startIndex = 0;
-    let prevBlockType: BlockType = 'paragraph';
-    
-    // Block type detection patterns
-    const CHAPTER_PATTERN = /^chapter\s+(\d+|[ivxlc]+)|^(part|book|section|prologue|epilogue)\s*/i;
-    const SCENE_BREAK_PATTERN = /^[\*\#\-–—]{3,}$|^[●○◆◇★]{1,5}$/;
-    const DIALOGUE_START_PATTERN = /^[""\u201C]/;
     
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i];
@@ -241,44 +234,17 @@ export const FlowReader: React.FC<FlowReaderProps> = memo(({
       // Check if this token ends a paragraph
       if (token.isParagraphEnd || i === tokens.length - 1) {
         const plainText = currentPara.map(t => t.originalText).join(' ');
-        const blockType = detectBlockType(plainText, prevBlockType);
         
         result.push({
           tokens: currentPara,
           startIndex,
           plainText,
-          blockType,
-          metadata: prevBlockType === 'chapter-heading' ? { isFirstInChapter: true } : undefined
+          blockType: 'paragraph' as BlockType,
         });
         
-        prevBlockType = blockType;
         currentPara = [];
         startIndex = i + 1;
       }
-    }
-    
-    // Block type detection helper
-    function detectBlockType(text: string, prev: BlockType): BlockType {
-      const trimmed = text.trim();
-      
-      // Scene breaks
-      if (SCENE_BREAK_PATTERN.test(trimmed)) return 'scene-break';
-      
-      // Chapter headings (short line, starts with chapter/part, or ALL CAPS)
-      if (trimmed.length < 60) {
-        if (CHAPTER_PATTERN.test(trimmed)) return 'chapter-heading';
-        if (trimmed === trimmed.toUpperCase() && /[A-Z]/.test(trimmed) && trimmed.length > 2) {
-          return 'chapter-heading';
-        }
-      }
-      
-      // Dialogue (starts with quote)
-      if (DIALOGUE_START_PATTERN.test(trimmed)) return 'dialogue';
-      
-      // First paragraph after heading
-      if (prev === 'chapter-heading') return 'first-paragraph';
-      
-      return 'paragraph';
     }
     
     return result;
@@ -321,15 +287,20 @@ export const FlowReader: React.FC<FlowReaderProps> = memo(({
   }
 
   // Formatted blocks for enhanced display (smart formatting)
-  const formattedBlocks = useMemo(() => {
+  // Disabled temporarily - using simple paragraphs for stability
+  const formattedBlocks = useMemo((): FormattedBlock[] | null => {
     if (tokens.length > 0) return null; // Use token-based rendering when ready
     if (!contentText) return null;
+    
+    // Simple paragraph splitting for now - TextFormatter causing re-render issues
     try {
-      const blocks = TextFormatter.formatText(contentText);
-      console.log('[FlowReader] Formatted blocks:', blocks?.length || 0);
-      return blocks;
+      const paragraphs = contentText.split(/\n\n+/).filter(p => p.trim());
+      return paragraphs.map((p, i) => ({
+        type: 'paragraph' as BlockType,
+        content: p.trim()
+      }));
     } catch (e) {
-      console.error('[FlowReader] TextFormatter error:', e);
+      console.error('[FlowReader] Format error:', e);
       return null;
     }
   }, [tokens.length, contentText]);
@@ -634,7 +605,7 @@ const FormattedBlockView: React.FC<FormattedBlockViewProps> = memo(({
 });
 
 /**
- * TokenizedBlockView - Renders token-based paragraphs with block type styling
+ * TokenizedBlockView - Renders token-based paragraphs
  * Used when full token data is available (for RSVP clicking)
  */
 interface TokenizedBlockViewProps {
@@ -643,7 +614,6 @@ interface TokenizedBlockViewProps {
     startIndex: number;
     plainText: string;
     blockType: BlockType;
-    metadata?: { isFirstInChapter?: boolean };
   };
   activeIndex: number;
   fontSize: number;
@@ -664,21 +634,27 @@ const TokenizedBlockView: React.FC<TokenizedBlockViewProps> = memo(({
   theme,
   onWordClick,
 }) => {
-  const baseStyles: React.CSSProperties = {
-    fontSize: `${fontSize}px`,
-    lineHeight,
-    fontFamily,
-    color: theme.primaryText,
-    textRendering: 'optimizeLegibility',
-    WebkitFontSmoothing: 'antialiased',
-  };
-
-  const blockStyles = BLOCK_STYLES[para.blockType];
-
-  // Render tokens with highlighting
-  const renderTokens = (tokens: RSVPToken[], startOffset = 0) => (
-    <>
-      {tokens.map((token, idx) => {
+  return (
+    <p
+      className="cursor-pointer transition-opacity hover:opacity-100"
+      style={{
+        fontSize: `${fontSize}px`,
+        lineHeight,
+        fontFamily,
+        color: theme.primaryText,
+        marginBottom: `${paragraphSpacing}px`,
+        opacity: 0.92,
+        textAlign: 'justify',
+        textJustify: 'inter-word',
+        hyphens: 'auto',
+        WebkitHyphens: 'auto',
+        wordBreak: 'break-word',
+        letterSpacing: '-0.01em',
+        textRendering: 'optimizeLegibility',
+        WebkitFontSmoothing: 'antialiased',
+      }}
+    >
+      {para.tokens.map((token) => {
         const isActive = token.globalIndex === activeIndex;
         return (
           <React.Fragment key={token.id}>
@@ -701,127 +677,7 @@ const TokenizedBlockView: React.FC<TokenizedBlockViewProps> = memo(({
           </React.Fragment>
         );
       })}
-    </>
+    </p>
   );
-
-  switch (para.blockType) {
-    case 'chapter-heading':
-      return (
-        <h2
-          className="cursor-pointer"
-          style={{
-            ...baseStyles,
-            ...blockStyles,
-            fontSize: `${fontSize * 1.5}px`,
-          }}
-        >
-          {renderTokens(para.tokens)}
-        </h2>
-      );
-
-    case 'scene-break':
-      return (
-        <div 
-          className="cursor-pointer"
-          style={{ ...baseStyles, ...blockStyles }} 
-          role="separator"
-        >
-          * * *
-        </div>
-      );
-
-    case 'dialogue':
-      return (
-        <p
-          className="cursor-pointer"
-          style={{
-            ...baseStyles,
-            ...blockStyles,
-            marginBottom: `${paragraphSpacing * 0.6}px`,
-          }}
-        >
-          {renderTokens(para.tokens)}
-        </p>
-      );
-
-    case 'first-paragraph':
-      // Drop cap - first token gets special treatment
-      const firstToken = para.tokens[0];
-      const restTokens = para.tokens.slice(1);
-      const firstChar = firstToken?.originalText?.charAt(0) || '';
-      const restOfFirstWord = firstToken?.originalText?.slice(1) || '';
-      
-      return (
-        <p
-          className="cursor-pointer"
-          style={{
-            ...baseStyles,
-            marginBottom: `${paragraphSpacing}px`,
-            textAlign: 'justify',
-            textJustify: 'inter-word',
-          }}
-        >
-          {/* Drop cap */}
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              if (firstToken) onWordClick(firstToken.globalIndex);
-            }}
-            style={{
-              float: 'left',
-              fontSize: `${fontSize * 3.2}px`,
-              lineHeight: 0.8,
-              marginRight: '0.08em',
-              marginTop: '0.05em',
-              fontWeight: 500,
-              color: activeIndex === firstToken?.globalIndex ? '#FFFFFF' : theme.accent,
-              backgroundColor: activeIndex === firstToken?.globalIndex ? theme.accent : 'transparent',
-              borderRadius: '0.1em',
-              cursor: 'pointer',
-            }}
-          >
-            {firstChar}
-          </span>
-          {/* Rest of first word (if any) */}
-          {restOfFirstWord && (
-            <span
-              onClick={(e) => {
-                e.stopPropagation();
-                if (firstToken) onWordClick(firstToken.globalIndex);
-              }}
-              className="cursor-pointer"
-              style={{
-                backgroundColor: activeIndex === firstToken?.globalIndex ? theme.accent : 'transparent',
-                color: activeIndex === firstToken?.globalIndex ? '#FFFFFF' : 'inherit',
-              }}
-            >
-              {restOfFirstWord}
-            </span>
-          )}{' '}
-          {/* Rest of tokens */}
-          {renderTokens(restTokens)}
-        </p>
-      );
-
-    case 'paragraph':
-    default:
-      return (
-        <p
-          className="cursor-pointer transition-opacity hover:opacity-100"
-          style={{
-            ...baseStyles,
-            marginBottom: `${paragraphSpacing}px`,
-            opacity: 0.92,
-            textAlign: 'justify',
-            textJustify: 'inter-word',
-            hyphens: 'auto',
-            WebkitHyphens: 'auto',
-            wordBreak: 'break-word',
-            letterSpacing: '-0.01em',
-          }}
-        >
-          {renderTokens(para.tokens)}
-        </p>
-      );
-  }
 });
+
