@@ -4,6 +4,7 @@ import { StreamEngine, WordSpan } from '../services/streamEngine';
 import { useTitanTheme } from '../services/titanTheme';
 import { useTitanSettings } from '../services/configService';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
+import { TitanStorage } from '../services/titanStorage';
 
 interface StreamReaderProps {
   book: Book;
@@ -161,80 +162,103 @@ const RSVPDisplay = memo(({
   const pivot = text[orpIndex] || '';
   const after = text.slice(orpIndex + 1);
 
-  // Book-style justified layout - words flow naturally like a page
+  // Book-style layout with LOCKED focus word - context flows around the centered word
   if (showGhost) {
-    const blockFontSize = Math.min(fontSize * 1.6, 36);
+    const contextFontSize = rsvpFontSize * 0.5;
+    const verticalGap = rsvpFontSize * 0.9;
     
     return (
-      <div className="absolute inset-0 flex items-center justify-center select-none overflow-hidden px-6">
-        {/* Justified text block like a book page */}
-        <div 
-          className="relative max-w-md w-full"
-          style={{ 
-            fontFamily: fontFamilyCSS,
-            fontSize: `${blockFontSize}px`,
-            lineHeight: 1.7,
-            textAlign: 'justify',
-            textRendering: 'optimizeLegibility'
-          }}
-        >
-          {/* Previous words */}
-          {prevWords.map((w, i) => (
-            <span 
-              key={`prev-${i}`}
-              style={{ 
-                color: textColor,
-                opacity: 0.25 + (i * 0.03)
-              }}
-            >
-              {w.text}{' '}
-            </span>
-          ))}
-          
-          {/* Current word - highlighted with ORP */}
-          <span 
-            className="relative inline-block"
+      <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
+        {/* Previous words - above, flowing right-to-left into focus */}
+        {prevWords.length > 0 && (
+          <div 
+            className="absolute text-right px-6"
             style={{ 
-              fontWeight: 600
+              bottom: `calc(50% + ${verticalGap}px)`,
+              right: '50%',
+              marginRight: `${rsvpFontSize * 0.15}px`,
+              fontFamily: fontFamilyCSS,
+              fontSize: `${contextFontSize}px`,
+              color: textColor,
+              opacity: 0.3,
+              maxWidth: '45vw',
+              lineHeight: 1.5,
+              textAlign: 'justify'
             }}
           >
-            <span style={{ color: textColor }}>{before}</span>
-            <span 
-              className="relative"
-              style={{ 
-                color: accentColor, 
-                fontWeight: 700
-              }}
-            >
-              {pivot}
-              {/* Focus underline */}
-              <span 
-                className="absolute left-1/2 -translate-x-1/2 rounded-full"
-                style={{
-                  bottom: '-4px',
-                  width: '3px',
-                  height: '3px',
-                  backgroundColor: accentColor,
-                  boxShadow: `0 0 6px ${accentColor}`
-                }}
-              />
-            </span>
-            <span style={{ color: textColor }}>{after}</span>
-          </span>
+            {prevWords.map(w => w.text).join(' ')}
+          </div>
+        )}
+
+        {/* LOCKED Main word with ORP alignment */}
+        <div className="relative flex items-center justify-center w-full">
+          {/* Focus line */}
+          <div 
+            className="absolute w-0.5 rounded-full"
+            style={{ 
+              backgroundColor: accentColor,
+              height: `${rsvpFontSize * 1.3}px`,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              opacity: 0.85,
+              boxShadow: `0 0 8px ${accentColor}50`
+            }}
+          />
           
-          {/* Next words */}
-          {nextWords.map((w, i) => (
+          {/* Word positioned so ORP aligns with center line */}
+          <div 
+            className="flex items-baseline"
+            style={{ 
+              fontFamily: fontFamilyCSS,
+              fontSize: `${rsvpFontSize}px`,
+              fontWeight: 500,
+              letterSpacing: '0.01em'
+            }}
+          >
             <span 
-              key={`next-${i}`}
+              className="text-right"
               style={{ 
                 color: textColor,
-                opacity: 0.3 - (i * 0.03)
+                minWidth: '42vw',
+                paddingRight: '3px'
               }}
             >
-              {' '}{w.text}
+              {before}
             </span>
-          ))}
+            <span style={{ color: accentColor, fontWeight: 700 }}>{pivot}</span>
+            <span 
+              className="text-left"
+              style={{ 
+                color: textColor,
+                minWidth: '42vw',
+                paddingLeft: '3px'
+              }}
+            >
+              {after}
+            </span>
+          </div>
         </div>
+
+        {/* Next words - below, flowing left-to-right from focus */}
+        {nextWords.length > 0 && (
+          <div 
+            className="absolute text-left px-6"
+            style={{ 
+              top: `calc(50% + ${verticalGap}px)`,
+              left: '50%',
+              marginLeft: `${rsvpFontSize * 0.15}px`,
+              fontFamily: fontFamilyCSS,
+              fontSize: `${contextFontSize}px`,
+              color: textColor,
+              opacity: 0.25,
+              maxWidth: '45vw',
+              lineHeight: 1.5,
+              textAlign: 'justify'
+            }}
+          >
+            {nextWords.map(w => w.text).join(' ')}
+          </div>
+        )}
       </div>
     );
   }
@@ -385,6 +409,8 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
   // ============================================
   // ENGINE SUBSCRIPTIONS
   // ============================================
+  const saveTimeout = useRef<ReturnType<typeof setTimeout>>();
+  
   useEffect(() => {
     const unsubPos = engine.onPosition((pos) => {
       setPosition(pos);
@@ -394,27 +420,47 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
         scrollToPosition(pos, true);
       }
       
-      // Save progress
+      // Save progress to book object
       book.lastTokenIndex = pos;
       book.bookmarkProgress = engine.progress;
+      
+      // Debounced save to storage
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      saveTimeout.current = setTimeout(() => {
+        TitanStorage.getInstance().saveBook({
+          ...book,
+          lastTokenIndex: pos,
+          bookmarkProgress: engine.progress,
+          lastOpened: new Date()
+        });
+      }, 500);
     });
     
     const unsubPlay = engine.onPlayState((playing) => {
       setIsPlaying(playing);
       
-      // When RSVP stops, center the current word in scroll view
+      // When RSVP stops, center the current word in scroll view and save immediately
       if (!playing) {
         setTimeout(() => {
           scrollToPosition(engine.position, true);
         }, 100);
+        
+        // Immediate save when stopping
+        TitanStorage.getInstance().saveBook({
+          ...book,
+          lastTokenIndex: engine.position,
+          bookmarkProgress: engine.progress,
+          lastOpened: new Date()
+        });
       }
     });
     
     return () => {
       unsubPos();
       unsubPlay();
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
     };
-  }, []);
+  }, [book.id]);
 
   // ============================================
   // SCROLL SYNC
@@ -580,18 +626,25 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
     const dt = Date.now() - touchStartPos.current.time;
     
     // It's a tap if: short duration, small movement
-    const isTap = dt < 300 && dx < 15 && dy < 15;
+    const isTap = dt < 400 && dx < 20 && dy < 20;
     
     if (isTap) {
-      // Check if we're clicking on a word (has data-idx)
-      const target = e.target as HTMLElement;
-      const wordIndex = target.dataset?.idx;
+      // Check if we're clicking on a word (has data-idx) - walk up the DOM tree
+      let target = e.target as HTMLElement | null;
+      let wordIndex: string | undefined;
+      
+      while (target && !wordIndex) {
+        wordIndex = target.dataset?.idx;
+        target = target.parentElement;
+      }
       
       if (wordIndex !== undefined) {
-        // Tapped on a word - start RSVP from here
+        // Tapped on a word - jump to this position and start RSVP
+        e.preventDefault();
+        e.stopPropagation();
         handleWordTap(parseInt(wordIndex));
       } else {
-        // Tapped on empty space or paragraph - toggle chrome
+        // Tapped on empty space - toggle chrome
         onToggleChrome();
       }
     }
