@@ -8,7 +8,6 @@ import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { MiniPlayerPill } from './MiniPlayerPill';
 import { useTitanTheme } from '../services/titanTheme';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { SettingsSheet } from './SettingsSheet';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 
 interface ReaderContainerProps {
@@ -31,8 +30,6 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const [isRSVP, setIsRSVP] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentProgress, setCurrentProgress] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
-  const [closingSettings, setClosingSettings] = useState(false);
 
   const isHandlingPopState = useRef(false);
 
@@ -73,10 +70,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       if (isHandlingPopState.current) return;
       isHandlingPopState.current = true;
       
-      if (showSettings || closingSettings) {
-        handleCloseSettings();
-      } else if (isRSVP) {
-        // Exit RSVP mode on back button - save position first
+      if (isRSVP) {
+        // Exit RSVP mode on back button
         const engine = TitanCore.getInstance();
         const conductor = RSVPConductor.getInstance();
         if (engine.isRSVPMode) {
@@ -94,7 +89,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [showSettings, closingSettings, isRSVP]);
+  }, [isRSVP]);
 
   // Auto-Hide Chrome
   useEffect(() => {
@@ -104,22 +99,6 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     }
     return () => clearTimeout(timeout);
   }, [isChromeVisible, isRSVP]);
-
-  // PAUSE ON SETTINGS OPEN
-  useEffect(() => {
-      if (showSettings && conductor.state === RSVPState.PLAYING) {
-          conductor.pause();
-      }
-  }, [showSettings]);
-
-  // Close Settings with animation
-  const handleCloseSettings = () => {
-      setClosingSettings(true);
-      setTimeout(() => {
-          setShowSettings(false);
-          setClosingSettings(false);
-      }, 400);
-  };
 
   const handleExit = () => {
     let finalIndex = engine.currentBook?.lastTokenIndex ?? (book.lastTokenIndex || 0);
@@ -228,14 +207,6 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     handleModeToggle(false);
   }, []);
 
-  // Handle settings open
-  const handleSettingsClick = useCallback(() => {
-    if (!isHandlingPopState.current) {
-      window.history.pushState({ modal: 'settings' }, '', window.location.href);
-    }
-    setShowSettings(true);
-  }, []);
-
   // Handle toggle chrome visibility
   const handleToggleChrome = useCallback(() => {
     setIsChromeVisible(p => !p);
@@ -311,7 +282,6 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             isRSVPActive={isRSVP}
             onBack={isRSVP ? () => handleModeToggle(false) : handleExit}
             onToggleRSVP={handleMediaToggle}
-            onSettingsClick={handleSettingsClick}
          />
       </div>
 
@@ -322,31 +292,6 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
           onClick={() => setIsChromeVisible(true)}
         />
       )}
-
-      {/* SETTINGS OVERLAY */}
-      {(showSettings || closingSettings) && (
-        <>
-            <div 
-                className="fixed inset-0 z-[100]"
-                style={{ 
-                  backgroundColor: 'rgba(0,0,0,0.5)', 
-                  backdropFilter: 'blur(2px)',
-                  animation: closingSettings ? 'fadeOut 0.4s ease-out' : 'fadeIn 0.6s ease-out'
-                }}
-                onClick={handleCloseSettings}
-            />
-            <div
-                className="fixed bottom-0 left-0 right-0 z-[101] rounded-t-[32px] h-[70vh] shadow-2xl overflow-hidden"
-                style={{ 
-                  backgroundColor: theme.background,
-                  animation: closingSettings ? 'slideDown 0.5s cubic-bezier(0.7, 0, 0.84, 0)' : 'slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
-                }}
-            >
-                <SettingsSheet onClose={handleCloseSettings} />
-            </div>
-        </>
-      )}
-
     </div>
   );
 }

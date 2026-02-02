@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
-import { Type, Zap, Minus, Plus, Sparkles, Volume2 } from 'lucide-react';
-import { RSVPNarrator } from '../services/rsvpNarrator';
+import { Type, Zap, Minus, Plus, Sparkles } from 'lucide-react';
 
 /**
  * TypeLabView (Flow-Reader 2.0: Explicit Control)
@@ -12,11 +11,8 @@ import { RSVPNarrator } from '../services/rsvpNarrator';
 export const TypeLabView: React.FC = () => {
   const { settings, updateSettings } = useTitanSettings();
   const theme = useTitanTheme();
-  const narrator = RSVPNarrator.getInstance();
   
   const [optimisticSpeed, setOptimisticSpeed] = useState(settings.rsvpSpeed);
-  const [narratorEnabled, setNarratorEnabled] = useState(narrator.isEnabled);
-  const [hasNarratorKey, setHasNarratorKey] = useState(narrator.hasApiKey);
   const speedDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -24,15 +20,6 @@ export const TypeLabView: React.FC = () => {
          setOptimisticSpeed(settings.rsvpSpeed);
      }
   }, [settings.rsvpSpeed]);
-
-  // Subscribe to narrator changes
-  useEffect(() => {
-    const unsub = narrator.subscribe(() => {
-      setNarratorEnabled(narrator.isEnabled);
-      setHasNarratorKey(narrator.hasApiKey);
-    });
-    return unsub;
-  }, []);
 
   const handleSpeedChange = (v: number) => {
     const clamped = Math.max(100, Math.min(1000, v));
@@ -130,47 +117,10 @@ export const TypeLabView: React.FC = () => {
             </div>
             <div className="text-left">
               <span className="text-sm font-medium block" style={{ color: theme.primaryText }}>word preview</span>
-              <span className="text-[10px] opacity-50" style={{ color: theme.secondaryText }}>show context while reading</span>
+              <span className="text-[10px] opacity-50" style={{ color: theme.secondaryText }}>show surrounding words while reading</span>
             </div>
           </div>
           <ToggleSwitch enabled={settings.showGhostPreview || false} theme={theme} />
-        </button>
-        
-        <div className="h-px mx-4" style={{ backgroundColor: theme.borderColor }} />
-        
-        {/* AI Narrator Toggle */}
-        <button
-          onClick={() => {
-            if (!hasNarratorKey) {
-              window.open('https://elevenlabs.io/app/settings/api-keys', '_blank');
-            } else {
-              narrator.toggleEnabled();
-            }
-          }}
-          className="w-full flex items-center justify-between p-4 active:bg-black/5 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div 
-              className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ 
-                backgroundColor: narratorEnabled ? `${theme.accent}20` : theme.borderColor,
-                color: narratorEnabled ? theme.accent : theme.secondaryText
-              }}
-            >
-              <Volume2 size={16} />
-            </div>
-            <div className="text-left">
-              <span className="text-sm font-medium block" style={{ color: theme.primaryText }}>ai narrator</span>
-              <span className="text-[10px] opacity-50" style={{ color: theme.secondaryText }}>
-                {hasNarratorKey ? 'elevenlabs tts' : 'tap to set up api key'}
-              </span>
-            </div>
-          </div>
-          {hasNarratorKey ? (
-            <ToggleSwitch enabled={narratorEnabled} theme={theme} />
-          ) : (
-            <span className="text-xs font-medium" style={{ color: theme.accent }}>setup</span>
-          )}
         </button>
       </div>
 
