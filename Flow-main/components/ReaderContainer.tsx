@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Book } from '../types';
-import { TitanReaderView } from './TitanReaderView';
-import { RSVPTeleprompter } from './RSVPTeleprompter';
-import { TitanCore } from '../services/titanCore';
-import { RSVPConductor } from '../services/rsvpConductor';
-import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { ChevronLeft } from 'lucide-react';
-import { MediaCommandCenter } from './MediaCommandCenter';
+import { StreamReader } from './StreamReader';
+import { StreamEngine } from '../services/streamEngine';
+import { ChevronLeft, Play, Pause, Settings, Minus, Plus } from 'lucide-react';
 import { useTitanTheme } from '../services/titanTheme';
 import { SettingsSheet } from './SettingsSheet';
+import { RSVPHapticEngine } from '../services/rsvpHaptics';
+import { useTitanSettings } from '../services/configService';
+import { TitanStorage } from '../services/titanStorage';
 
 interface ReaderContainerProps {
   book: Book;
@@ -16,232 +15,270 @@ interface ReaderContainerProps {
 }
 
 /**
- * ReaderContainer - Original Working Version
- * Uses TitanReaderView for scrolling and RSVPTeleprompter for speed reading.
+ * ReaderContainer - Unified Fast Reader
+ * 
+ * PHILOSOPHY: One position, one engine, one experience.
+ * Scroll and RSVP are the same thing at different speeds.
  */
 export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose }) => {
-  const core = TitanCore.getInstance();
-  const conductor = RSVPConductor.getInstance();
-  const heartbeat = RSVPHeartbeat.getInstance();
+  const engine = StreamEngine.getInstance();
   const theme = useTitanTheme();
+  const { settings, updateSettings } = useTitanSettings();
   
   const [isChromeVisible, setIsChromeVisible] = useState(true);
-  const [isRSVP, setIsRSVP] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [closingSettings, setClosingSettings] = useState(false);
+  const [wpm, setWpm] = useState(settings.rsvpSpeed || 300);
 
-  const isHandlingPopState = useRef(false);
+  const chromeTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const saveTimeout = useRef<ReturnType<typeof setTimeout>>();
 
-  // Sync with conductor/heartbeat
+  // ============================================
+  // ENGINE SYNC
+  // ============================================
   useEffect(() => {
-    const syncState = () => {
-      setIsRSVP(core.isRSVPMode);
-      setIsPlaying(heartbeat.isPlaying);
-    };
-
-    syncState();
-    const unsubCore = core.subscribe(syncState);
-    const unsubHeartbeat = heartbeat.subscribe(syncState);
+    // Set WPM from settings
+    engine.wpm = settings.rsvpSpeed || 300;
+    setWpm(engine.wpm);
+    
+    const unsubPos = engine.onPosition((pos) => {
+      setProgress(engine.progress);
+      
+      // Debounced save
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      saveTimeout.current = setTimeout(() => {
+        const updatedBook = {
+          ...book,
+          lastTokenIndex: pos,
+          bookmarkProgress: engine.progress,
+          lastOpened: new Date()
+        };
+        TitanStorage.getInstance().saveBook(updatedBook);
+      }, 500);
+    });
+    
+    const unsubPlay = engine.onPlayState((playing) => {
+      setIsPlaying(playing);
+      
+      // Auto-hide chrome when playing
+      if (playing) {
+        chromeTimeout.current = setTimeout(() => setIsChromeVisible(false), 2000);
+      }
+    });
     
     return () => {
-      unsubCore();
-      unsubHeartbeat();
+      unsubPos();
+      unsubPlay();
+      if (chromeTimeout.current) clearTimeout(chromeTimeout.current);
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    };
+  }, [book.id]);
+
+  // Stop on unmount
+  useEffect(() => {
+    return () => {
+      engine.stop();
     };
   }, []);
 
-  // Cleanup on unmount
+  // Pause on settings
   useEffect(() => {
-    return () => {
-      heartbeat.stop();
-      if (core.isRSVPMode) {
-        core.saveProgress(conductor.currentTokenIndex);
-      }
-      core.isRSVPMode = false;
-    };
-  }, []);
-
-  // Browser back button
-  useEffect(() => {
-    const handlePopState = () => {
-      if (isHandlingPopState.current) return;
-      isHandlingPopState.current = true;
-      
-      if (showSettings || closingSettings) {
-        handleCloseSettings();
-      } else if (isRSVP) {
-        heartbeat.stop();
-        core.isRSVPMode = false;
-        setIsChromeVisible(true);
-      }
-      
-      isHandlingPopState.current = false;
-    };
-    
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [showSettings, closingSettings, isRSVP]);
-
-  // Auto-hide chrome in RSVP
-  useEffect(() => {
-    let timeout: ReturnType<typeof setTimeout>;
-    if (isChromeVisible && isRSVP && isPlaying) {
-      timeout = setTimeout(() => setIsChromeVisible(false), 2500);
-    }
-    return () => clearTimeout(timeout);
-  }, [isChromeVisible, isRSVP, isPlaying]);
-
-  // Pause on settings open
-  useEffect(() => {
-    if (showSettings && heartbeat.isPlaying) {
-      heartbeat.stop();
+    if (showSettings && engine.isPlaying) {
+      engine.stop();
     }
   }, [showSettings]);
 
-  // Close settings with animation
+  // ============================================
+  // HANDLERS
+  // ============================================
+  const handleExit = useCallback(() => {
+    engine.stop();
+    onClose(book.id, engine.position, engine.progress);
+  }, [book.id, onClose]);
+
+  const handlePlayPause = useCallback(() => {
+    RSVPHapticEngine.impactMedium();
+    engine.toggle();
+  }, []);
+
+  const handleSpeedDown = useCallback(() => {
+    RSVPHapticEngine.impactLight();
+    const newWpm = Math.max(50, wpm - 50);
+    engine.wpm = newWpm;
+    setWpm(newWpm);
+    updateSettings({ rsvpSpeed: newWpm, hasCustomSpeed: true });
+  }, [wpm, updateSettings]);
+
+  const handleSpeedUp = useCallback(() => {
+    RSVPHapticEngine.impactLight();
+    const newWpm = Math.min(1000, wpm + 50);
+    engine.wpm = newWpm;
+    setWpm(newWpm);
+    updateSettings({ rsvpSpeed: newWpm, hasCustomSpeed: true });
+  }, [wpm, updateSettings]);
+
+  const handleToggleChrome = useCallback(() => {
+    if (chromeTimeout.current) clearTimeout(chromeTimeout.current);
+    setIsChromeVisible(v => !v);
+  }, []);
+
+  const handleScrub = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    engine.progress = val;
+  }, []);
+
+  const handleSettingsClick = useCallback(() => {
+    window.history.pushState({ modal: 'settings' }, '', window.location.href);
+    setShowSettings(true);
+  }, []);
+
   const handleCloseSettings = useCallback(() => {
     setClosingSettings(true);
     setTimeout(() => {
       setShowSettings(false);
       setClosingSettings(false);
-    }, 400);
+    }, 350);
   }, []);
 
-  // Exit reader
-  const handleExit = useCallback(() => {
-    const finalIndex = conductor.currentTokenIndex;
-    const finalProgress = core.currentProgress;
-    
-    heartbeat.stop();
-    core.saveProgress(finalIndex);
-    core.isRSVPMode = false;
-    
-    onClose(book.id, finalIndex, finalProgress);
-  }, [book.id, onClose]);
-
-  // Toggle RSVP mode
-  const handleToggleRSVP = useCallback(() => {
-    if (isRSVP) {
-      // Toggle play/pause
-      if (heartbeat.isPlaying) {
-        heartbeat.stop();
-      } else {
-        heartbeat.start();
+  // Back button
+  useEffect(() => {
+    const handlePopState = () => {
+      if (showSettings || closingSettings) {
+        handleCloseSettings();
+      } else if (isPlaying) {
+        engine.stop();
       }
-    } else {
-      // Enter RSVP and play
-      core.isRSVPMode = true;
-      if (!isHandlingPopState.current) {
-        window.history.pushState({ rsvpMode: true }, '', window.location.href);
-      }
-      heartbeat.start();
-      setIsChromeVisible(false);
-    }
-  }, [isRSVP]);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showSettings, closingSettings, isPlaying, handleCloseSettings]);
 
-  // Request RSVP from word click in reader
-  const handleRequestRSVP = useCallback((startOffset: number, tokenIndex: number) => {
-    conductor.seekToToken(tokenIndex);
-    core.isRSVPMode = true;
-    if (!isHandlingPopState.current) {
-      window.history.pushState({ rsvpMode: true }, '', window.location.href);
-    }
-    heartbeat.start();
-    setIsChromeVisible(false);
-  }, []);
-
-  // Settings
-  const handleSettingsClick = useCallback(() => {
-    if (!isHandlingPopState.current) {
-      window.history.pushState({ modal: 'settings' }, '', window.location.href);
-    }
-    setShowSettings(true);
-  }, []);
-
-  // Toggle chrome visibility
-  const handleToggleChrome = useCallback(() => {
-    setIsChromeVisible(p => !p);
-  }, []);
-
-  // Exit RSVP mode
-  const handleExitRSVP = useCallback(() => {
-    heartbeat.stop();
-    core.isRSVPMode = false;
-    setIsChromeVisible(true);
-  }, []);
-
+  // ============================================
+  // RENDER
+  // ============================================
   return (
     <div 
-      className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden m-0 p-0 animate-fadeIn"
+      className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden animate-fadeIn"
       style={{ backgroundColor: theme.background }}
     >
-      {/* SCROLL READER */}
+      {/* READER */}
+      <StreamReader 
+        book={book}
+        onToggleChrome={handleToggleChrome}
+        isActive={true}
+      />
+
+      {/* CONTROL BAR - Always visible at bottom */}
       <div 
-        className="absolute inset-0 z-10 transition-opacity duration-300"
+        className={`fixed left-0 right-0 z-[60] transition-all duration-300 ${
+          isChromeVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8 pointer-events-none'
+        }`}
         style={{ 
-          opacity: isRSVP ? (isPlaying ? 0 : 0.4) : 1,
-          pointerEvents: isRSVP ? 'none' : 'auto'
+          bottom: 'env(safe-area-inset-bottom, 0px)',
+          padding: '0 16px 16px 16px'
         }}
       >
-        <TitanReaderView 
-          book={book}
-          onToggleChrome={handleToggleChrome}
-          onRequestRSVP={handleRequestRSVP}
-          isActive={!isRSVP}
-        />
-      </div>
-
-      {/* RSVP OVERLAY */}
-      {isRSVP && (
         <div 
-          className="absolute inset-0 z-20"
-          onClick={handleToggleChrome}
+          className="rounded-2xl backdrop-blur-xl border shadow-2xl overflow-hidden"
+          style={{ 
+            backgroundColor: `${theme.dimmer}f0`,
+            borderColor: theme.borderColor
+          }}
         >
-          <RSVPTeleprompter onTap={() => {
-            if (heartbeat.isPlaying) {
-              heartbeat.stop();
-            } else {
-              heartbeat.start();
-            }
-          }} />
-        </div>
-      )}
+          {/* Progress bar */}
+          <div className="px-4 pt-3">
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.001"
+              value={progress}
+              onChange={handleScrub}
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+              style={{ 
+                background: `linear-gradient(to right, ${theme.accent} ${progress * 100}%, ${theme.borderColor} ${progress * 100}%)`
+              }}
+            />
+          </div>
 
-      {/* CONTROL DOCK */}
-      <div 
-        className="absolute left-1/2 -translate-x-1/2 w-[90%] max-w-[450px] z-50 pointer-events-auto"
-        style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
-      >
-        <MediaCommandCenter 
-          book={book}
-          onToggleRSVP={handleToggleRSVP}
-          isRSVPActive={isRSVP}
-          onSettingsClick={handleSettingsClick}
-        />
+          {/* Controls */}
+          <div className="flex items-center justify-between px-3 py-3">
+            {/* Speed down */}
+            <button
+              onClick={handleSpeedDown}
+              className="w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90"
+              style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
+            >
+              <Minus size={18} />
+            </button>
+
+            {/* WPM display */}
+            <span 
+              className="text-xs font-mono opacity-50 w-16 text-center"
+              style={{ color: theme.secondaryText }}
+            >
+              {wpm} wpm
+            </span>
+
+            {/* Play/Pause */}
+            <button
+              onClick={handlePlayPause}
+              className="w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-lg"
+              style={{ backgroundColor: theme.accent, color: '#FFFFFF' }}
+            >
+              {isPlaying ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
+            </button>
+
+            {/* Speed up */}
+            <button
+              onClick={handleSpeedUp}
+              className="w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90"
+              style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
+            >
+              <Plus size={18} />
+            </button>
+
+            {/* Settings */}
+            <button
+              onClick={handleSettingsClick}
+              className="w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90"
+              style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
+            >
+              <Settings size={18} />
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* TOP CHROME */}
+      {/* TOP BAR */}
       <div 
-        className={`absolute top-0 left-0 right-0 z-[60] transition-transform duration-400 pointer-events-none ${
-          (isChromeVisible || (isRSVP && !isPlaying)) ? 'translate-y-0' : '-translate-y-full'
+        className={`fixed top-0 left-0 right-0 z-[60] transition-all duration-300 ${
+          isChromeVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'
         }`}
-        style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
       >
         <div 
-          className="backdrop-blur-2xl border-b pt-safe-top py-4 px-5 flex items-center justify-between pointer-events-auto"
-          style={{ backgroundColor: theme.dimmer, borderColor: theme.borderColor }}
+          className="backdrop-blur-xl border-b pt-safe-top py-3 px-4 flex items-center justify-between"
+          style={{ backgroundColor: `${theme.dimmer}f0`, borderColor: theme.borderColor }}
         >
           <button 
-            onClick={isRSVP ? handleExitRSVP : handleExit}
-            className="w-11 h-11 -ml-1 rounded-full flex items-center justify-center transition-all active:scale-95"
+            onClick={handleExit}
+            className="w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90"
             style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
           >
             <ChevronLeft size={20} />
           </button>
+
+          <div className="flex-1 mx-4 truncate text-center">
+            <span className="text-sm font-medium" style={{ color: theme.primaryText }}>{book.title}</span>
+          </div>
+
+          <div className="w-10" /> {/* Spacer for centering */}
         </div>
       </div>
 
-      {/* SETTINGS OVERLAY */}
+      {/* SETTINGS SHEET */}
       {(showSettings || closingSettings) && (
         <>
           <div 
@@ -249,15 +286,15 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             style={{ 
               backgroundColor: 'rgba(0,0,0,0.5)', 
               backdropFilter: 'blur(2px)',
-              animation: closingSettings ? 'fadeOut 0.4s ease-out' : 'fadeIn 0.6s ease-out'
+              animation: closingSettings ? 'fadeOut 0.35s ease-out' : 'fadeIn 0.4s ease-out'
             }}
             onClick={handleCloseSettings}
           />
           <div
-            className="fixed bottom-0 left-0 right-0 z-[101] rounded-t-[32px] h-[70vh] shadow-2xl overflow-hidden"
+            className="fixed bottom-0 left-0 right-0 z-[101] rounded-t-[28px] h-[70vh] shadow-2xl overflow-hidden"
             style={{ 
               backgroundColor: theme.background,
-              animation: closingSettings ? 'slideDown 0.5s cubic-bezier(0.7, 0, 0.84, 0)' : 'slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
+              animation: closingSettings ? 'slideDown 0.35s ease-in' : 'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
             }}
           >
             <SettingsSheet onClose={handleCloseSettings} />
@@ -270,7 +307,16 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
         @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @keyframes slideDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
-        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+        .animate-fadeIn { animation: fadeIn 0.2s ease-out forwards; }
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: ${theme.accent};
+          cursor: pointer;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
       `}</style>
     </div>
   );
