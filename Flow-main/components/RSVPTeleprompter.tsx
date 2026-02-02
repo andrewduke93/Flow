@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useLayoutEffect, useCallback, memo } from 'react';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { useTitanTheme } from '../services/titanTheme';
@@ -21,7 +21,7 @@ interface RSVPTeleprompterProps {
  * - Clean, focused reading experience
  * - Tap anywhere to pause/play
  */
-export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
+export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
   onTap,
   onLongPressExit,
   onRewindStateChange
@@ -52,7 +52,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
   const baseFontSize = settings.fontSize || 18;
   const FONT_SIZE = `clamp(${baseFontSize * 1.8}px, 8vw, ${baseFontSize * 3}px)`;
 
-  // Sync with heartbeat - simplified
+  // Sync with heartbeat - optimized with RAF batching
   useEffect(() => {
     setTokens(heartbeat.tokens);
     tokensRef.current = heartbeat.tokens;
@@ -60,29 +60,43 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     setCurrentIndex(heartbeat.currentIndex);
     setIsPlaying(conductor.state === RSVPState.PLAYING);
 
+    let rafId: number | null = null;
+    let pendingUpdate = false;
+    
     const sync = () => {
-      const idx = heartbeat.currentIndex;
-      const playing = conductor.state === RSVPState.PLAYING;
-      const hbTokens = heartbeat.tokens;
+      if (pendingUpdate) return;
+      pendingUpdate = true;
       
-      setIsPlaying(playing);
-      
-      if (hbTokens !== tokensRef.current) {
-        setTokens(hbTokens);
-        tokensRef.current = hbTokens;
-      }
-      
-      if (idx !== lastIndexRef.current) {
-        lastIndexRef.current = idx;
-        setCurrentIndex(idx);
-      }
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        pendingUpdate = false;
+        const idx = heartbeat.currentIndex;
+        const playing = conductor.state === RSVPState.PLAYING;
+        const hbTokens = heartbeat.tokens;
+        
+        setIsPlaying(playing);
+        
+        if (hbTokens !== tokensRef.current) {
+          setTokens(hbTokens);
+          tokensRef.current = hbTokens;
+        }
+        
+        if (idx !== lastIndexRef.current) {
+          lastIndexRef.current = idx;
+          setCurrentIndex(idx);
+        }
+      });
     };
 
     const unsubC = conductor.subscribe(sync);
     const unsubH = heartbeat.subscribe(sync);
     sync();
     
-    return () => { unsubC(); unsubH(); };
+    return () => { 
+      unsubC(); 
+      unsubH();
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, []);
 
   // Focus token
@@ -162,11 +176,11 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
     }
   }, [streamTokens, currentIndex, focusToken]);
 
-  // Simple tap handler - toggle play/pause
-  const handleTap = () => {
+  // Simple tap handler - toggle play/pause (memoized)
+  const handleTap = useCallback(() => {
     RSVPHapticEngine.impactLight();
     onTap?.();
-  };
+  }, [onTap]);
 
   if (!focusToken) return null;
 
@@ -290,4 +304,4 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = ({
       </div>
     </div>
   );
-};
+});

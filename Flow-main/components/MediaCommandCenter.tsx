@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
@@ -136,9 +137,10 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
 
   const lastRenderedPct = useRef(0);
 
-  // Visual sync
+  // Visual sync - DOM manipulation without React state for performance
   const updateVisuals = useCallback((pct: number) => {
     const safePct = Math.max(0, Math.min(1, pct));
+    // Direct DOM updates - bypasses React render cycle
     if (progressBarRef.current) {
       progressBarRef.current.style.width = `${safePct * 100}%`;
     }
@@ -146,9 +148,11 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
       knobRef.current.style.left = `${safePct * 100}%`;
       knobRef.current.style.transform = `translateX(-50%)`;
     }
+    // Only trigger React re-render when chapter selector is hidden and progress changed significantly
     if (showChapterSelectorRef.current) return;
     const diff = Math.abs(safePct - lastRenderedPct.current);
-    if (diff > 0.005 || safePct === 0 || safePct === 1) {
+    // Increased threshold to reduce re-renders (0.5% -> 1%)
+    if (diff > 0.01 || safePct === 0 || safePct >= 0.99) {
       lastRenderedPct.current = safePct;
       setCurrentProgress(safePct);
     }
@@ -680,74 +684,139 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
         </div>
       </div>
       
-      {/* ElevenLabs API Key Modal */}
-      {showApiKeyPrompt && (
-        <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowApiKeyPrompt(false)}
-        >
-          <div 
-            className="w-full max-w-md mx-4 rounded-2xl p-6 shadow-2xl"
-            style={{ backgroundColor: theme.cardBackground, borderColor: theme.borderColor, border: '1px solid' }}
-            onClick={(e) => e.stopPropagation()}
+      {/* ElevenLabs API Key Modal - Native-styled bottom sheet */}
+      <AnimatePresence>
+        {showApiKeyPrompt && (
+          <motion.div 
+            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setShowApiKeyPrompt(false)}
           >
-            <h2 className="text-lg font-semibold mb-2" style={{ color: theme.primaryText }}>
-              ElevenLabs API Key
-            </h2>
-            <p className="text-sm mb-4" style={{ color: theme.secondaryText }}>
-              Get your free API key from ElevenLabs (10,000 chars/month free).
-              The key is stored locally in your browser.
-            </p>
-            <a 
-              href="https://elevenlabs.io/app/settings/api-keys" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-sm underline mb-4 block"
-              style={{ color: theme.accent }}
-            >
-              Get your free API key at elevenlabs.io →
-            </a>
-            <input
-              type="password"
-              placeholder="Paste your API key here"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl mb-4 outline-none border"
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            
+            {/* Sheet */}
+            <motion.div 
+              className="relative w-full sm:w-[380px] sm:mx-4 rounded-t-3xl sm:rounded-2xl overflow-hidden"
               style={{ 
-                backgroundColor: `${theme.primaryText}05`, 
-                borderColor: theme.borderColor,
-                color: theme.primaryText
+                backgroundColor: theme.surface,
+                maxHeight: '90vh'
               }}
-            />
-            <div className="flex gap-3">
-              <button
-                className="flex-1 py-3 rounded-xl border transition-all active:scale-95"
-                style={{ borderColor: theme.borderColor, color: theme.secondaryText }}
-                onClick={() => {
-                  setShowApiKeyPrompt(false);
-                  setApiKeyInput('');
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                className="flex-1 py-3 rounded-xl transition-all active:scale-95"
-                style={{ backgroundColor: theme.accent, color: '#fff' }}
-                onClick={() => {
-                  if (apiKeyInput.trim()) {
-                    narrator.setApiKey(apiKeyInput.trim());
-                    narrator.setEnabled(true);
-                    setShowApiKeyPrompt(false);
-                    setApiKeyInput('');
-                  }
-                }}
-              >
-                Save & Enable
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              initial={{ y: '100%', opacity: 0.8 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Drag handle */}
+              <div className="flex justify-center pt-3 pb-1 sm:hidden">
+                <div className="w-10 h-1 rounded-full" style={{ backgroundColor: theme.borderColor }} />
+              </div>
+              
+              {/* Content */}
+              <div className="px-6 pb-8 pt-4">
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div 
+                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: `${theme.accent}20` }}
+                  >
+                    <Volume2 size={20} style={{ color: theme.accent }} />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold" style={{ color: theme.primaryText }}>
+                      AI Narrator
+                    </h2>
+                    <p className="text-xs" style={{ color: theme.secondaryText }}>
+                      Powered by ElevenLabs
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Info */}
+                <p className="text-sm mb-4 leading-relaxed" style={{ color: theme.secondaryText }}>
+                  Enter your ElevenLabs API key to enable high-quality AI narration. 
+                  Free tier includes 10,000 characters/month.
+                </p>
+                
+                {/* Link */}
+                <a 
+                  href="https://elevenlabs.io/app/settings/api-keys" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm font-medium mb-5 active:opacity-70 transition-opacity"
+                  style={{ color: theme.accent }}
+                >
+                  <span>Get free API key</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                    <polyline points="15 3 21 3 21 9"/>
+                    <line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                </a>
+                
+                {/* Input */}
+                <input
+                  type="text"
+                  placeholder="Paste API key here"
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className="w-full px-4 py-3.5 rounded-xl mb-5 outline-none border text-sm font-mono"
+                  style={{ 
+                    backgroundColor: theme.background,
+                    borderColor: theme.borderColor,
+                    color: theme.primaryText
+                  }}
+                />
+                
+                {/* Buttons */}
+                <div className="flex gap-3">
+                  <button
+                    className="flex-1 py-3.5 rounded-xl font-medium text-sm transition-all active:scale-[0.98]"
+                    style={{ 
+                      backgroundColor: theme.background,
+                      color: theme.secondaryText
+                    }}
+                    onClick={() => {
+                      setShowApiKeyPrompt(false);
+                      setApiKeyInput('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="flex-1 py-3.5 rounded-xl font-medium text-sm transition-all active:scale-[0.98] disabled:opacity-40"
+                    style={{ backgroundColor: theme.accent, color: '#fff' }}
+                    disabled={!apiKeyInput.trim()}
+                    onClick={() => {
+                      if (apiKeyInput.trim()) {
+                        narrator.setApiKey(apiKeyInput.trim());
+                        narrator.setEnabled(true);
+                        setShowApiKeyPrompt(false);
+                        setApiKeyInput('');
+                      }
+                    }}
+                  >
+                    Enable Narrator
+                  </button>
+                </div>
+                
+                {/* Footer note */}
+                <p className="text-[11px] text-center mt-4" style={{ color: theme.secondaryText, opacity: 0.6 }}>
+                  Your key is stored locally and never shared.
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 });

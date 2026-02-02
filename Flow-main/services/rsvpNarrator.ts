@@ -179,12 +179,10 @@ export class RSVPNarrator {
     
     this.currentSentenceIndex = 0;
     this.baseWordIndex = startWordIndex;
-    console.log(`[Narrator] Loaded ${this.sentences.length} chunks`);
   }
 
   public async startReading() {
     if (!this._isEnabled || !this._apiKey || this.sentences.length === 0) {
-      console.warn('[Narrator] Cannot start:', { enabled: this._isEnabled, hasKey: !!this._apiKey, sentences: this.sentences.length });
       return;
     }
     
@@ -207,8 +205,6 @@ export class RSVPNarrator {
     this.notify();
 
     try {
-      console.log(`[Narrator] Generating: "${sentence.substring(0, 50)}..."`);
-      
       // Call ElevenLabs API
       const response = await fetch(
         `https://api.elevenlabs.io/v1/text-to-speech/${this._selectedVoice}`,
