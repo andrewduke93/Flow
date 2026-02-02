@@ -146,14 +146,20 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                     )}
                  </div>
 
-                 {/* Open Button */}
+                 {/* Open Button with soulful text */}
                  <button 
                     onClick={() => safeAction(() => onOpen(book))}
                     className="h-12 w-full rounded-xl flex items-center justify-center gap-2 font-semibold text-white shadow-lg active:scale-[0.98] transition-transform"
                     style={{ backgroundColor: theme.accent }}
                  >
                      <Play size={16} fill="currentColor" />
-                     <span className="lowercase text-base">start reading</span>
+                     <span className="lowercase text-base">
+                       {book.bookmarkProgress && book.bookmarkProgress > 0.01 
+                         ? book.bookmarkProgress > 0.9 
+                           ? 'finish it ✨'
+                           : 'continue reading'
+                         : 'start this journey'}
+                     </span>
                  </button>
             </div>
 

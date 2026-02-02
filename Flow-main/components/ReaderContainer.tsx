@@ -186,7 +186,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             width: 'calc(100% - 24px)'
           }}
         >
-          {/* Progress bar */}
+          {/* Progress bar with soulful milestone messages */}
           <div className="px-4 pt-3 pb-1">
             <input
               type="range"
@@ -202,7 +202,12 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             />
             <div className="flex justify-between mt-1.5 px-0.5">
               <span className="text-[10px] tabular-nums" style={{ color: theme.secondaryText, opacity: 0.6 }}>
-                {Math.round(progress * 100)}% 🌱
+                {progress < 0.1 ? '🌱 just starting' :
+                 progress < 0.25 ? `${Math.round(progress * 100)}% 🌿` :
+                 progress < 0.5 ? `${Math.round(progress * 100)}% 📖 nice pace` :
+                 progress < 0.75 ? `${Math.round(progress * 100)}% ✨ halfway!` :
+                 progress < 0.9 ? `${Math.round(progress * 100)}% 🔥 almost there` :
+                 `${Math.round(progress * 100)}% 🎯 so close!`}
               </span>
               <span className="text-[10px] tabular-nums" style={{ color: theme.secondaryText, opacity: 0.6 }}>
                 ~{Math.round((1 - progress) * engine.total / Math.max(1, wpm))}m left

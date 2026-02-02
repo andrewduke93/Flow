@@ -11,6 +11,15 @@ interface BookFinishedModalProps {
   onShare?: () => void;
 }
 
+// Soulful celebration messages
+const celebrations = [
+  { emoji: '✨', title: 'you did it!', sub: 'another story lives in you now' },
+  { emoji: '🌟', title: 'beautiful', sub: 'that\\'s a whole world you just explored' },
+  { emoji: '📖', title: 'the end~', sub: 'but really, it\\'s just the beginning' },
+  { emoji: '🎊', title: 'wow', sub: 'look at you, finishing books like that' },
+  { emoji: '🌙', title: 'complete', sub: 'this one\\'s part of your story now' },
+];
+
 export function BookFinishedModal({
   visible,
   bookTitle,
@@ -22,6 +31,7 @@ export function BookFinishedModal({
   const { theme } = useTitanTheme();
   const [isExiting, setIsExiting] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [celebration] = useState(() => celebrations[Math.floor(Math.random() * celebrations.length)]);
 
   useEffect(() => {
     if (visible) {
@@ -78,16 +88,16 @@ export function BookFinishedModal({
       {/* Confetti particles */}
       {showConfetti && (
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {[...Array(20)].map((_, i) => (
+          {[...Array(24)].map((_, i) => (
             <div
               key={i}
-              className="absolute w-3 h-3 rounded-sm animate-confetti"
+              className="absolute w-2.5 h-2.5 rounded-full animate-confetti"
               style={{
-                left: `${10 + Math.random() * 80}%`,
+                left: `${5 + Math.random() * 90}%`,
                 top: '-20px',
-                backgroundColor: ['#FF6B6B', '#4ECDC4', '#FFE66D', '#E25822', '#9B59B6'][i % 5],
-                animationDelay: `${i * 0.1}s`,
-                animationDuration: `${2 + Math.random()}s`,
+                backgroundColor: ['#FF6B6B', '#4ECDC4', '#FFE66D', '#E25822', '#9B59B6', '#F39C12'][i % 6],
+                animationDelay: `${i * 0.08}s`,
+                animationDuration: `${2.5 + Math.random() * 1.5}s`,
               }}
             />
           ))}
@@ -98,29 +108,30 @@ export function BookFinishedModal({
         className="w-full max-w-sm rounded-3xl p-8 text-center relative overflow-hidden"
         style={{ backgroundColor: theme.surface }}
       >
-        {/* Celebration icon */}
-        <div
-          className="w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center"
-          style={{ backgroundColor: `${theme.accent}20` }}
-        >
-          <PartyPopper size={48} style={{ color: theme.accent }} />
+        {/* Celebration emoji */}
+        <div className="text-6xl mb-4 animate-bounce">
+          {celebration.emoji}
         </div>
 
         {/* Title */}
         <h2
           id="book-finished-title"
-          className="text-2xl font-bold mb-2"
+          className="text-3xl font-black lowercase mb-1"
           style={{ color: theme.primaryText }}
         >
-          Congratulations! 🎉
+          {celebration.title}
         </h2>
+        
+        <p className="text-sm lowercase opacity-60 mb-4" style={{ color: theme.secondaryText }}>
+          {celebration.sub}
+        </p>
 
         {/* Book title */}
         <p
-          className="text-base mb-6 line-clamp-2"
+          className="text-base mb-6 line-clamp-2 lowercase"
           style={{ color: theme.secondaryText }}
         >
-          You finished <strong style={{ color: theme.primaryText }}>{bookTitle}</strong>
+          you finished <strong style={{ color: theme.primaryText }}>{bookTitle}</strong>
         </p>
 
         {/* Stats */}
@@ -135,7 +146,7 @@ export function BookFinishedModal({
                   <BookOpen size={16} />
                   <span className="text-lg font-semibold">{formatWords(totalWords)}</span>
                 </div>
-                <span className="text-xs" style={{ color: theme.secondaryText }}>words read</span>
+                <span className="text-xs lowercase" style={{ color: theme.secondaryText }}>words read</span>
               </div>
             )}
             {readingTimeMinutes && (

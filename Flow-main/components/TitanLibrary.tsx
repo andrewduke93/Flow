@@ -24,6 +24,36 @@ interface TitanLibraryProps {
   onToggleFavorite: (bookId: string, isFavorite: boolean) => void;
 }
 
+// Soulful greetings based on time of day
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  const greetings = {
+    earlyMorning: ['quiet morning', 'early bird hours', 'dawn reading'],
+    morning: ['good morning', 'morning pages', 'fresh start'],
+    afternoon: ['good afternoon', 'afternoon escape', 'midday break'],
+    evening: ['good evening', 'evening wind-down', 'twilight reading'],
+    night: ['late night', 'night owl hours', 'midnight pages']
+  };
+  
+  let pool;
+  if (hour >= 5 && hour < 7) pool = greetings.earlyMorning;
+  else if (hour >= 7 && hour < 12) pool = greetings.morning;
+  else if (hour >= 12 && hour < 17) pool = greetings.afternoon;
+  else if (hour >= 17 && hour < 21) pool = greetings.evening;
+  else pool = greetings.night;
+  
+  return pool[Math.floor(Math.random() * pool.length)];
+};
+
+// Encouraging subtitles based on reading progress
+const getSubtitle = (activeCount: number, finishedCount: number) => {
+  if (activeCount === 0 && finishedCount === 0) return 'your story starts here';
+  if (activeCount === 0 && finishedCount > 0) return `${finishedCount} ${finishedCount === 1 ? 'book' : 'books'} finished ✨`;
+  if (finishedCount >= 5) return `${activeCount} in progress · bibliophile status 📚`;
+  if (finishedCount >= 1) return `${activeCount} in progress · ${finishedCount} complete`;
+  return `${activeCount} ${activeCount === 1 ? 'story' : 'stories'} waiting`;
+};
+
 /**
  * TitanLibrary
  * Unified Dashboard.
@@ -355,7 +385,7 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
         ref={containerRef}
         className="h-full w-full overflow-y-auto custom-scrollbar pt-24 pb-48 px-6 md:px-12"
       >
-         {/* COMPACT HEADER */}
+         {/* SOULFUL HEADER */}
          <div 
             ref={headerRef}
             className="mb-8 origin-left will-change-transform flex items-end justify-between" 
@@ -365,11 +395,14 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
             }}
          >
              <div>
+                <p className="text-xs font-medium lowercase tracking-wide mb-1 opacity-40" style={{ color: theme.secondaryText }}>
+                    {getGreeting()} ~
+                </p>
                 <h1 className="text-4xl md:text-5xl font-serif font-black tracking-tight lowercase leading-none" style={{ color: theme.primaryText }}>
                     bookshelf
                 </h1>
                 <p className="text-sm font-sans font-medium mt-2 lowercase opacity-50" style={{ color: theme.secondaryText }}>
-                    {activeBooks.length} {activeBooks.length === 1 ? 'book' : 'books'} in progress
+                    {getSubtitle(activeBooks.length, finishedBooks.length)}
                 </p>
              </div>
 

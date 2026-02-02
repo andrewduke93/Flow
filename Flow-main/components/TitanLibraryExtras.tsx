@@ -51,8 +51,28 @@ interface EmptyLibraryStateProps {
   hasDeleted?: boolean;
 }
 
+// Soulful empty state messages
+const emptyMessages = [
+  { title: 'blank page energy', sub: 'every great library starts somewhere. this is your somewhere.' },
+  { title: 'room for stories', sub: 'the best bookshelves start empty. what will you fill it with?' },
+  { title: 'ready when you are', sub: 'no rush. your next favorite book is waiting to be found.' },
+  { title: 'quiet anticipation', sub: 'an empty shelf is just a story that hasn\'t started yet.' }
+];
+
+const deletedMessages = [
+  { title: 'fresh start', sub: 'sometimes we need to clear the shelf to see what matters.' },
+  { title: 'poof. gone.', sub: 'all cleared out. plenty of room for new magic.' },
+  { title: 'clean sweep', sub: 'out with the old, in with the... whatever speaks to you next.' }
+];
+
 export const EmptyLibraryState: React.FC<EmptyLibraryStateProps> = ({ onImport, hasDeleted }) => {
   const theme = useTitanTheme();
+  
+  // Pick a random message (stable per render)
+  const [message] = React.useState(() => {
+    const pool = hasDeleted ? deletedMessages : emptyMessages;
+    return pool[Math.floor(Math.random() * pool.length)];
+  });
 
   return (
     <div 
@@ -64,7 +84,7 @@ export const EmptyLibraryState: React.FC<EmptyLibraryStateProps> = ({ onImport, 
       }}
     >
       <div 
-        className="w-20 h-20 rounded-full flex items-center justify-center mb-8 shadow-2xl group-hover:shadow-ember/20 transition-all duration-500"
+        className="w-20 h-20 rounded-full flex items-center justify-center mb-8 shadow-2xl transition-all duration-500"
         style={{ 
             backgroundColor: theme.accent,
             color: '#FFFFFF'
@@ -73,25 +93,20 @@ export const EmptyLibraryState: React.FC<EmptyLibraryStateProps> = ({ onImport, 
         {hasDeleted ? (
             <Sparkles size={28} strokeWidth={2} className="animate-pulse" />
         ) : (
-            <FilePlus size={28} strokeWidth={2} />
+            <span className="text-3xl">📖</span>
         )}
       </div>
 
-      <h2 className="text-3xl font-black mb-2 text-center lowercase tracking-tighter leading-none" style={{ color: theme.primaryText }}>
-        {hasDeleted ? "poof. gone." : "clean slate."}
+      <h2 className="text-2xl font-black mb-2 text-center lowercase tracking-tight leading-tight" style={{ color: theme.primaryText }}>
+        {message.title}
       </h2>
       
-      <p className="text-[10px] uppercase font-black tracking-[0.2em] text-center mt-3 opacity-30 max-w-[180px]" style={{ color: theme.secondaryText }}>
-        {hasDeleted 
-            ? "all cleared out. plenty of room for new magic." 
-            : "nothing here yet. tap here to find a story."
-        }
+      <p className="text-xs text-center mt-2 opacity-40 max-w-[220px] lowercase leading-relaxed" style={{ color: theme.secondaryText }}>
+        {message.sub}
       </p>
 
-      <div className="mt-8 flex items-center gap-2 opacity-20">
-          <div className="w-1.5 h-1.5 rounded-full bg-current" style={{ backgroundColor: theme.primaryText }} />
-          <div className="w-10 h-[1px] bg-current" style={{ backgroundColor: theme.primaryText }} />
-          <div className="w-1.5 h-1.5 rounded-full bg-current" style={{ backgroundColor: theme.primaryText }} />
+      <div className="mt-8 px-5 py-2.5 rounded-full text-xs font-semibold lowercase tracking-wide opacity-60 hover:opacity-100 transition-opacity" style={{ backgroundColor: `${theme.accent}15`, color: theme.accent }}>
+        find a book →
       </div>
     </div>
   );

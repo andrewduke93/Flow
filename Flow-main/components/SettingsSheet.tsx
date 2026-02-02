@@ -48,6 +48,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = memo(({ onClose }) =>
       >
           <div>
             <h2 className="text-xl font-bold lowercase tracking-tight" style={{ color: theme.primaryText }}>settings</h2>
+            <p className="text-[10px] lowercase opacity-40 mt-0.5" style={{ color: theme.secondaryText }}>make it yours ~</p>
           </div>
           <button 
              onClick={onClose}
