@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Book } from '../types';
-import { FlowReader } from './FlowReader';
+import { TitanReaderView } from './TitanReaderView';
+import { RSVPTeleprompter } from './RSVPTeleprompter';
 import { TitanCore } from '../services/titanCore';
-import { TitanReadStream } from '../services/titanReadStream';
+import { RSVPConductor } from '../services/rsvpConductor';
+import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { ChevronLeft } from 'lucide-react';
 import { MediaCommandCenter } from './MediaCommandCenter';
 import { useTitanTheme } from '../services/titanTheme';
@@ -14,15 +16,13 @@ interface ReaderContainerProps {
 }
 
 /**
- * ReaderContainer - Unified Reading Orchestrator
- * 
- * The secret: There's only ONE reader (FlowReader).
- * Scroll and RSVP are the same thing, just different presentations.
- * TitanReadStream manages the unified position.
+ * ReaderContainer - Original Working Version
+ * Uses TitanReaderView for scrolling and RSVPTeleprompter for speed reading.
  */
 export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose }) => {
   const core = TitanCore.getInstance();
-  const stream = TitanReadStream.getInstance();
+  const conductor = RSVPConductor.getInstance();
+  const heartbeat = RSVPHeartbeat.getInstance();
   const theme = useTitanTheme();
   
   const [isChromeVisible, setIsChromeVisible] = useState(true);
@@ -33,41 +33,31 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
   const isHandlingPopState = useRef(false);
 
-  // Sync with stream
+  // Sync with conductor/heartbeat
   useEffect(() => {
-    const sync = () => {
-      const rsvpActive = stream.mode === 'rsvp';
-      const playing = stream.isPlaying;
-      
-      setIsRSVP(rsvpActive);
-      setIsPlaying(playing);
-      
-      // Sync core state for backward compatibility
-      core.isRSVPMode = rsvpActive;
+    const syncState = () => {
+      setIsRSVP(core.isRSVPMode);
+      setIsPlaying(heartbeat.isPlaying);
     };
 
-    sync();
-    const unsub = stream.subscribe(sync);
-    return () => unsub();
-  }, []);
-
-  // Save progress on stream position change
-  useEffect(() => {
-    const unsub = stream.onPositionChange((pos) => {
-      core.saveProgress(pos.tokenIndex);
-    });
-    return () => unsub();
+    syncState();
+    const unsubCore = core.subscribe(syncState);
+    const unsubHeartbeat = heartbeat.subscribe(syncState);
+    
+    return () => {
+      unsubCore();
+      unsubHeartbeat();
+    };
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stream.pause();
-      if (stream.mode === 'rsvp') {
-        core.saveProgress(stream.currentIndex);
+      heartbeat.stop();
+      if (core.isRSVPMode) {
+        core.saveProgress(conductor.currentTokenIndex);
       }
-      stream.setMode('scroll');
-      stream.clear();
+      core.isRSVPMode = false;
     };
   }, []);
 
@@ -80,8 +70,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       if (showSettings || closingSettings) {
         handleCloseSettings();
       } else if (isRSVP) {
-        stream.pause();
-        stream.setMode('scroll');
+        heartbeat.stop();
+        core.isRSVPMode = false;
         setIsChromeVisible(true);
       }
       
@@ -103,8 +93,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
   // Pause on settings open
   useEffect(() => {
-    if (showSettings && stream.isPlaying) {
-      stream.pause();
+    if (showSettings && heartbeat.isPlaying) {
+      heartbeat.stop();
     }
   }, [showSettings]);
 
@@ -119,12 +109,12 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
   // Exit reader
   const handleExit = useCallback(() => {
-    const finalIndex = stream.currentIndex;
-    const finalProgress = stream.progress;
+    const finalIndex = conductor.currentTokenIndex;
+    const finalProgress = core.currentProgress;
     
-    stream.pause();
+    heartbeat.stop();
     core.saveProgress(finalIndex);
-    stream.setMode('scroll');
+    core.isRSVPMode = false;
     
     onClose(book.id, finalIndex, finalProgress);
   }, [book.id, onClose]);
@@ -133,26 +123,30 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
   const handleToggleRSVP = useCallback(() => {
     if (isRSVP) {
       // Toggle play/pause
-      stream.toggle();
+      if (heartbeat.isPlaying) {
+        heartbeat.stop();
+      } else {
+        heartbeat.start();
+      }
     } else {
       // Enter RSVP and play
-      stream.setMode('rsvp');
+      core.isRSVPMode = true;
       if (!isHandlingPopState.current) {
         window.history.pushState({ rsvpMode: true }, '', window.location.href);
       }
-      stream.play();
+      heartbeat.start();
       setIsChromeVisible(false);
     }
   }, [isRSVP]);
 
-  // Request play from word click
-  const handleRequestPlay = useCallback((tokenIndex: number) => {
-    stream.seek({ tokenIndex });
-    stream.setMode('rsvp');
+  // Request RSVP from word click in reader
+  const handleRequestRSVP = useCallback((startOffset: number, tokenIndex: number) => {
+    conductor.seekToToken(tokenIndex);
+    core.isRSVPMode = true;
     if (!isHandlingPopState.current) {
       window.history.pushState({ rsvpMode: true }, '', window.location.href);
     }
-    stream.play();
+    heartbeat.start();
     setIsChromeVisible(false);
   }, []);
 
@@ -171,8 +165,8 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
   // Exit RSVP mode
   const handleExitRSVP = useCallback(() => {
-    stream.pause();
-    stream.setMode('scroll');
+    heartbeat.stop();
+    core.isRSVPMode = false;
     setIsChromeVisible(true);
   }, []);
 
@@ -181,15 +175,37 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden m-0 p-0 animate-fadeIn"
       style={{ backgroundColor: theme.background }}
     >
-      {/* UNIFIED READER - Both scroll and RSVP in one */}
-      <div className="absolute inset-0 z-10">
-        <FlowReader 
+      {/* SCROLL READER */}
+      <div 
+        className="absolute inset-0 z-10 transition-opacity duration-300"
+        style={{ 
+          opacity: isRSVP ? (isPlaying ? 0 : 0.4) : 1,
+          pointerEvents: isRSVP ? 'none' : 'auto'
+        }}
+      >
+        <TitanReaderView 
           book={book}
           onToggleChrome={handleToggleChrome}
-          onRequestPlay={handleRequestPlay}
-          isRSVPActive={isRSVP}
+          onRequestRSVP={handleRequestRSVP}
+          isActive={!isRSVP}
         />
       </div>
+
+      {/* RSVP OVERLAY */}
+      {isRSVP && (
+        <div 
+          className="absolute inset-0 z-20"
+          onClick={handleToggleChrome}
+        >
+          <RSVPTeleprompter onTap={() => {
+            if (heartbeat.isPlaying) {
+              heartbeat.stop();
+            } else {
+              heartbeat.start();
+            }
+          }} />
+        </div>
+      )}
 
       {/* CONTROL DOCK */}
       <div 

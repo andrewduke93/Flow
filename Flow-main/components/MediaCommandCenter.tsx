@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { Book } from '../types';
-import { TitanReadStream } from '../services/titanReadStream';
+import { TitanCore } from '../services/titanCore';
+import { RSVPConductor } from '../services/rsvpConductor';
+import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
 import { Play, Pause, Minus, Plus, Settings, RotateCcw, Sparkles } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
@@ -15,15 +17,7 @@ interface MediaCommandCenterProps {
 
 /**
  * MediaCommandCenter - Clean, Stable Control Deck
- * Now uses unified TitanReadStream
- * 
- * Layout (symmetrical):
- * ┌─────────────────────────────────────────────────┐
- * │  [progress bar with scrubber]                   │
- * │                                                 │
- * │  [-] 300 [+]    [◀] [▶/⏸] [✨]    [⚙️]  5m    │
- * │   speed          rew  play  ghost   set  time  │
- * └─────────────────────────────────────────────────┘
+ * Uses original RSVPConductor and RSVPHeartbeat
  */
 export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({ 
   book, 
@@ -31,7 +25,9 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   isRSVPActive,
   onSettingsClick 
 }) => {
-  const stream = TitanReadStream.getInstance();
+  const core = TitanCore.getInstance();
+  const conductor = RSVPConductor.getInstance();
+  const heartbeat = RSVPHeartbeat.getInstance();
   const { settings, updateSettings } = useTitanSettings();
   const theme = useTitanTheme();
 
@@ -52,13 +48,13 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
 
   const REWIND_STEP = 10;
 
-  // Single source of truth - unified stream
+  // Sync with conductor/heartbeat
   useEffect(() => {
     const sync = () => {
-      setIsPlaying(stream.isPlaying);
+      setIsPlaying(heartbeat.isPlaying);
       
       if (!isScrubbing) {
-        const pct = stream.progress;
+        const pct = core.totalTokens > 0 ? conductor.currentTokenIndex / core.totalTokens : 0;
         setProgress(pct);
         if (progressRef.current) {
           progressRef.current.style.width = `${pct * 100}%`;
@@ -67,22 +63,37 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     };
 
     sync();
-    const unsub = stream.subscribe(sync);
-    return () => unsub();
+    const unsubCore = core.subscribe(sync);
+    const unsubHeartbeat = heartbeat.subscribe(sync);
+    const unsubConductor = conductor.subscribe(sync);
+    
+    return () => {
+      unsubCore();
+      unsubHeartbeat();
+      unsubConductor();
+    };
   }, [isScrubbing]);
 
   // Time remaining
   const getTimeLeft = useCallback(() => {
-    return stream.getTimeRemainingFormatted();
-  }, [progress]);
+    const tokensLeft = Math.max(0, core.totalTokens - conductor.currentTokenIndex);
+    const wpm = settings.rsvpSpeed || 250;
+    const minutesLeft = tokensLeft / wpm;
+    
+    if (minutesLeft < 1) return '<1m';
+    if (minutesLeft < 60) return `${Math.round(minutesLeft)}m`;
+    const hours = Math.floor(minutesLeft / 60);
+    const mins = Math.round(minutesLeft % 60);
+    return `${hours}h${mins > 0 ? ` ${mins}m` : ''}`;
+  }, [progress, settings.rsvpSpeed]);
 
   // Scrubbing
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (!trackRef.current) return;
     e.preventDefault();
     setIsScrubbing(true);
-    wasPlayingRef.current = stream.isPlaying;
-    if (wasPlayingRef.current) stream.pause();
+    wasPlayingRef.current = heartbeat.isPlaying;
+    if (wasPlayingRef.current) heartbeat.stop();
     
     const rect = trackRef.current.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -105,11 +116,12 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     const rect = trackRef.current.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     
-    // Commit position to unified stream
-    stream.seek({ progress: pct });
+    // Commit position
+    const targetIndex = Math.floor(pct * core.totalTokens);
+    conductor.seekToToken(targetIndex);
     
     setIsScrubbing(false);
-    if (wasPlayingRef.current) stream.play();
+    if (wasPlayingRef.current) heartbeat.start();
     RSVPHapticEngine.impactMedium();
   }, [isScrubbing]);
 
@@ -133,20 +145,20 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
   const handleRewindStart = useCallback(() => {
     if (!isRSVPActive) return;
     RSVPHapticEngine.impactLight();
-    wasPlayingBeforeRewind.current = stream.isPlaying;
+    wasPlayingBeforeRewind.current = heartbeat.isPlaying;
     
     // Immediate step
-    stream.seekByTokens(-REWIND_STEP);
+    conductor.seekByTokens(-REWIND_STEP);
     
     // Hold for continuous
     rewindHoldTimerRef.current = setTimeout(() => {
       setIsRewindHeld(true);
-      if (wasPlayingBeforeRewind.current) stream.pause();
+      if (wasPlayingBeforeRewind.current) heartbeat.stop();
       
       rewindIntervalRef.current = setInterval(() => {
-        stream.seekByTokens(-REWIND_STEP);
+        conductor.seekByTokens(-REWIND_STEP);
         RSVPHapticEngine.selectionChanged();
-        if (stream.currentIndex <= 0) stopRewind();
+        if (conductor.currentTokenIndex <= 0) stopRewind();
       }, 150);
     }, 300);
   }, [isRSVPActive]);
@@ -159,7 +171,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     
     if (isRewindHeld) {
       setIsRewindHeld(false);
-      if (wasPlayingBeforeRewind.current) stream.play();
+      if (wasPlayingBeforeRewind.current) heartbeat.start();
       RSVPHapticEngine.impactMedium();
     }
   }, [isRewindHeld]);
