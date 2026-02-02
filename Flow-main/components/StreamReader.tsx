@@ -192,22 +192,9 @@ const RSVPDisplay = memo(({
 
         {/* LOCKED Main word with ORP alignment */}
         <div className="relative flex items-center justify-center w-full">
-          {/* Focus line */}
+          {/* Word positioned so ORP aligns with center */}
           <div 
-            className="absolute w-0.5 rounded-full"
-            style={{ 
-              backgroundColor: accentColor,
-              height: `${rsvpFontSize * 1.3}px`,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              opacity: 0.85,
-              boxShadow: `0 0 8px ${accentColor}50`
-            }}
-          />
-          
-          {/* Word positioned so ORP aligns with center line */}
-          <div 
-            className="flex items-baseline"
+            className="flex items-baseline relative"
             style={{ 
               fontFamily: fontFamilyCSS,
               fontSize: `${rsvpFontSize}px`,
@@ -225,7 +212,20 @@ const RSVPDisplay = memo(({
             >
               {before}
             </span>
-            <span style={{ color: accentColor, fontWeight: 700 }}>{pivot}</span>
+            <span className="relative" style={{ color: accentColor, fontWeight: 700 }}>
+              {pivot}
+              {/* Focus dot under pivot */}
+              <span 
+                className="absolute left-1/2 -translate-x-1/2 rounded-full"
+                style={{
+                  bottom: `-${rsvpFontSize * 0.25}px`,
+                  width: `${Math.max(4, rsvpFontSize * 0.12)}px`,
+                  height: `${Math.max(4, rsvpFontSize * 0.12)}px`,
+                  backgroundColor: accentColor,
+                  boxShadow: `0 0 8px ${accentColor}60, 0 0 16px ${accentColor}30`
+                }}
+              />
+            </span>
             <span 
               className="text-left"
               style={{ 
@@ -268,21 +268,9 @@ const RSVPDisplay = memo(({
     <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
       {/* Main word display with ORP alignment */}
       <div className="relative flex items-center justify-center w-full">
-        {/* Single clean focus line */}
+        {/* Word positioned so ORP aligns with center */}
         <div 
-          className="absolute w-0.5 rounded-full"
-          style={{ 
-            backgroundColor: accentColor,
-            height: `${rsvpFontSize * 1.3}px`,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            opacity: 0.8
-          }}
-        />
-        
-        {/* Word positioned so ORP aligns with center line */}
-        <div 
-          className="flex items-baseline"
+          className="flex items-baseline relative"
           style={{ 
             fontFamily: fontFamilyCSS,
             fontSize: `${rsvpFontSize}px`,
@@ -302,14 +290,26 @@ const RSVPDisplay = memo(({
             {before}
           </span>
           
-          {/* Pivot letter - at the focus line */}
+          {/* Pivot letter with focus dot */}
           <span 
+            className="relative"
             style={{ 
               color: accentColor, 
               fontWeight: 700
             }}
           >
             {pivot}
+            {/* Focus dot under pivot */}
+            <span 
+              className="absolute left-1/2 -translate-x-1/2 rounded-full"
+              style={{
+                bottom: `-${rsvpFontSize * 0.25}px`,
+                width: `${Math.max(4, rsvpFontSize * 0.12)}px`,
+                height: `${Math.max(4, rsvpFontSize * 0.12)}px`,
+                backgroundColor: accentColor,
+                boxShadow: `0 0 8px ${accentColor}60, 0 0 16px ${accentColor}30`
+              }}
+            />
           </span>
           
           {/* After ORP - left-aligned */}
