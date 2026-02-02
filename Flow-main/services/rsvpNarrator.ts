@@ -260,7 +260,23 @@ export class RSVPNarrator {
    * Start speaking from a specific word index
    */
   public startFromIndex(startIndex: number) {
-    if (!this._isEnabled || !this.selectedVoice || this.tokens.length === 0) return;
+    if (!this._isEnabled) return;
+    if (this.tokens.length === 0) return;
+    
+    // Ensure we have a voice - try to load/select one if missing
+    if (!this.selectedVoice) {
+      this.loadVoices();
+      // If still no voice, try to get any available voice
+      if (!this.selectedVoice) {
+        const voices = this.synth.getVoices();
+        if (voices.length > 0) {
+          this.selectedVoice = voices[0];
+        } else {
+          console.warn('No speech voices available');
+          return;
+        }
+      }
+    }
     
     this.stop(); // Clear any ongoing speech
     

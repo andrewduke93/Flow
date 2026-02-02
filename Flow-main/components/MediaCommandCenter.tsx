@@ -168,7 +168,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
         heartbeat.seek(wordIndex);
       }
     });
-  }, [isRSVPActive, heartbeat.tokens.length, settings.rsvpSpeed]);
+  }, [isRSVPActive, isNarratorEnabled, heartbeat.tokens.length, settings.rsvpSpeed]);
 
   // Sync narrator with play/pause - narrator supplements heartbeat, doesn't replace it
   useEffect(() => {
