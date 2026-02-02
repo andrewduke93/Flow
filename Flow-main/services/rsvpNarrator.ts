@@ -48,6 +48,7 @@ export class RSVPNarrator {
   // Callbacks
   private listeners: Set<() => void> = new Set();
   private onWordCallback: ((wordIndex: number) => void) | null = null;
+  private hasWarmedUp: boolean = false;
 
   private constructor() {
     this.synth = window.speechSynthesis;
@@ -66,10 +67,27 @@ export class RSVPNarrator {
     return RSVPNarrator.instance;
   }
 
+  /**
+   * Warm up the speech synthesis engine (required on some browsers)
+   * Call this on a user gesture before first use
+   */
+  public warmUp() {
+    if (this.hasWarmedUp) return;
+    
+    console.log('[Narrator] Warming up speech synthesis');
+    // Speak empty string to unlock the audio context
+    const warmup = new SpeechSynthesisUtterance('');
+    warmup.volume = 0;
+    this.synth.speak(warmup);
+    this.synth.cancel();
+    this.hasWarmedUp = true;
+  }
+
   // -- Voice Management --
 
   private loadVoices() {
     this.voices = this.synth.getVoices();
+    console.log('[Narrator] loadVoices:', this.voices.length, 'voices available');
     
     // Auto-select best voice
     if (this.voices.length > 0 && !this.selectedVoice) {
@@ -179,7 +197,12 @@ export class RSVPNarrator {
   }
 
   public setEnabled(enabled: boolean) {
+    console.log('[Narrator] setEnabled:', enabled);
     this._isEnabled = enabled;
+    if (enabled) {
+      // Warm up speech synthesis on first enable (user gesture required)
+      this.warmUp();
+    }
     if (!enabled) {
       this.stop();
     }
@@ -187,6 +210,7 @@ export class RSVPNarrator {
   }
 
   public toggleEnabled() {
+    console.log('[Narrator] toggleEnabled, current:', this._isEnabled);
     this.setEnabled(!this._isEnabled);
   }
 
@@ -260,8 +284,21 @@ export class RSVPNarrator {
    * Start speaking from a specific word index
    */
   public startFromIndex(startIndex: number) {
-    if (!this._isEnabled) return;
-    if (this.tokens.length === 0) return;
+    console.log('[Narrator] startFromIndex called', { 
+      startIndex, 
+      enabled: this._isEnabled, 
+      tokensLen: this.tokens.length,
+      hasVoice: !!this.selectedVoice 
+    });
+    
+    if (!this._isEnabled) {
+      console.log('[Narrator] Not enabled, returning');
+      return;
+    }
+    if (this.tokens.length === 0) {
+      console.log('[Narrator] No tokens loaded, returning');
+      return;
+    }
     
     // Ensure we have a voice - try to load/select one if missing
     if (!this.selectedVoice) {
@@ -269,20 +306,25 @@ export class RSVPNarrator {
       // If still no voice, try to get any available voice
       if (!this.selectedVoice) {
         const voices = this.synth.getVoices();
+        console.log('[Narrator] Available voices:', voices.length);
         if (voices.length > 0) {
           this.selectedVoice = voices[0];
+          console.log('[Narrator] Selected fallback voice:', this.selectedVoice.name);
         } else {
-          console.warn('No speech voices available');
+          console.warn('[Narrator] No speech voices available');
           return;
         }
       }
     }
     
-    this.stop(); // Clear any ongoing speech
+    // Clear any ongoing speech (use cancel directly, not stop())
+    this.synth.cancel();
     
     // Build text from startIndex onwards
     this.currentWordIndex = Math.max(0, Math.min(startIndex, this.tokens.length - 1));
     const textFromHere = this.tokens.slice(this.currentWordIndex).join(' ');
+    
+    console.log('[Narrator] Speaking text (first 100 chars):', textFromHere.substring(0, 100));
     
     // Rebuild char map for the substring
     this.charToWordMap = [];
@@ -323,7 +365,12 @@ export class RSVPNarrator {
       }
     };
     
+    utterance.onstart = () => {
+      console.log('[Narrator] Speech started');
+    };
+    
     utterance.onend = () => {
+      console.log('[Narrator] Speech ended');
       this._state = 'idle';
       this.notify();
     };
@@ -331,14 +378,16 @@ export class RSVPNarrator {
     utterance.onerror = (e) => {
       // Ignore 'interrupted' errors from pause/stop
       if (e.error !== 'interrupted') {
-        console.warn('Narrator error:', e.error);
+        console.warn('[Narrator] Error:', e.error);
       }
       this._state = 'idle';
       this.notify();
     };
     
     this.utterance = utterance;
+    console.log('[Narrator] Calling synth.speak()');
     this.synth.speak(utterance);
+    console.log('[Narrator] synth.speak() called, pending:', this.synth.pending, 'speaking:', this.synth.speaking);
     this.notify();
   }
 
@@ -373,6 +422,7 @@ export class RSVPNarrator {
   }
 
   public stop() {
+    console.log('[Narrator] stop() called');
     this.synth.cancel();
     this._state = 'idle';
     this.notify();

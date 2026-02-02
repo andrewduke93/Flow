@@ -172,6 +172,8 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
 
   // Sync narrator with play/pause - narrator supplements heartbeat, doesn't replace it
   useEffect(() => {
+    console.log('[MediaCC] Narrator effect running', { isRSVPActive, isNarratorEnabled, isPlaying });
+    
     if (!isRSVPActive) {
       narrator.stop();
       return;
@@ -185,15 +187,14 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     
     if (isPlaying) {
       // Start narrator from current position when playing
+      console.log('[MediaCC] Starting narrator from index', heartbeat.currentIndex);
       narrator.startFromIndex(heartbeat.currentIndex);
     } else {
+      console.log('[MediaCC] Pausing narrator');
       narrator.pause();
     }
     
-    // Cleanup: stop narrator when effect is destroyed
-    return () => {
-      narrator.stop();
-    };
+    // NO cleanup here - let the state changes handle start/stop
   }, [isPlaying, isNarratorEnabled, isRSVPActive]);
 
   // Narrator state sync
