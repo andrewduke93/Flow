@@ -3,7 +3,7 @@ import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { Play, Pause } from 'lucide-react';
+import { Play, Pause, RotateCcw } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
@@ -15,8 +15,8 @@ interface MiniPlayerPillProps {
   onToggleRSVP: () => void;
 }
 
-// Speed presets - curated for meaningful differences
-const SPEED_PRESETS = [150, 200, 275, 350, 450, 600];
+// Speed presets - full range with meaningful steps
+const SPEED_PRESETS = [100, 150, 200, 250, 300, 350, 400, 500, 600, 750, 900];
 
 /**
  * MiniPlayerPill - Intentional Control Surface
@@ -86,6 +86,33 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
     RSVPHapticEngine.impactLight();
     onBack();
   }, [onBack]);
+
+  // Back one sentence
+  const handleBackSentence = useCallback(() => {
+    RSVPHapticEngine.impactLight();
+    const tokens = heartbeat.tokens;
+    const currentIdx = heartbeat.currentIndex;
+    
+    // Find start of current or previous sentence
+    // Look backwards for sentence-ending punctuation
+    let targetIdx = Math.max(0, currentIdx - 1);
+    
+    // Skip back past any whitespace/short tokens
+    while (targetIdx > 0 && tokens[targetIdx]?.length < 2) {
+      targetIdx--;
+    }
+    
+    // Now find the previous sentence boundary (. ! ?)
+    while (targetIdx > 0) {
+      const token = tokens[targetIdx - 1];
+      if (token && /[.!?]$/.test(token)) {
+        break;
+      }
+      targetIdx--;
+    }
+    
+    heartbeat.seek(targetIdx);
+  }, []);
 
   // Progress scrubbing
   const handleScrub = useCallback((clientX: number) => {
@@ -227,21 +254,36 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
           <span className="text-sm font-medium">book</span>
         </button>
 
-        {/* Center: Play/Pause - THE primary action */}
-        <button
-          onClick={handlePrimaryAction}
-          className="w-16 h-16 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-xl"
-          style={{ 
-            backgroundColor: theme.accent,
-            color: '#fff'
-          }}
-        >
-          {isPlaying ? (
-            <Pause size={28} className="fill-white" />
-          ) : (
-            <Play size={28} className="fill-white ml-1" />
-          )}
-        </button>
+        {/* Center group: Back sentence + Play/Pause */}
+        <div className="flex items-center gap-3">
+          {/* Back sentence */}
+          <button
+            onClick={handleBackSentence}
+            className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+            style={{ 
+              backgroundColor: `${theme.primaryText}10`,
+              color: theme.secondaryText
+            }}
+          >
+            <RotateCcw size={18} />
+          </button>
+
+          {/* Play/Pause - THE primary action */}
+          <button
+            onClick={handlePrimaryAction}
+            className="w-16 h-16 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-xl"
+            style={{ 
+              backgroundColor: theme.accent,
+              color: '#fff'
+            }}
+          >
+            {isPlaying ? (
+              <Pause size={28} className="fill-white" />
+            ) : (
+              <Play size={28} className="fill-white ml-1" />
+            )}
+          </button>
+        </div>
 
         {/* Right: Speed (tap to change) + Time */}
         <button
