@@ -1,27 +1,16 @@
 /**
- * RSVPNarrator - Kokoro TTS Integration
+ * RSVPNarrator - Web Speech API based narration
  * 
- * Uses Kokoro TTS (kokoro-js) for high-quality, browser-based narration.
- * Runs entirely client-side via WebAssembly/WebGPU - no API key needed!
+ * Uses the browser's built-in speech synthesis for instant, zero-download TTS.
+ * Not as natural as Kokoro but works immediately without any loading.
  * 
- * Model is downloaded on first use (~80MB) and cached in browser.
+ * Speaks in sentence chunks for natural flow, syncs visual to audio.
  */
 
-type NarratorState = 'idle' | 'loading-model' | 'generating' | 'speaking';
+type NarratorState = 'idle' | 'speaking';
 
-// Kokoro voice options
-const KOKORO_VOICES = [
-  { id: 'af_heart', name: 'Heart (Female)', lang: 'en-us', quality: 'A' },
-  { id: 'af_bella', name: 'Bella (Female)', lang: 'en-us', quality: 'A-' },
-  { id: 'af_nicole', name: 'Nicole (Female)', lang: 'en-us', quality: 'B+' },
-  { id: 'af_sarah', name: 'Sarah (Female)', lang: 'en-us', quality: 'B' },
-  { id: 'af_sky', name: 'Sky (Female)', lang: 'en-us', quality: 'C-' },
-  { id: 'am_fenrir', name: 'Fenrir (Male)', lang: 'en-us', quality: 'C+' },
-  { id: 'am_michael', name: 'Michael (Male)', lang: 'en-us', quality: 'B-' },
-  { id: 'bf_emma', name: 'Emma (British F)', lang: 'en-gb', quality: 'B' },
-  { id: 'bm_george', name: 'George (British M)', lang: 'en-gb', quality: 'C' },
-  { id: 'bm_fable', name: 'Fable (British M)', lang: 'en-gb', quality: 'C' },
-] as const;
+const VOICE_STORAGE_KEY = 'flow_narrator_voice';
+const RATE_STORAGE_KEY = 'flow_narrator_rate';
 
 export type NarratorVoice = {
   id: string;
@@ -30,25 +19,18 @@ export type NarratorVoice = {
   quality: string;
 };
 
-const VOICE_STORAGE_KEY = 'flow_kokoro_voice';
-
 export class RSVPNarrator {
   private static instance: RSVPNarrator;
   
-  private _selectedVoice: string = 'af_heart';
+  private synth: SpeechSynthesis;
+  private voices: SpeechSynthesisVoice[] = [];
+  private _selectedVoiceId: string = '';
   private _isEnabled: boolean = false;
   private _state: NarratorState = 'idle';
-  private _rate: number = 1.0;
+  private _rate: number = 1.2; // Slightly faster than default
   private _volume: number = 1.0;
-  private _modelLoadProgress: number = 0;
   
-  // Kokoro TTS instance
-  private tts: any = null;
-  private isModelLoading: boolean = false;
-  
-  // Audio playback
-  private audioContext: AudioContext | null = null;
-  private currentSource: AudioBufferSourceNode | null = null;
+  private currentUtterance: SpeechSynthesisUtterance | null = null;
   
   // Sentence queue for continuous reading
   private sentences: string[] = [];
@@ -63,7 +45,34 @@ export class RSVPNarrator {
   private listeners: Set<() => void> = new Set();
 
   private constructor() {
-    this._selectedVoice = localStorage.getItem(VOICE_STORAGE_KEY) || 'af_heart';
+    this.synth = window.speechSynthesis;
+    this._selectedVoiceId = localStorage.getItem(VOICE_STORAGE_KEY) || '';
+    this._rate = parseFloat(localStorage.getItem(RATE_STORAGE_KEY) || '1.2');
+    
+    // Load voices
+    this.loadVoices();
+    
+    // Voices may load async in some browsers
+    if (this.synth.onvoiceschanged !== undefined) {
+      this.synth.onvoiceschanged = () => this.loadVoices();
+    }
+  }
+
+  private loadVoices() {
+    this.voices = this.synth.getVoices();
+    
+    // If no voice selected, pick best English voice
+    if (!this._selectedVoiceId && this.voices.length > 0) {
+      const preferred = this.voices.find(v => 
+        v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Microsoft') || v.name.includes('Samantha'))
+      ) || this.voices.find(v => v.lang.startsWith('en')) || this.voices[0];
+      
+      if (preferred) {
+        this._selectedVoiceId = preferred.voiceURI;
+      }
+    }
+    
+    console.log(`[Narrator] Loaded ${this.voices.length} voices`);
   }
 
   public static getInstance(): RSVPNarrator {
@@ -73,105 +82,39 @@ export class RSVPNarrator {
     return RSVPNarrator.instance;
   }
 
-  // -- Model Loading --
-
-  private async ensureModelLoaded(): Promise<boolean> {
-    if (this.tts) return true;
-    if (this.isModelLoading) {
-      // Wait for current load to complete
-      return new Promise((resolve) => {
-        const checkLoaded = setInterval(() => {
-          if (this.tts) {
-            clearInterval(checkLoaded);
-            resolve(true);
-          } else if (!this.isModelLoading) {
-            clearInterval(checkLoaded);
-            resolve(false);
-          }
-        }, 100);
-      });
-    }
-
-    this.isModelLoading = true;
-    this._state = 'loading-model';
-    this._modelLoadProgress = 0;
-    this.notify();
-
-    try {
-      console.log('[Narrator] Loading Kokoro TTS model...');
-      
-      // Dynamic import to enable code splitting
-      const { KokoroTTS } = await import('kokoro-js');
-      
-      // Detect WebGPU support
-      const hasWebGPU = typeof navigator !== 'undefined' && 
-                        'gpu' in navigator && 
-                        await (navigator as any).gpu?.requestAdapter?.() !== null;
-      
-      const device = hasWebGPU ? 'webgpu' : 'wasm';
-      const dtype = device === 'webgpu' ? 'fp32' : 'q8'; // q8 for WASM is faster
-      
-      console.log(`[Narrator] Using device: ${device}, dtype: ${dtype}`);
-      
-      this.tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-        dtype,
-        device,
-        progress_callback: (progress: any) => {
-          if (progress.progress !== undefined) {
-            this._modelLoadProgress = progress.progress;
-            this.notify();
-          }
-        }
-      });
-      
-      console.log('[Narrator] Model loaded successfully!');
-      this._state = 'idle';
-      this.isModelLoading = false;
-      this.notify();
-      return true;
-    } catch (error) {
-      console.error('[Narrator] Failed to load model:', error);
-      this._state = 'idle';
-      this.isModelLoading = false;
-      this.notify();
-      return false;
-    }
-  }
-
-  public get modelLoadProgress(): number {
-    return this._modelLoadProgress;
-  }
-
   public get hasApiKey(): boolean {
-    // No API key needed for Kokoro!
+    // No API key needed for Web Speech API
     return true;
   }
 
   // -- Voice Selection --
 
   public getAvailableVoices(): NarratorVoice[] {
-    return KOKORO_VOICES.map(v => ({
-      id: v.id,
-      name: v.name,
-      lang: v.lang,
-      quality: v.quality
-    }));
+    return this.voices
+      .filter(v => v.lang.startsWith('en'))
+      .map(v => ({
+        id: v.voiceURI,
+        name: v.name,
+        lang: v.lang,
+        quality: v.name.includes('Google') || v.name.includes('Microsoft') ? 'A' : 
+                 v.name.includes('Samantha') || v.name.includes('Daniel') ? 'B' : 'C'
+      }));
   }
 
   public setVoice(voiceId: string) {
-    this._selectedVoice = voiceId;
+    this._selectedVoiceId = voiceId;
     localStorage.setItem(VOICE_STORAGE_KEY, voiceId);
     this.notify();
   }
 
   public get currentVoice(): NarratorVoice | null {
-    const voice = KOKORO_VOICES.find(v => v.id === this._selectedVoice);
+    const voice = this.voices.find(v => v.voiceURI === this._selectedVoiceId);
     if (!voice) return null;
     return {
-      id: voice.id,
+      id: voice.voiceURI,
       name: voice.name,
       lang: voice.lang,
-      quality: voice.quality
+      quality: 'B'
     };
   }
 
@@ -199,6 +142,11 @@ export class RSVPNarrator {
 
   public setRate(rate: number) {
     this._rate = Math.max(0.5, Math.min(2.0, rate));
+    localStorage.setItem(RATE_STORAGE_KEY, this._rate.toString());
+  }
+
+  public get rate(): number {
+    return this._rate;
   }
 
   public setVolume(volume: number) {
@@ -216,8 +164,8 @@ export class RSVPNarrator {
    * Load text and split into sentences
    */
   public loadText(text: string, startWordIndex: number = 0) {
-    // Split into sentences, then split long sentences further
-    const MAX_SENTENCE_LENGTH = 200; // Characters - WASM can't handle very long sentences
+    // Split into sentences, keeping them reasonably short
+    const MAX_CHARS = 150;
     
     let sentences = text
       .replace(/([.!?])\s+/g, '$1|SPLIT|')
@@ -225,18 +173,17 @@ export class RSVPNarrator {
       .map(s => s.trim())
       .filter(s => s.length > 0);
     
-    // Split any sentence that's too long at comma/semicolon boundaries
+    // Split long sentences at commas
     this.sentences = sentences.flatMap(s => {
-      if (s.length <= MAX_SENTENCE_LENGTH) return [s];
-      // Split on commas, semicolons, or em-dashes for long sentences
-      return s.split(/[,;—]\s*/)
+      if (s.length <= MAX_CHARS) return [s];
+      return s.split(/[,;]\s*/)
         .map(part => part.trim())
         .filter(part => part.length > 0);
     });
     
     this.currentSentenceIndex = 0;
     this.baseWordIndex = startWordIndex;
-    console.log(`[Narrator] Loaded ${this.sentences.length} chunks (split from ${sentences.length} sentences), starting from word ${startWordIndex}`);
+    console.log(`[Narrator] Loaded ${this.sentences.length} chunks`);
   }
 
   /**
@@ -244,32 +191,24 @@ export class RSVPNarrator {
    */
   public async startReading() {
     if (!this._isEnabled || this.sentences.length === 0) {
-      console.warn('[Narrator] Cannot start: enabled=', this._isEnabled, 'sentences=', this.sentences.length);
       return;
     }
     
-    // Prevent multiple concurrent reads
     if (this.isAutoPlaying) {
-      console.log('[Narrator] Already playing, ignoring startReading call');
       return;
     }
     
-    // Ensure model is loaded
-    const loaded = await this.ensureModelLoaded();
-    if (!loaded) {
-      console.error('[Narrator] Model failed to load');
-      return;
-    }
+    // Cancel any existing speech
+    this.synth.cancel();
     
-    console.log('[Narrator] Starting reading from sentence', this.currentSentenceIndex);
     this.isAutoPlaying = true;
-    await this.speakCurrentSentence();
+    this.speakCurrentSentence();
   }
 
   /**
-   * Speak the current sentence using Kokoro TTS
+   * Speak the current sentence using Web Speech API
    */
-  private async speakCurrentSentence() {
+  private speakCurrentSentence() {
     if (!this.isAutoPlaying || this.currentSentenceIndex >= this.sentences.length) {
       this._state = 'idle';
       this.isAutoPlaying = false;
@@ -278,158 +217,56 @@ export class RSVPNarrator {
     }
 
     const sentence = this.sentences[this.currentSentenceIndex];
-    this._state = 'generating';
+    this._state = 'speaking';
     this.notify();
 
-    try {
-      console.log(`[Narrator] Generating speech for chunk ${this.currentSentenceIndex}/${this.sentences.length}: "${sentence.substring(0, 50)}..." (${sentence.length} chars)`);
-      console.log(`[Narrator] Using voice: ${this._selectedVoice}, speed: ${this._rate}`);
-      
-      // Generate audio with Kokoro (with timeout for WASM)
-      const startTime = Date.now();
-      const TIMEOUT_MS = 30000; // 30 second timeout
-      
-      const generatePromise = this.tts.generate(sentence, {
-        voice: this._selectedVoice,
-        speed: this._rate
-      });
-      
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Generation timed out')), TIMEOUT_MS);
-      });
-      
-      const audio = await Promise.race([generatePromise, timeoutPromise]);
-      console.log(`[Narrator] Generation took ${Date.now() - startTime}ms, audio:`, audio);
-      
-      if (!this.isAutoPlaying) {
-        console.log('[Narrator] Stopped while generating, aborting playback');
-        return;
-      }
-      
-      this._state = 'speaking';
-      this.notify();
-      
-      // Start word sync timer
-      const words = sentence.split(/\s+/);
-      this.startWordSync(words);
-      
-      // Play audio
-      await this.playAudio(audio);
-      
-      // Audio finished playing
+    // Create utterance
+    this.currentUtterance = new SpeechSynthesisUtterance(sentence);
+    
+    // Set voice
+    const voice = this.voices.find(v => v.voiceURI === this._selectedVoiceId);
+    if (voice) {
+      this.currentUtterance.voice = voice;
+    }
+    
+    this.currentUtterance.rate = this._rate;
+    this.currentUtterance.volume = this._volume;
+    this.currentUtterance.pitch = 1.0;
+    
+    // Word sync - estimate timing
+    const words = sentence.split(/\s+/);
+    this.startWordSync(words);
+    
+    // Handle completion
+    this.currentUtterance.onend = () => {
       this.stopWordSync();
       
-      // Update base word index for next sentence
+      // Update base word index
       this.baseWordIndex += words.length;
       
       // Move to next sentence
       this.currentSentenceIndex++;
       
       if (this.isAutoPlaying && this.currentSentenceIndex < this.sentences.length) {
-        // Small pause between sentences
+        // Continue to next sentence
         setTimeout(() => this.speakCurrentSentence(), 50);
       } else {
         this._state = 'idle';
         this.isAutoPlaying = false;
         this.notify();
       }
-    } catch (error) {
-      console.error('[Narrator] TTS Error:', error);
+    };
+    
+    this.currentUtterance.onerror = (e) => {
+      console.error('[Narrator] Speech error:', e);
+      this.stopWordSync();
       this._state = 'idle';
       this.isAutoPlaying = false;
       this.notify();
-    }
-  }
-
-  /**
-   * Play audio using Web Audio API
-   */
-  private async playAudio(audio: any): Promise<void> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        console.log('[Narrator] Playing audio, type:', typeof audio, 'keys:', audio ? Object.keys(audio) : 'null');
-        
-        // Create or resume audio context
-        if (!this.audioContext) {
-          this.audioContext = new AudioContext();
-        }
-        if (this.audioContext.state === 'suspended') {
-          await this.audioContext.resume();
-        }
-        
-        // Kokoro RawAudio has .audio (Float32Array) and .sampling_rate
-        // But the actual structure might vary, so let's be flexible
-        let audioData: Float32Array;
-        let sampleRate: number = 24000;
-        
-        if (audio.audio && audio.audio instanceof Float32Array) {
-          // Direct RawAudio object
-          audioData = audio.audio;
-          sampleRate = audio.sampling_rate || 24000;
-        } else if (audio instanceof Float32Array) {
-          // Just the raw data
-          audioData = audio;
-        } else if (audio.data && audio.data instanceof Float32Array) {
-          // Wrapped in data property
-          audioData = audio.data;
-          sampleRate = audio.sample_rate || audio.sampling_rate || 24000;
-        } else if (typeof audio.toBlob === 'function') {
-          // Has toBlob method - use HTML Audio instead
-          console.log('[Narrator] Using blob playback');
-          const blob = audio.toBlob();
-          const url = URL.createObjectURL(blob);
-          const htmlAudio = new Audio(url);
-          htmlAudio.volume = this._volume;
-          
-          htmlAudio.onended = () => {
-            URL.revokeObjectURL(url);
-            resolve();
-          };
-          htmlAudio.onerror = (e) => {
-            URL.revokeObjectURL(url);
-            reject(e);
-          };
-          
-          await htmlAudio.play();
-          return;
-        } else {
-          console.error('[Narrator] Unknown audio format:', audio);
-          reject(new Error('Unknown audio format'));
-          return;
-        }
-        
-        console.log('[Narrator] Audio data length:', audioData.length, 'sample rate:', sampleRate);
-        
-        // Create audio buffer
-        const audioBuffer = this.audioContext.createBuffer(1, audioData.length, sampleRate);
-        audioBuffer.copyToChannel(audioData, 0);
-        
-        // Create source node
-        this.currentSource = this.audioContext.createBufferSource();
-        this.currentSource.buffer = audioBuffer;
-        
-        // Create gain node for volume
-        const gainNode = this.audioContext.createGain();
-        gainNode.gain.value = this._volume;
-        
-        // Connect nodes
-        this.currentSource.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
-        
-        // Handle completion
-        this.currentSource.onended = () => {
-          this.currentSource = null;
-          resolve();
-        };
-        
-        // Start playback
-        this.currentSource.start(0);
-        console.log('[Narrator] Playback started');
-      } catch (error) {
-        console.error('[Narrator] Playback error:', error);
-        reject(error);
-      }
-    });
+    };
+    
+    // Speak
+    this.synth.speak(this.currentUtterance);
   }
 
   /**
@@ -440,7 +277,7 @@ export class RSVPNarrator {
     
     this.stopWordSync();
     
-    // Estimate duration (~150 WPM at 1.0x speed, adjusted for actual rate)
+    // Estimate: ~150 WPM at rate 1.0, adjust for actual rate
     const wordsPerSecond = (150 / 60) * this._rate;
     const msPerWord = 1000 / wordsPerSecond;
     
@@ -475,17 +312,7 @@ export class RSVPNarrator {
   public pause() {
     this.isAutoPlaying = false;
     this.stopWordSync();
-    
-    // Stop current audio
-    if (this.currentSource) {
-      try {
-        this.currentSource.stop();
-      } catch (e) {
-        // Ignore - might already be stopped
-      }
-      this.currentSource = null;
-    }
-    
+    this.synth.cancel();
     this._state = 'idle';
     this.notify();
   }
@@ -514,7 +341,6 @@ export class RSVPNarrator {
   }
 
   public static isSupported(): boolean {
-    // Kokoro works in any modern browser with WASM support
-    return typeof WebAssembly !== 'undefined';
+    return 'speechSynthesis' in window;
   }
 }

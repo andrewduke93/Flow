@@ -29,7 +29,6 @@
     "@capacitor/status-bar": "^8.0.0",
     "framer-motion": "11.1.7",
     "jszip": "3.10.1",
-    "kokoro-js": "^1.2.1",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"

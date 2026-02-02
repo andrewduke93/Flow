@@ -613,8 +613,8 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
 
           {/* Right: Narrator + Ghost Preview + Settings */}
           <div className="flex items-center justify-end gap-2">
-            {/* Narrator Toggle - Kokoro TTS */}
-            {isRSVPActive && (
+            {/* Narrator Toggle - Web Speech API */}
+            {isRSVPActive && RSVPNarrator.isSupported() && (
               <button 
                 className="flex items-center justify-center w-11 h-11 rounded-xl border transition-all outline-none active:scale-95 relative"
                 style={{ 
@@ -627,11 +627,9 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
                   RSVPHapticEngine.impactLight();
                   narrator.toggleEnabled();
                 }}
-                title={isNarratorEnabled ? "Disable narrator" : "Enable AI narrator (Kokoro TTS)"}
+                title={isNarratorEnabled ? "Disable narrator" : "Enable narrator"}
               >
-                {narratorState === 'loading-model' || narratorState === 'generating' ? (
-                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                ) : isNarratorEnabled ? (
+                {isNarratorEnabled ? (
                   <Volume2 size={16} className="fill-current" />
                 ) : (
                   <VolumeX size={16} />
