@@ -423,6 +423,13 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
     
     const unsubPlay = engine.onPlayState((playing) => {
       setIsPlaying(playing);
+      
+      // When RSVP stops, center the current word in scroll view
+      if (!playing) {
+        setTimeout(() => {
+          scrollToPosition(engine.position, true);
+        }, 100);
+      }
     });
     
     return () => {
@@ -439,29 +446,31 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
     
     isProgrammaticScroll.current = true;
     
+    const container = containerRef.current;
+    if (!container) return;
+    
     // Find the paragraph containing this position
     const element = scrollRef.current.querySelector(`[data-start="${pos}"]`) as HTMLElement;
     
     if (element) {
-      const container = containerRef.current;
-      if (container) {
-        const targetY = element.offsetTop - (container.clientHeight * 0.3);
-        container.scrollTo({
-          top: Math.max(0, targetY),
-          behavior: smooth ? 'smooth' : 'instant'
-        });
-      }
+      // Center the element in the viewport
+      const elementTop = element.offsetTop;
+      const elementHeight = element.offsetHeight;
+      const containerHeight = container.clientHeight;
+      const targetY = elementTop - (containerHeight / 2) + (elementHeight / 2);
+      
+      container.scrollTo({
+        top: Math.max(0, targetY),
+        behavior: smooth ? 'smooth' : 'instant'
+      });
     } else {
-      // Fallback: estimate scroll position
-      const container = containerRef.current;
-      if (container) {
-        const progress = pos / totalWords;
-        const targetY = progress * (container.scrollHeight - container.clientHeight);
-        container.scrollTo({
-          top: targetY,
-          behavior: smooth ? 'smooth' : 'instant'
-        });
-      }
+      // Fallback: estimate scroll position and center
+      const progress = pos / totalWords;
+      const targetY = progress * (container.scrollHeight - container.clientHeight);
+      container.scrollTo({
+        top: targetY,
+        behavior: smooth ? 'smooth' : 'instant'
+      });
     }
     
     setTimeout(() => {
