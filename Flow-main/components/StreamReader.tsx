@@ -9,6 +9,7 @@ interface StreamReaderProps {
   book: Book;
   onToggleChrome: () => void;
   isActive: boolean;
+  showGhostWords?: boolean;
 }
 
 // ============================================
@@ -111,20 +112,26 @@ const Paragraph = memo(({
 });
 
 // ============================================
-// RSVP DISPLAY - Fixed ORP position with focus line
+// RSVP DISPLAY - Clean ORP with single focus line
 // ============================================
 const RSVPDisplay = memo(({ 
   word, 
+  nextWords,
+  prevWords,
   fontSize,
   fontFamily,
   textColor,
-  accentColor
+  accentColor,
+  showGhost
 }: {
   word: WordSpan | null;
+  nextWords: WordSpan[];
+  prevWords: WordSpan[];
   fontSize: number;
   fontFamily: string;
   textColor: string;
   accentColor: string;
+  showGhost: boolean;
 }) => {
   if (!word) return null;
 
@@ -136,7 +143,7 @@ const RSVPDisplay = memo(({
     ? '"Atkinson Hyperlegible", sans-serif'
     : 'system-ui, -apple-system, sans-serif';
 
-  // Find optimal recognition point (ORP) - slightly left of center
+  // Find optimal recognition point (ORP)
   const text = word.text;
   const orpIndex = text.length <= 1 ? 0 
     : text.length <= 5 ? 1 
@@ -148,89 +155,99 @@ const RSVPDisplay = memo(({
   const pivot = text[orpIndex] || '';
   const after = text.slice(orpIndex + 1);
 
-  const rsvpFontSize = Math.min(fontSize * 2.5, 72);
+  const rsvpFontSize = Math.min(fontSize * 2.2, 56);
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center select-none">
-      {/* Fixed focus line - always in exact same screen position */}
-      <div 
-        className="absolute left-1/2 -translate-x-1/2 w-[3px] pointer-events-none z-10"
-        style={{ 
-          backgroundColor: accentColor,
-          height: `${rsvpFontSize * 1.4}px`,
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-          borderRadius: '2px',
-          boxShadow: `0 0 12px ${accentColor}60`
-        }}
-      />
-      
-      {/* Word display - positioned so ORP aligns with focus line */}
-      <div 
-        className="relative flex items-center"
-        style={{ 
-          fontFamily: fontFamilyCSS,
-          fontSize: `${rsvpFontSize}px`,
-          fontWeight: 500,
-          letterSpacing: '0.02em'
-        }}
-      >
-        {/* Before ORP - right-aligned to focus point */}
-        <span 
+    <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
+      {/* Ghost context - previous words */}
+      {showGhost && prevWords.length > 0 && (
+        <div 
+          className="absolute w-full text-center opacity-20 transition-opacity"
           style={{ 
-            color: textColor, 
-            textAlign: 'right',
-            display: 'inline-block',
-            minWidth: '45vw',
-            paddingRight: '2px'
+            top: `calc(50% - ${rsvpFontSize * 1.8}px)`,
+            fontFamily: fontFamilyCSS,
+            fontSize: `${rsvpFontSize * 0.5}px`,
+            color: textColor
           }}
         >
-          {before}
-        </span>
+          {prevWords.map(w => w.text).join(' ')}
+        </div>
+      )}
+
+      {/* Main word display with ORP alignment */}
+      <div className="relative flex items-center justify-center w-full">
+        {/* Single clean focus line */}
+        <div 
+          className="absolute w-0.5 rounded-full"
+          style={{ 
+            backgroundColor: accentColor,
+            height: `${rsvpFontSize * 1.3}px`,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            opacity: 0.8
+          }}
+        />
         
-        {/* Pivot/ORP letter - exactly at focus line */}
-        <span 
+        {/* Word positioned so ORP aligns with center line */}
+        <div 
+          className="flex items-baseline"
           style={{ 
-            color: accentColor, 
-            fontWeight: 700,
-            position: 'relative',
-            zIndex: 5
+            fontFamily: fontFamilyCSS,
+            fontSize: `${rsvpFontSize}px`,
+            fontWeight: 500,
+            letterSpacing: '0.01em'
           }}
         >
-          {pivot}
-        </span>
-        
-        {/* After ORP - left-aligned from focus point */}
-        <span 
-          style={{ 
-            color: textColor, 
-            textAlign: 'left',
-            display: 'inline-block',
-            minWidth: '45vw',
-            paddingLeft: '2px'
-          }}
-        >
-          {after}
-        </span>
+          {/* Before ORP - right-aligned */}
+          <span 
+            className="text-right"
+            style={{ 
+              color: textColor,
+              minWidth: '42vw',
+              paddingRight: '3px'
+            }}
+          >
+            {before}
+          </span>
+          
+          {/* Pivot letter - at the focus line */}
+          <span 
+            style={{ 
+              color: accentColor, 
+              fontWeight: 700
+            }}
+          >
+            {pivot}
+          </span>
+          
+          {/* After ORP - left-aligned */}
+          <span 
+            className="text-left"
+            style={{ 
+              color: textColor,
+              minWidth: '42vw',
+              paddingLeft: '3px'
+            }}
+          >
+            {after}
+          </span>
+        </div>
       </div>
-      
-      {/* Subtle guide markers above and below */}
-      <div 
-        className="absolute left-1/2 -translate-x-1/2 w-[2px]"
-        style={{ 
-          backgroundColor: `${accentColor}30`,
-          height: '30px',
-          top: `calc(50% - ${rsvpFontSize * 0.7 + 35}px)`
-        }}
-      />
-      <div 
-        className="absolute left-1/2 -translate-x-1/2 w-[2px]"
-        style={{ 
-          backgroundColor: `${accentColor}30`,
-          height: '30px',
-          top: `calc(50% + ${rsvpFontSize * 0.7 + 5}px)`
-        }}
-      />
+
+      {/* Ghost context - next words */}
+      {showGhost && nextWords.length > 0 && (
+        <div 
+          className="absolute w-full text-center opacity-15 transition-opacity"
+          style={{ 
+            top: `calc(50% + ${rsvpFontSize * 1.2}px)`,
+            fontFamily: fontFamilyCSS,
+            fontSize: `${rsvpFontSize * 0.45}px`,
+            color: textColor
+          }}
+        >
+          {nextWords.map(w => w.text).join(' ')}
+        </div>
+      )}
     </div>
   );
 });
@@ -238,7 +255,7 @@ const RSVPDisplay = memo(({
 // ============================================
 // STREAM READER - Unified scroll + RSVP
 // ============================================
-export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome, isActive }) => {
+export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome, isActive, showGhostWords = true }) => {
   const engine = StreamEngine.getInstance();
   const theme = useTitanTheme();
   const { settings, updateSettings } = useTitanSettings();
@@ -592,31 +609,30 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
         >
           <RSVPDisplay
             word={engine.getCurrentWord()}
+            nextWords={engine.getRange(position + 1, 6)}
+            prevWords={engine.getRange(Math.max(0, position - 4), 4)}
             fontSize={settings.fontSize}
             fontFamily={settings.fontFamily}
             textColor={theme.primaryText}
             accentColor={theme.accent}
+            showGhost={showGhostWords}
           />
           
-          {/* Progress bar */}
-          <div className="absolute bottom-8 left-8 right-8">
+          {/* Minimal progress indicator */}
+          <div className="absolute bottom-6 left-6 right-6 pointer-events-none">
             <div 
-              className="h-1 rounded-full overflow-hidden"
-              style={{ backgroundColor: `${theme.primaryText}20` }}
+              className="h-0.5 rounded-full overflow-hidden"
+              style={{ backgroundColor: `${theme.primaryText}10` }}
             >
               <div 
-                className="h-full rounded-full transition-all duration-200"
+                className="h-full rounded-full"
                 style={{ 
-                  backgroundColor: theme.accent,
-                  width: `${engine.progress * 100}%`
+                  backgroundColor: `${theme.accent}60`,
+                  width: `${engine.progress * 100}%`,
+                  transition: 'width 0.1s linear'
                 }}
               />
             </div>
-          </div>
-          
-          {/* Tap hint */}
-          <div className="absolute bottom-16 left-0 right-0 text-center">
-            <span className="text-xs opacity-40" style={{ color: theme.secondaryText }}>tap to pause</span>
           </div>
         </div>
       )}
