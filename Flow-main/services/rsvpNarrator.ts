@@ -225,6 +225,7 @@ export class RSVPNarrator {
     
     this.currentSentenceIndex = 0;
     this.baseWordIndex = startWordIndex;
+    console.log(`[Narrator] Loaded ${this.sentences.length} sentences, starting from word ${startWordIndex}`);
   }
 
   /**
@@ -236,6 +237,12 @@ export class RSVPNarrator {
       return;
     }
     
+    // Prevent multiple concurrent reads
+    if (this.isAutoPlaying) {
+      console.log('[Narrator] Already playing, ignoring startReading call');
+      return;
+    }
+    
     // Ensure model is loaded
     const loaded = await this.ensureModelLoaded();
     if (!loaded) {
@@ -243,6 +250,7 @@ export class RSVPNarrator {
       return;
     }
     
+    console.log('[Narrator] Starting reading from sentence', this.currentSentenceIndex);
     this.isAutoPlaying = true;
     await this.speakCurrentSentence();
   }
@@ -263,15 +271,21 @@ export class RSVPNarrator {
     this.notify();
 
     try {
-      console.log(`[Narrator] Generating speech for: "${sentence.substring(0, 50)}..."`);
+      console.log(`[Narrator] Generating speech for sentence ${this.currentSentenceIndex}: "${sentence.substring(0, 50)}..."`);
+      console.log(`[Narrator] Using voice: ${this._selectedVoice}, speed: ${this._rate}`);
       
       // Generate audio with Kokoro
+      const startTime = Date.now();
       const audio = await this.tts.generate(sentence, {
         voice: this._selectedVoice,
         speed: this._rate
       });
+      console.log(`[Narrator] Generation took ${Date.now() - startTime}ms, audio:`, audio);
       
-      if (!this.isAutoPlaying) return; // Stopped while generating
+      if (!this.isAutoPlaying) {
+        console.log('[Narrator] Stopped while generating, aborting playback');
+        return;
+      }
       
       this._state = 'speaking';
       this.notify();
