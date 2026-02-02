@@ -3,7 +3,7 @@ import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { Play, Pause, RotateCcw, Settings, Sparkles } from 'lucide-react';
+import { Play, Pause, ChevronLeft } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
@@ -13,27 +13,30 @@ interface MiniPlayerPillProps {
   isRSVPActive: boolean;
   onBack: () => void;
   onToggleRSVP: () => void;
-  onOpenSettings?: () => void;
 }
 
-// Speed presets - full range with meaningful steps
-const SPEED_PRESETS = [100, 150, 200, 250, 300, 350, 400, 500, 600, 750, 900];
-
 /**
- * MiniPlayerPill - Intentional Control Surface
+ * MiniPlayerPill - Minimal Control Surface
  * 
- * READ MODE:  ← library    [ ▶ flow ]    12m
- * FLOW MODE:  ← book       [ ▌▌ ]        300 · 8m
+ * Design Principles (UX Psychology):
  * 
- * Every element has ONE clear purpose.
- * Labels tell you WHERE you're going, not just "back".
+ * 1. HICK'S LAW: Minimize choices. One primary action per mode.
+ * 2. FITTS'S LAW: Primary action is largest, centered.
+ * 3. PROGRESSIVE DISCLOSURE: Speed only visible during Flow.
+ * 4. AESTHETIC-USABILITY: Clean = feels easier to use.
+ * 5. MILLER'S LAW: Never more than 4 visible elements.
+ * 
+ * READ MODE:  ←  ════════●═══════════  12m  [▶]
+ *             back     progress      time  flow
+ * 
+ * FLOW MODE:  ←  ════════●═══════════  5m  300  [▶]
+ *            exit    progress       time  wpm  play
  */
 export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
   book,
   isRSVPActive,
   onBack,
-  onToggleRSVP,
-  onOpenSettings
+  onToggleRSVP
 }) => {
   const core = TitanCore.getInstance();
   const conductor = RSVPConductor.getInstance();
@@ -44,7 +47,7 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   
-  // Scrubbing state
+  // Scrubbing
   const trackRef = useRef<HTMLDivElement>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
 
@@ -69,58 +72,26 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
     return () => { unsub1(); unsub2(); unsub3(); };
   }, [isRSVPActive, isScrubbing]);
 
-  // Primary action
+  // Primary action - always the same: toggle
   const handlePrimaryAction = useCallback(() => {
     RSVPHapticEngine.impactMedium();
     onToggleRSVP();
   }, [onToggleRSVP]);
 
-  // Cycle speed (only in Flow mode)
-  const cycleSpeed = useCallback(() => {
-    RSVPHapticEngine.selectionChanged();
-    const currentIdx = SPEED_PRESETS.findIndex(s => s >= settings.rsvpSpeed);
-    const nextIdx = currentIdx === -1 ? 0 : (currentIdx + 1) % SPEED_PRESETS.length;
-    updateSettings({ rsvpSpeed: SPEED_PRESETS[nextIdx], hasCustomSpeed: true });
-  }, [settings.rsvpSpeed, updateSettings]);
-
-  // Back action
+  // Back
   const handleBack = useCallback(() => {
     RSVPHapticEngine.impactLight();
     onBack();
   }, [onBack]);
 
-  // Back one sentence
-  const handleBackSentence = useCallback(() => {
-    RSVPHapticEngine.impactLight();
-    const tokens = heartbeat.tokens;
-    const currentIdx = heartbeat.currentIndex;
-    
-    // Find start of current or previous sentence
-    // Look backwards for sentence-ending punctuation
-    let targetIdx = Math.max(0, currentIdx - 1);
-    
-    // Skip back past any whitespace/short tokens
-    while (targetIdx > 0 && tokens[targetIdx]?.length < 2) {
-      targetIdx--;
-    }
-    
-    // Now find the previous sentence boundary (. ! ?)
-    while (targetIdx > 0) {
-      const token = tokens[targetIdx - 1];
-      if (token && /[.!?]$/.test(token)) {
-        break;
-      }
-      targetIdx--;
-    }
-    
-    heartbeat.seek(targetIdx);
-  }, []);
-
-  // Toggle ghost preview
-  const toggleGhostPreview = useCallback(() => {
+  // Speed cycling
+  const cycleSpeed = useCallback(() => {
     RSVPHapticEngine.selectionChanged();
-    updateSettings({ showGhostPreview: !settings.showGhostPreview });
-  }, [settings.showGhostPreview, updateSettings]);
+    const presets = [150, 200, 250, 300, 400, 500, 700];
+    const currentIdx = presets.findIndex(s => s >= settings.rsvpSpeed);
+    const nextIdx = currentIdx === -1 ? 0 : (currentIdx + 1) % presets.length;
+    updateSettings({ rsvpSpeed: presets[nextIdx], hasCustomSpeed: true });
+  }, [settings.rsvpSpeed, updateSettings]);
 
   // Progress scrubbing
   const handleScrub = useCallback((clientX: number) => {
@@ -132,11 +103,10 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
   }, []);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (!isRSVPActive) return;
     setIsScrubbing(true);
     handleScrub(e.clientX);
     (e.target as Element).setPointerCapture(e.pointerId);
-  }, [isRSVPActive, handleScrub]);
+  }, [handleScrub]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!isScrubbing) return;
@@ -148,10 +118,13 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
     const pct = handleScrub(e.clientX);
     setIsScrubbing(false);
     
-    // Commit position
-    if (isRSVPActive && pct !== undefined) {
-      const total = Math.max(1, heartbeat.tokens.length);
-      heartbeat.seek(Math.floor(pct * total));
+    if (pct !== undefined) {
+      if (isRSVPActive) {
+        const total = Math.max(1, heartbeat.tokens.length);
+        heartbeat.seek(Math.floor(pct * total));
+      } else {
+        core.jump(pct);
+      }
       RSVPHapticEngine.impactMedium();
     }
   }, [isScrubbing, isRSVPActive, handleScrub]);
@@ -161,178 +134,106 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
     const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
     const idx = isRSVPActive ? heartbeat.currentIndex : Math.floor(progress * total);
     const left = total - idx;
-    const speed = isRSVPActive ? settings.rsvpSpeed : 250; // Assume 250 for read mode estimate
+    const speed = isRSVPActive ? settings.rsvpSpeed : 250;
     const mins = Math.ceil(left / speed);
-    if (mins < 1) return "<1m";
-    if (mins >= 60) return `${Math.floor(mins/60)}h${mins%60 > 0 ? mins%60 + 'm' : ''}`;
-    return `${mins}m`;
+    if (mins < 1) return "<1";
+    if (mins >= 60) return `${Math.floor(mins/60)}h`;
+    return `${mins}`;
   };
 
-  // ═══════════════════════════════════════════════════════════════
-  // READ MODE: Calm, inviting - "Start your flow session"
-  // ═══════════════════════════════════════════════════════════════
-  if (!isRSVPActive) {
-    return (
-      <div className="flex flex-col items-center gap-3 w-full">
-        {/* Simple row: Back | Settings | Flow button | Time */}
-        <div className="flex items-center justify-between w-full px-2">
-          {/* Left: Back to library */}
-          <button
-            onClick={handleBack}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-transform"
-            style={{ color: theme.secondaryText }}
-          >
-            <span className="text-lg">←</span>
-            <span className="text-sm font-medium">library</span>
-          </button>
-
-          {/* Center group: Settings + Flow button */}
-          <div className="flex items-center gap-2">
-            {/* Settings */}
-            {onOpenSettings && (
-              <button
-                onClick={onOpenSettings}
-                className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                style={{ 
-                  backgroundColor: `${theme.primaryText}08`,
-                  color: theme.secondaryText
-                }}
-              >
-                <Settings size={18} />
-              </button>
-            )}
-
-            {/* Primary action - START FLOW */}
-            <button
-              onClick={handlePrimaryAction}
-              className="flex items-center gap-2 px-6 py-3 rounded-full active:scale-95 transition-transform shadow-lg"
-              style={{ 
-                backgroundColor: theme.accent,
-                color: '#fff'
-              }}
-            >
-              <Play size={18} className="fill-white" />
-              <span className="text-sm font-semibold tracking-wide">flow</span>
-            </button>
-          </div>
-
-          {/* Right: Time estimate */}
-          <div 
-            className="px-3 py-2"
-            style={{ color: theme.secondaryText }}
-          >
-            <span className="text-sm font-medium tabular-nums">{getTimeLeft()}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // FLOW MODE: Focused, functional - "You're in the zone"
-  // ═══════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
+  // UNIFIED LAYOUT - Same structure, contextual content
+  // ═══════════════════════════════════════════════════════════════════════
   return (
-    <div className="flex flex-col items-center gap-4 w-full">
-      {/* Progress bar - always visible, interactive */}
+    <div 
+      className="flex items-center gap-3 w-full px-1"
+      style={{ height: '56px' }}
+    >
+      {/* BACK BUTTON */}
+      <button
+        onClick={handleBack}
+        className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform shrink-0"
+        style={{ 
+          backgroundColor: `${theme.primaryText}06`,
+          color: theme.secondaryText 
+        }}
+        aria-label={isRSVPActive ? "Exit flow mode" : "Back to library"}
+      >
+        <ChevronLeft size={20} strokeWidth={2.5} />
+      </button>
+
+      {/* PROGRESS BAR */}
       <div 
         ref={trackRef}
-        className="w-full h-8 flex items-center cursor-pointer touch-none"
+        className="flex-1 h-12 flex items-center cursor-pointer touch-none"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       >
-        <div 
-          className="w-full h-1 rounded-full overflow-hidden relative"
-          style={{ backgroundColor: `${theme.primaryText}12` }}
-        >
+        <div className="w-full relative">
           <div 
-            className={`h-full rounded-full ${isScrubbing ? '' : 'transition-all duration-150'}`}
+            className="w-full h-1 rounded-full"
+            style={{ backgroundColor: `${theme.primaryText}10` }}
+          />
+          <div 
+            className={`absolute top-0 left-0 h-1 rounded-full ${isScrubbing ? '' : 'transition-all duration-200'}`}
             style={{ 
               width: `${progress * 100}%`,
               backgroundColor: theme.accent 
             }}
           />
-          {/* Scrub indicator */}
           {isScrubbing && (
             <div 
-              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white shadow-lg"
+              className="absolute top-1/2 w-4 h-4 rounded-full shadow-lg"
               style={{ 
                 left: `${progress * 100}%`,
                 transform: 'translate(-50%, -50%)',
-                backgroundColor: theme.accent
+                backgroundColor: theme.accent,
+                border: '2px solid white'
               }}
             />
           )}
         </div>
       </div>
 
-      {/* Control row */}
-      <div className="flex items-center justify-between w-full px-2">
-        {/* Left: Back to book */}
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-transform"
-          style={{ color: theme.secondaryText }}
-        >
-          <span className="text-lg">←</span>
-          <span className="text-sm font-medium">book</span>
-        </button>
+      {/* TIME */}
+      <div 
+        className="text-xs font-medium tabular-nums shrink-0 w-7 text-right"
+        style={{ color: theme.secondaryText }}
+      >
+        {getTimeLeft()}m
+      </div>
 
-        {/* Center group: Ghost toggle + Back sentence + Play/Pause */}
-        <div className="flex items-center gap-2">
-          {/* Ghost preview toggle */}
-          <button
-            onClick={toggleGhostPreview}
-            className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-            style={{ 
-              backgroundColor: settings.showGhostPreview ? `${theme.accent}20` : `${theme.primaryText}08`,
-              color: settings.showGhostPreview ? theme.accent : theme.secondaryText
-            }}
-          >
-            <Sparkles size={16} className={settings.showGhostPreview ? 'fill-current' : ''} />
-          </button>
-
-          {/* Back sentence */}
-          <button
-            onClick={handleBackSentence}
-            className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-            style={{ 
-              backgroundColor: `${theme.primaryText}08`,
-              color: theme.secondaryText
-            }}
-          >
-            <RotateCcw size={16} />
-          </button>
-
-          {/* Play/Pause - THE primary action */}
-          <button
-            onClick={handlePrimaryAction}
-            className="w-14 h-14 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-xl"
-            style={{ 
-              backgroundColor: theme.accent,
-              color: '#fff'
-            }}
-          >
-            {isPlaying ? (
-              <Pause size={24} className="fill-white" />
-            ) : (
-              <Play size={24} className="fill-white ml-1" />
-            )}
-          </button>
-        </div>
-
-        {/* Right: Speed (tap to change) + Time */}
+      {/* SPEED - Only in Flow mode */}
+      {isRSVPActive && (
         <button
           onClick={cycleSpeed}
-          className="flex items-center gap-2 px-3 py-2 rounded-full active:scale-95 transition-transform"
-          style={{ color: theme.primaryText }}
+          className="text-xs font-bold tabular-nums shrink-0 px-2 py-1.5 rounded-lg active:scale-95 transition-transform"
+          style={{ 
+            color: theme.primaryText,
+            backgroundColor: `${theme.primaryText}08`
+          }}
         >
-          <span className="text-sm font-bold tabular-nums">{settings.rsvpSpeed}</span>
-          <span className="text-xs opacity-40">·</span>
-          <span className="text-sm font-medium tabular-nums" style={{ color: theme.secondaryText }}>{getTimeLeft()}</span>
+          {settings.rsvpSpeed}
         </button>
-      </div>
+      )}
+
+      {/* PRIMARY ACTION */}
+      <button
+        onClick={handlePrimaryAction}
+        className="w-12 h-12 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-md shrink-0"
+        style={{ 
+          backgroundColor: theme.accent,
+          color: '#fff'
+        }}
+      >
+        {isRSVPActive && isPlaying ? (
+          <Pause size={20} className="fill-white" />
+        ) : (
+          <Play size={20} className="fill-white ml-0.5" />
+        )}
+      </button>
     </div>
   );
 });
