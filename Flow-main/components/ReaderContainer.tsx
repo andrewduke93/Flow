@@ -3,7 +3,7 @@ import { Book } from '../types';
 import { StreamReader } from './StreamReader';
 import { StreamEngine } from '../services/streamEngine';
 import { 
-  ChevronLeft, Play, Pause, RotateCcw, Sun, Moon, 
+  ChevronLeft, Play, Pause, RotateCcw, Sun, Moon, Sunset,
   Eye, EyeOff, Type, Minus, Plus 
 } from 'lucide-react';
 import { useTitanTheme, TitanThemeService } from '../services/titanTheme';
@@ -17,25 +17,22 @@ interface ReaderContainerProps {
 }
 
 /**
- * ReaderContainer - Refined Reading Experience
+ * ReaderContainer - Pill-style dock matching library UI
  * 
- * DESIGN PRINCIPLES:
- * - All essential controls immediately accessible
- * - No buried settings during reading
- * - Tap anywhere to show/hide
- * - Clean, distraction-free RSVP
+ * DESIGN: Dock is always visible unless actively reading RSVP
  */
 export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose }) => {
   const engine = StreamEngine.getInstance();
   const theme = useTitanTheme();
   const { settings, updateSettings } = useTitanSettings();
   
+  // Dock visible by default, only hidden during active RSVP playback
   const [isChromeVisible, setIsChromeVisible] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [wpm, setWpm] = useState(settings.rsvpSpeed || 300);
   const [showGhost, setShowGhost] = useState(settings.showGhostPreview ?? true);
-  const [showQuickSettings, setShowQuickSettings] = useState(false);
+  const [showFontPanel, setShowFontPanel] = useState(false);
 
   const chromeTimeout = useRef<ReturnType<typeof setTimeout>>();
   const saveTimeout = useRef<ReturnType<typeof setTimeout>>();
@@ -65,8 +62,12 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     
     const unsubPlay = engine.onPlayState((playing) => {
       setIsPlaying(playing);
+      // Only hide chrome after delay when playing
       if (playing) {
-        chromeTimeout.current = setTimeout(() => setIsChromeVisible(false), 2500);
+        chromeTimeout.current = setTimeout(() => setIsChromeVisible(false), 3000);
+      } else {
+        // Show chrome when paused
+        setIsChromeVisible(true);
       }
     });
     
@@ -95,7 +96,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
   const handleRewind = useCallback(() => {
     RSVPHapticEngine.impactLight();
-    engine.skipBack(50); // Rewind ~50 words
+    engine.skipBack(50);
   }, []);
 
   const handleSpeedChange = useCallback((delta: number) => {
@@ -115,18 +116,16 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
 
   const handleToggleTheme = useCallback(() => {
     RSVPHapticEngine.impactLight();
-    const current = settings.themeMode;
-    const next = current === 'Dark' ? 'Light' : current === 'Light' ? 'Sepia' : 'Dark';
-    // Map settings themeMode to TitanTheme modes
-    const themeMap: Record<string, string> = { 'Light': 'Modern', 'Dark': 'Night', 'Sepia': 'Sepia' };
-    TitanThemeService.getInstance().setMode(themeMap[next] as any || 'Modern');
-    updateSettings({ themeMode: next as any });
-  }, [settings.themeMode, updateSettings]);
+    const service = TitanThemeService.getInstance();
+    const current = service.mode;
+    const next = current === 'Night' ? 'Modern' : current === 'Modern' ? 'Sepia' : 'Night';
+    service.setMode(next);
+  }, []);
 
   const handleToggleChrome = useCallback(() => {
     if (chromeTimeout.current) clearTimeout(chromeTimeout.current);
     setIsChromeVisible(v => !v);
-    setShowQuickSettings(false);
+    setShowFontPanel(false);
   }, []);
 
   const handleScrub = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,8 +148,9 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     return () => window.removeEventListener('popstate', handlePopState);
   }, [isPlaying, handleExit]);
 
-  const themeIcon = settings.themeMode === 'Dark' ? Moon : Sun;
-  const ThemeIcon = themeIcon;
+  // Theme icon based on current theme
+  const themeService = TitanThemeService.getInstance();
+  const ThemeIcon = themeService.mode === 'Night' ? Moon : themeService.mode === 'Sepia' ? Sunset : Sun;
 
   // ============================================
   // RENDER
@@ -168,28 +168,26 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
         showGhostWords={showGhost}
       />
 
-      {/* ====== BOTTOM CONTROL DOCK ====== */}
+      {/* ====== FLOATING PILL DOCK (matches library style) ====== */}
       <div 
-        className={`fixed left-0 right-0 z-[60] transition-all duration-300 ease-out ${
-          isChromeVisible ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
-        }`}
+        className="fixed left-0 right-0 z-[60] flex justify-center pointer-events-none"
         style={{ 
-          bottom: 0,
-          paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
-          paddingLeft: '12px',
-          paddingRight: '12px'
+          bottom: 'max(20px, env(safe-area-inset-bottom))'
         }}
       >
         <div 
-          className="rounded-3xl overflow-hidden shadow-2xl border"
+          className={`pointer-events-auto shadow-xl backdrop-blur-2xl border flex flex-col rounded-2xl overflow-hidden transition-all duration-300 ease-out ${
+            isChromeVisible ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
+          }`}
           style={{ 
-            backgroundColor: theme.surface,
+            backgroundColor: theme.surface + 'f0', 
             borderColor: theme.borderColor,
-            boxShadow: '0 -4px 30px rgba(0,0,0,0.15)'
+            maxWidth: '420px',
+            width: 'calc(100% - 24px)'
           }}
         >
-          {/* Progress Scrubber */}
-          <div className="px-5 pt-4 pb-2">
+          {/* Progress bar */}
+          <div className="px-4 pt-3 pb-1">
             <input
               type="range"
               min="0"
@@ -197,144 +195,144 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
               step="0.0001"
               value={progress}
               onChange={handleScrub}
-              className="w-full h-2 rounded-full appearance-none cursor-pointer touch-pan-x"
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer touch-pan-x"
               style={{ 
                 background: `linear-gradient(to right, ${theme.accent} ${progress * 100}%, ${theme.borderColor} ${progress * 100}%)`
               }}
             />
-            <div className="flex justify-between mt-1">
-              <span className="text-[10px] opacity-40" style={{ color: theme.secondaryText }}>
+            <div className="flex justify-between mt-1 px-0.5">
+              <span className="text-[10px] tabular-nums" style={{ color: theme.secondaryText, opacity: 0.5 }}>
                 {Math.round(progress * 100)}%
               </span>
-              <span className="text-[10px] opacity-40" style={{ color: theme.secondaryText }}>
-                {Math.round((1 - progress) * engine.total / (wpm || 300))}m left
+              <span className="text-[10px] tabular-nums" style={{ color: theme.secondaryText, opacity: 0.5 }}>
+                {Math.round((1 - progress) * engine.total / Math.max(1, wpm))}m
               </span>
             </div>
           </div>
 
-          {/* Main Controls Row */}
-          <div className="flex items-center justify-between px-3 pb-3">
+          {/* Main controls row */}
+          <div className="flex items-center gap-1 px-1.5 pb-2">
             {/* Rewind */}
             <button
               onClick={handleRewind}
-              className="w-12 h-12 rounded-2xl flex items-center justify-center transition-all active:scale-90"
-              style={{ backgroundColor: `${theme.primaryText}06` }}
+              className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 transition-colors active:scale-90"
+              style={{ color: theme.secondaryText }}
               aria-label="Rewind"
             >
-              <RotateCcw size={20} style={{ color: theme.primaryText }} />
+              <RotateCcw size={18} />
             </button>
 
-            {/* Speed Control */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => handleSpeedChange(-25)}
-                className="w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90"
-                style={{ backgroundColor: `${theme.primaryText}06` }}
-                aria-label="Slower"
-              >
-                <Minus size={16} style={{ color: theme.secondaryText }} />
-              </button>
-              <div 
-                className="w-20 h-9 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: `${theme.primaryText}06` }}
-              >
-                <span className="text-sm font-semibold tabular-nums" style={{ color: theme.primaryText }}>
-                  {wpm}
-                </span>
-                <span className="text-[10px] ml-0.5 opacity-50" style={{ color: theme.secondaryText }}>
-                  wpm
-                </span>
-              </div>
-              <button
-                onClick={() => handleSpeedChange(25)}
-                className="w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90"
-                style={{ backgroundColor: `${theme.primaryText}06` }}
-                aria-label="Faster"
-              >
-                <Plus size={16} style={{ color: theme.secondaryText }} />
-              </button>
+            <div className="w-px h-5" style={{ backgroundColor: theme.borderColor }} />
+
+            {/* Speed - */}
+            <button
+              onClick={() => handleSpeedChange(-25)}
+              className="w-8 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 transition-colors active:scale-90"
+              style={{ color: theme.secondaryText }}
+              aria-label="Slower"
+            >
+              <Minus size={16} />
+            </button>
+
+            {/* WPM Display */}
+            <div 
+              className="h-9 px-2 rounded-xl flex items-center justify-center min-w-[60px]"
+              style={{ backgroundColor: `${theme.primaryText}06` }}
+            >
+              <span className="text-sm font-semibold tabular-nums" style={{ color: theme.primaryText }}>
+                {wpm}
+              </span>
             </div>
 
-            {/* Play/Pause - Central */}
+            {/* Speed + */}
+            <button
+              onClick={() => handleSpeedChange(25)}
+              className="w-8 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 transition-colors active:scale-90"
+              style={{ color: theme.secondaryText }}
+              aria-label="Faster"
+            >
+              <Plus size={16} />
+            </button>
+
+            <div className="w-px h-5" style={{ backgroundColor: theme.borderColor }} />
+
+            {/* Play/Pause - Main action */}
             <button
               onClick={handlePlayPause}
-              className="w-16 h-16 -my-2 rounded-full flex items-center justify-center transition-all active:scale-95 shadow-lg"
-              style={{ backgroundColor: theme.accent }}
+              className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl font-semibold text-white shadow-md active:scale-[0.98] transition-transform text-sm"
+              style={{ backgroundColor: theme.accent, minWidth: '80px' }}
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying 
-                ? <Pause size={28} color="#FFFFFF" /> 
-                : <Play size={28} color="#FFFFFF" className="ml-1" />
+                ? <><Pause size={16} /> <span className="lowercase">pause</span></>
+                : <><Play size={16} className="ml-0.5" /> <span className="lowercase">play</span></>
               }
             </button>
 
-            {/* Quick Settings Toggle */}
-            <div className="flex items-center gap-1">
-              {/* Ghost Words Toggle */}
-              <button
-                onClick={handleToggleGhost}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90 ${showGhost ? '' : 'opacity-40'}`}
-                style={{ backgroundColor: showGhost ? `${theme.accent}20` : `${theme.primaryText}06` }}
-                aria-label="Toggle ghost words"
-              >
-                {showGhost 
-                  ? <Eye size={16} style={{ color: theme.accent }} />
-                  : <EyeOff size={16} style={{ color: theme.secondaryText }} />
-                }
-              </button>
+            <div className="w-px h-5" style={{ backgroundColor: theme.borderColor }} />
 
-              {/* Theme Toggle */}
-              <button
-                onClick={handleToggleTheme}
-                className="w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90"
-                style={{ backgroundColor: `${theme.primaryText}06` }}
-                aria-label="Toggle theme"
-              >
-                <ThemeIcon size={16} style={{ color: theme.secondaryText }} />
-              </button>
+            {/* Ghost toggle */}
+            <button
+              onClick={handleToggleGhost}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors active:scale-90 ${showGhost ? '' : 'opacity-40'}`}
+              style={{ 
+                backgroundColor: showGhost ? `${theme.accent}15` : 'transparent',
+                color: showGhost ? theme.accent : theme.secondaryText
+              }}
+              aria-label="Toggle context"
+            >
+              {showGhost ? <Eye size={17} /> : <EyeOff size={17} />}
+            </button>
 
-              {/* Font Size */}
-              <button
-                onClick={() => setShowQuickSettings(v => !v)}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90 ${showQuickSettings ? 'ring-2' : ''}`}
-                style={{ 
-                  backgroundColor: showQuickSettings ? `${theme.accent}20` : `${theme.primaryText}06`,
-                  ringColor: theme.accent
-                }}
-                aria-label="Text size"
-              >
-                <Type size={16} style={{ color: showQuickSettings ? theme.accent : theme.secondaryText }} />
-              </button>
-            </div>
+            {/* Theme */}
+            <button
+              onClick={handleToggleTheme}
+              className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-black/5 transition-colors active:scale-90"
+              style={{ color: theme.secondaryText }}
+              aria-label="Toggle theme"
+            >
+              <ThemeIcon size={17} />
+            </button>
+
+            {/* Font size toggle */}
+            <button
+              onClick={() => setShowFontPanel(v => !v)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors active:scale-90`}
+              style={{ 
+                backgroundColor: showFontPanel ? `${theme.accent}15` : 'transparent',
+                color: showFontPanel ? theme.accent : theme.secondaryText
+              }}
+              aria-label="Text size"
+            >
+              <Type size={17} />
+            </button>
           </div>
 
-          {/* Quick Settings Panel */}
-          {showQuickSettings && (
+          {/* Font size panel (expandable) */}
+          {showFontPanel && (
             <div 
-              className="px-4 pb-4 pt-1 border-t"
+              className="flex items-center justify-between px-4 py-2 border-t"
               style={{ borderColor: theme.borderColor }}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs lowercase" style={{ color: theme.secondaryText }}>text size</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleFontSize(-2)}
-                    className="w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-90"
-                    style={{ backgroundColor: `${theme.primaryText}06` }}
-                  >
-                    <span className="text-sm" style={{ color: theme.primaryText }}>A</span>
-                  </button>
-                  <span className="w-12 text-center text-sm font-semibold" style={{ color: theme.primaryText }}>
-                    {settings.fontSize}
-                  </span>
-                  <button
-                    onClick={() => handleFontSize(2)}
-                    className="w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-90"
-                    style={{ backgroundColor: `${theme.primaryText}06` }}
-                  >
-                    <span className="text-lg font-medium" style={{ color: theme.primaryText }}>A</span>
-                  </button>
-                </div>
+              <span className="text-xs lowercase" style={{ color: theme.secondaryText }}>text size</span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => handleFontSize(-2)}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                  style={{ backgroundColor: `${theme.primaryText}06`, color: theme.primaryText }}
+                >
+                  <span className="text-sm">A</span>
+                </button>
+                <span className="text-sm font-semibold w-8 text-center tabular-nums" style={{ color: theme.primaryText }}>
+                  {settings.fontSize}
+                </span>
+                <button
+                  onClick={() => handleFontSize(2)}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                  style={{ backgroundColor: `${theme.primaryText}06`, color: theme.primaryText }}
+                >
+                  <span className="text-lg">A</span>
+                </button>
               </div>
             </div>
           )}
@@ -359,17 +357,17 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
             <button 
               onClick={handleExit}
               className="w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90"
-              style={{ backgroundColor: `${theme.primaryText}08` }}
+              style={{ backgroundColor: `${theme.primaryText}08`, color: theme.primaryText }}
               aria-label="Back"
             >
-              <ChevronLeft size={22} style={{ color: theme.primaryText }} />
+              <ChevronLeft size={22} />
             </button>
 
             <div className="flex-1 mx-3 text-center">
               <h1 className="text-sm font-semibold truncate" style={{ color: theme.primaryText }}>
                 {book.title}
               </h1>
-              <p className="text-[10px] opacity-50" style={{ color: theme.secondaryText }}>
+              <p className="text-[10px] opacity-50 truncate" style={{ color: theme.secondaryText }}>
                 {book.author}
               </p>
             </div>
@@ -386,22 +384,21 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
         }
         input[type="range"]::-webkit-slider-thumb {
           -webkit-appearance: none;
-          width: 18px;
-          height: 18px;
+          width: 14px;
+          height: 14px;
           border-radius: 50%;
           background: ${theme.accent};
           cursor: pointer;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-          border: 2px solid white;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.2);
         }
         input[type="range"]::-moz-range-thumb {
-          width: 18px;
-          height: 18px;
+          width: 14px;
+          height: 14px;
           border-radius: 50%;
           background: ${theme.accent};
           cursor: pointer;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-          border: 2px solid white;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+          border: none;
         }
       `}</style>
     </div>
