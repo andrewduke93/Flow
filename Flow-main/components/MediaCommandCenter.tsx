@@ -151,51 +151,33 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     }
   }, []);
 
-  // Build phrases when tokens change and narrator is enabled
-  // Initialize narrator with tokens for word-level sync
+  // Simple narrator: speak each word as heartbeat advances
   useEffect(() => {
-    if (!isRSVPActive || heartbeat.tokens.length === 0) return;
+    if (!isRSVPActive || !isNarratorEnabled) return;
     
-    // Load tokens for word-by-word synchronized speech
-    const words = heartbeat.tokens.map(t => t.originalText);
-    narrator.loadContent(words);
-    narrator.syncWithWPM(settings.rsvpSpeed);
-    
-    // Set up word boundary callback to sync visual display
-    narrator.onWord((wordIndex) => {
-      // When narrator speaks a word, update the visual display to match
-      if (wordIndex !== heartbeat.currentIndex) {
-        heartbeat.seek(wordIndex);
+    // Subscribe to heartbeat and speak each word
+    const speakCurrentWord = () => {
+      if (!heartbeat.isPlaying) return;
+      
+      const token = heartbeat.currentToken;
+      if (token) {
+        narrator.speakWord(token.originalText);
       }
-    });
-  }, [isRSVPActive, isNarratorEnabled, heartbeat.tokens.length, settings.rsvpSpeed]);
+    };
+    
+    const unsub = heartbeat.subscribe(speakCurrentWord);
+    return () => {
+      unsub();
+      narrator.stop();
+    };
+  }, [isRSVPActive, isNarratorEnabled]);
 
-  // Sync narrator with play/pause - narrator supplements heartbeat, doesn't replace it
+  // Stop narrator when paused
   useEffect(() => {
-    console.log('[MediaCC] Narrator effect running', { isRSVPActive, isNarratorEnabled, isPlaying });
-    
-    if (!isRSVPActive) {
+    if (!isPlaying && isNarratorEnabled) {
       narrator.stop();
-      return;
     }
-    
-    // Only control narrator if it's enabled
-    if (!isNarratorEnabled) {
-      narrator.stop();
-      return;
-    }
-    
-    if (isPlaying) {
-      // Start narrator from current position when playing
-      console.log('[MediaCC] Starting narrator from index', heartbeat.currentIndex);
-      narrator.startFromIndex(heartbeat.currentIndex);
-    } else {
-      console.log('[MediaCC] Pausing narrator');
-      narrator.pause();
-    }
-    
-    // NO cleanup here - let the state changes handle start/stop
-  }, [isPlaying, isNarratorEnabled, isRSVPActive]);
+  }, [isPlaying, isNarratorEnabled]);
 
   // Narrator state sync
   useEffect(() => {
