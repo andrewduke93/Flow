@@ -151,13 +151,26 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     }
   }, []);
 
+  // Track last spoken word to avoid duplicates
+  const lastSpokenIndex = useRef(-1);
+
   // Simple narrator: speak each word as heartbeat advances
   useEffect(() => {
-    if (!isRSVPActive || !isNarratorEnabled) return;
+    if (!isRSVPActive || !isNarratorEnabled) {
+      lastSpokenIndex.current = -1;
+      return;
+    }
     
-    // Subscribe to heartbeat and speak each word
+    // Subscribe to heartbeat and speak each word ONLY when index changes
     const speakCurrentWord = () => {
       if (!heartbeat.isPlaying) return;
+      
+      const currentIndex = heartbeat.currentIndex;
+      
+      // Only speak if this is a NEW word
+      if (currentIndex === lastSpokenIndex.current) return;
+      
+      lastSpokenIndex.current = currentIndex;
       
       const token = heartbeat.currentToken;
       if (token) {
@@ -169,6 +182,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     return () => {
       unsub();
       narrator.stop();
+      lastSpokenIndex.current = -1;
     };
   }, [isRSVPActive, isNarratorEnabled]);
 
