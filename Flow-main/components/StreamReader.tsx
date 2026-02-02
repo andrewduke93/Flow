@@ -143,65 +143,9 @@ const RSVPDisplay = memo(({
     ? '"Atkinson Hyperlegible", sans-serif'
     : 'system-ui, -apple-system, sans-serif';
 
-  const rsvpFontSize = Math.min(fontSize * 1.8, 42);
+  const rsvpFontSize = Math.min(fontSize * 2.2, 56);
 
-  // Karaoke/teleprompter style - readable flowing text
-  if (showGhost) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center select-none overflow-hidden px-6">
-        <div 
-          className="text-center leading-relaxed"
-          style={{ 
-            fontFamily: fontFamilyCSS,
-            fontSize: `${rsvpFontSize}px`,
-            fontWeight: 400,
-            letterSpacing: '0.01em',
-            maxWidth: '90vw',
-            lineHeight: 1.6
-          }}
-        >
-          {/* Previous words - dimmed */}
-          {prevWords.map((w, i) => (
-            <span 
-              key={`prev-${i}`}
-              style={{ 
-                color: textColor,
-                opacity: 0.3 + (i * 0.05), // Gradual fade in
-              }}
-            >
-              {w.text}{' '}
-            </span>
-          ))}
-          
-          {/* Current word - highlighted */}
-          <span 
-            style={{ 
-              color: accentColor,
-              fontWeight: 700,
-              textShadow: `0 0 20px ${accentColor}40`
-            }}
-          >
-            {word.text}
-          </span>
-          
-          {/* Next words - dimmed */}
-          {nextWords.map((w, i) => (
-            <span 
-              key={`next-${i}`}
-              style={{ 
-                color: textColor,
-                opacity: 0.4 - (i * 0.05), // Gradual fade out
-              }}
-            >
-              {' '}{w.text}
-            </span>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // Classic RSVP mode (ghost disabled) - single word with ORP
+  // Find optimal recognition point (ORP) for current word
   const text = word.text;
   const orpIndex = text.length <= 1 ? 0 
     : text.length <= 5 ? 1 
@@ -213,8 +157,118 @@ const RSVPDisplay = memo(({
   const pivot = text[orpIndex] || '';
   const after = text.slice(orpIndex + 1);
 
-  const classicFontSize = Math.min(fontSize * 2.2, 56);
+  // Karaoke/teleprompter style - current word locked with ORP, context flows around
+  if (showGhost) {
+    const contextFontSize = rsvpFontSize * 0.55;
+    
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
+        {/* Previous words - above, right-aligned to flow into current word */}
+        {prevWords.length > 0 && (
+          <div 
+            className="absolute text-right px-6"
+            style={{ 
+              top: `calc(50% - ${rsvpFontSize * 0.9}px)`,
+              right: '50%',
+              marginRight: '8px',
+              fontFamily: fontFamilyCSS,
+              fontSize: `${contextFontSize}px`,
+              color: textColor,
+              opacity: 0.35,
+              maxWidth: '45vw',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden'
+            }}
+          >
+            {prevWords.map(w => w.text).join(' ')}
+          </div>
+        )}
 
+        {/* Main word display with ORP alignment - LOCKED */}
+        <div className="relative flex items-center justify-center w-full">
+          {/* Focus line */}
+          <div 
+            className="absolute w-0.5 rounded-full"
+            style={{ 
+              backgroundColor: accentColor,
+              height: `${rsvpFontSize * 1.3}px`,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              opacity: 0.8
+            }}
+          />
+          
+          {/* Word positioned so ORP aligns with center line */}
+          <div 
+            className="flex items-baseline"
+            style={{ 
+              fontFamily: fontFamilyCSS,
+              fontSize: `${rsvpFontSize}px`,
+              fontWeight: 500,
+              letterSpacing: '0.01em'
+            }}
+          >
+            {/* Before ORP - right-aligned */}
+            <span 
+              className="text-right"
+              style={{ 
+                color: textColor,
+                minWidth: '42vw',
+                paddingRight: '3px'
+              }}
+            >
+              {before}
+            </span>
+            
+            {/* Pivot letter - at the focus line */}
+            <span 
+              style={{ 
+                color: accentColor, 
+                fontWeight: 700
+              }}
+            >
+              {pivot}
+            </span>
+            
+            {/* After ORP - left-aligned */}
+            <span 
+              className="text-left"
+              style={{ 
+                color: textColor,
+                minWidth: '42vw',
+                paddingLeft: '3px'
+              }}
+            >
+              {after}
+            </span>
+          </div>
+        </div>
+
+        {/* Next words - below, left-aligned to flow from current word */}
+        {nextWords.length > 0 && (
+          <div 
+            className="absolute text-left px-6"
+            style={{ 
+              top: `calc(50% + ${rsvpFontSize * 0.9}px)`,
+              left: '50%',
+              marginLeft: '8px',
+              fontFamily: fontFamilyCSS,
+              fontSize: `${contextFontSize}px`,
+              color: textColor,
+              opacity: 0.25,
+              maxWidth: '45vw',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden'
+            }}
+          >
+            {nextWords.map(w => w.text).join(' ')}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Classic RSVP mode (ghost disabled) - single word with ORP
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
       {/* Main word display with ORP alignment */}
@@ -224,7 +278,7 @@ const RSVPDisplay = memo(({
           className="absolute w-0.5 rounded-full"
           style={{ 
             backgroundColor: accentColor,
-            height: `${classicFontSize * 1.3}px`,
+            height: `${rsvpFontSize * 1.3}px`,
             left: '50%',
             transform: 'translateX(-50%)',
             opacity: 0.8
@@ -236,7 +290,7 @@ const RSVPDisplay = memo(({
           className="flex items-baseline"
           style={{ 
             fontFamily: fontFamilyCSS,
-            fontSize: `${classicFontSize}px`,
+            fontSize: `${rsvpFontSize}px`,
             fontWeight: 500,
             letterSpacing: '0.01em'
           }}
