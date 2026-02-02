@@ -99,16 +99,15 @@ export class TitanCore {
 
   public async load(book: Book): Promise<void> {
     this._loadTimestamp = Date.now();
-    this._lastSavedTokenIndex = -1; // Reset deduplication
+    this._lastSavedTokenIndex = -1;
     this._userIntentionalRewind = false;
     this.isLoading = true;
     this.loadingProgress = 0.1;
     this.notify();
 
-    // MUTABLE COPY STRATEGY:
     const mutableBook = { ...book };
 
-    // CACHE HIT LOGIC
+    // CACHE HIT - Instant return
     if (this.currentBook?.id === book.id && this.contentStorage.string.length > 0) {
         if (mutableBook.lastTokenIndex !== undefined) {
              this.currentBook.lastTokenIndex = mutableBook.lastTokenIndex;
@@ -123,59 +122,49 @@ export class TitanCore {
         return;
     }
 
-    // FRESH LOAD - ASYNC YIELDING
+    // FRESH LOAD - ULTRA FAST PATH
     this.unload();
-    this.notify();
-
-    // Small delay to allow UI to render the Loading state
-    await new Promise(r => setTimeout(r, 50));
-
+    
     try {
         const chapters = mutableBook.chapters ? [...mutableBook.chapters] : [];
         chapters.sort((a, b) => a.sortOrder - b.sortOrder);
         
-        // 1. RAW TEXT EXTRACTION & TOKEN MAPPING
-        // We calculate exact token offsets here to ensure 100% accuracy for chapter jumps.
-        this.chapterTokenOffsets = [];
-        let runningTokenCount = 0;
-        
-        // Parallel arrays for reconstruction
-        const cleanHtmlChunks: string[] = [];
         const totalChapters = chapters.length;
+        if (totalChapters === 0) {
+            this.isLoading = false;
+            this.loadingProgress = 1.0;
+            this.notify();
+            return;
+        }
 
+        // PHASE 1: INSTANT - Just extract text (no tokenization)
+        // Single pass, no yields, no async breaks
+        this.chapterTokenOffsets = [];
+        const cleanChunks: string[] = new Array(totalChapters);
+        let estimatedTokens = 0;
+        
         for (let i = 0; i < totalChapters; i++) {
-             // Cooperative Multitasking: Yield more frequently for very long books
-             if (i % 3 === 0) {
-                 this.loadingProgress = 0.1 + (0.8 * (i / totalChapters));
-                 this.notify();
-                 await new Promise(r => setTimeout(r, 0));
-             }
-
-             // PERFORMANCE FIX: Single pass cleaning
-             const chapterContent = chapters[i].content || "";
-             
-             // 2. Optimized HTML Strip
-             // Using a regex is much faster than DOMParser for the load phase
-             const cleanBody = chapterContent
-                .replace(/<(?:.|\n)*?>/gm, ' ') // Strip tags
-                .replace(/&nbsp;/g, ' ')
-                .replace(/\s+/g, ' ') // Normalize spaces
+            const raw = chapters[i].content || "";
+            // Fast regex strip - no DOM parsing
+            const clean = raw
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/&[a-z]+;/gi, ' ')
+                .replace(/\s+/g, ' ')
                 .trim();
-             
-             // 1. Calculate ACCURATE tokens from CLEANED text
-             // This matches what RSVP processor will actually tokenize
-             const tokensInChapter = calculateWordCount(cleanBody);
-             this.chapterTokenOffsets.push(runningTokenCount);
-             runningTokenCount += tokensInChapter;
-                
-             cleanHtmlChunks.push(cleanBody);
+            
+            cleanChunks[i] = clean;
+            
+            // Estimate tokens (fast approximation: split by space)
+            const wordCount = clean ? clean.split(/\s+/).length : 0;
+            this.chapterTokenOffsets.push(estimatedTokens);
+            estimatedTokens += wordCount;
         }
         
-        this.totalTokens = Math.max(1, runningTokenCount);
-        this.contentStorage.string = cleanHtmlChunks.join("\n\n");
+        this.totalTokens = Math.max(1, estimatedTokens);
+        this.contentStorage.string = cleanChunks.join("\n\n");
         this.currentBook = mutableBook;
         
-        // Hydrate state
+        // Hydrate progress
         if (mutableBook.lastTokenIndex !== undefined) {
             this.currentBook.lastTokenIndex = mutableBook.lastTokenIndex;
             this.currentProgress = Math.min(1, mutableBook.lastTokenIndex / this.totalTokens);
@@ -188,14 +177,22 @@ export class TitanCore {
         
         this.currentBook.bookmarkProgress = this.currentProgress;
         this.updateTypography();
+        
+        // DONE - Reader can now render
+        this.isLoading = false;
+        this.loadingProgress = 1.0;
+        this.notify();
 
-        // 4. BACKGROUND WARMUP: Pre-tokenize for RSVP mode
-        // This ensures that hitting "Play" is instantaneous.
-        RSVPConductor.getInstance().prepare(this.contentStorage.string).catch(() => {});
+        // PHASE 2: BACKGROUND - Tokenize for RSVP (non-blocking)
+        // This happens AFTER the reader is already visible
+        requestIdleCallback?.(() => {
+            RSVPConductor.getInstance().prepare(this.contentStorage.string).catch(() => {});
+        }) || setTimeout(() => {
+            RSVPConductor.getInstance().prepare(this.contentStorage.string).catch(() => {});
+        }, 100);
 
     } catch (error) {
-        console.error("[TitanCore] Critical Error loading book:", error);
-    } finally {
+        console.error("[TitanCore] Error:", error);
         this.isLoading = false;
         this.loadingProgress = 1.0;
         this.notify();
