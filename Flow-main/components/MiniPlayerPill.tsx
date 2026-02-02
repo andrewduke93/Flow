@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { Book } from '../types';
 import { TitanCore } from '../services/titanCore';
 import { RSVPConductor, RSVPState } from '../services/rsvpConductor';
 import { RSVPHeartbeat } from '../services/rsvpHeartbeat';
-import { Play, Pause, X } from 'lucide-react';
+import { Play, Pause } from 'lucide-react';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
@@ -15,17 +15,17 @@ interface MiniPlayerPillProps {
   onToggleRSVP: () => void;
 }
 
-// Speed presets - tap to cycle
-const SPEED_PRESETS = [150, 200, 250, 300, 400, 500, 700];
+// Speed presets - curated for meaningful differences
+const SPEED_PRESETS = [150, 200, 275, 350, 450, 600];
 
 /**
- * MiniPlayerPill - Ultra-Minimal Control
+ * MiniPlayerPill - Intentional Control Surface
  * 
- * Design: Everything visible, nothing hidden
- * - Play/Pause button
- * - Speed (tap to cycle)
- * - Close button
- * - That's it.
+ * READ MODE:  ← library    [ ▶ flow ]    12m
+ * FLOW MODE:  ← book       [ ▌▌ ]        300 · 8m
+ * 
+ * Every element has ONE clear purpose.
+ * Labels tell you WHERE you're going, not just "back".
  */
 export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
   book,
@@ -41,15 +41,21 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  
+  // Scrubbing state
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
 
   // Sync state
   useEffect(() => {
     const sync = () => {
       setIsPlaying(conductor.state === RSVPState.PLAYING);
-      if (isRSVPActive && heartbeat.tokens.length > 0) {
-        setProgress(heartbeat.currentIndex / heartbeat.tokens.length);
-      } else {
-        setProgress(core.currentProgress);
+      if (!isScrubbing) {
+        if (isRSVPActive && heartbeat.tokens.length > 0) {
+          setProgress(heartbeat.currentIndex / heartbeat.tokens.length);
+        } else {
+          setProgress(core.currentProgress);
+        }
       }
     };
 
@@ -59,103 +65,194 @@ export const MiniPlayerPill: React.FC<MiniPlayerPillProps> = memo(({
     sync();
     
     return () => { unsub1(); unsub2(); unsub3(); };
-  }, [isRSVPActive]);
+  }, [isRSVPActive, isScrubbing]);
 
-  // Play/pause
-  const handlePlayPause = useCallback(() => {
-    RSVPHapticEngine.impactLight();
+  // Primary action
+  const handlePrimaryAction = useCallback(() => {
+    RSVPHapticEngine.impactMedium();
     onToggleRSVP();
   }, [onToggleRSVP]);
 
-  // Cycle speed
+  // Cycle speed (only in Flow mode)
   const cycleSpeed = useCallback(() => {
     RSVPHapticEngine.selectionChanged();
     const currentIdx = SPEED_PRESETS.findIndex(s => s >= settings.rsvpSpeed);
-    const nextIdx = (currentIdx + 1) % SPEED_PRESETS.length;
+    const nextIdx = currentIdx === -1 ? 0 : (currentIdx + 1) % SPEED_PRESETS.length;
     updateSettings({ rsvpSpeed: SPEED_PRESETS[nextIdx], hasCustomSpeed: true });
   }, [settings.rsvpSpeed, updateSettings]);
+
+  // Back action
+  const handleBack = useCallback(() => {
+    RSVPHapticEngine.impactLight();
+    onBack();
+  }, [onBack]);
+
+  // Progress scrubbing
+  const handleScrub = useCallback((clientX: number) => {
+    if (!trackRef.current) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    setProgress(pct);
+    return pct;
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (!isRSVPActive) return;
+    setIsScrubbing(true);
+    handleScrub(e.clientX);
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }, [isRSVPActive, handleScrub]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isScrubbing) return;
+    handleScrub(e.clientX);
+  }, [isScrubbing, handleScrub]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (!isScrubbing) return;
+    const pct = handleScrub(e.clientX);
+    setIsScrubbing(false);
+    
+    // Commit position
+    if (isRSVPActive && pct !== undefined) {
+      const total = Math.max(1, heartbeat.tokens.length);
+      heartbeat.seek(Math.floor(pct * total));
+      RSVPHapticEngine.impactMedium();
+    }
+  }, [isScrubbing, isRSVPActive, handleScrub]);
 
   // Time remaining
   const getTimeLeft = () => {
     const total = Math.max(1, heartbeat.tokens.length || core.totalTokens);
     const idx = isRSVPActive ? heartbeat.currentIndex : Math.floor(progress * total);
     const left = total - idx;
-    const mins = Math.ceil(left / settings.rsvpSpeed);
-    return mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h`;
+    const speed = isRSVPActive ? settings.rsvpSpeed : 250; // Assume 250 for read mode estimate
+    const mins = Math.ceil(left / speed);
+    if (mins < 1) return "<1m";
+    if (mins >= 60) return `${Math.floor(mins/60)}h${mins%60 > 0 ? mins%60 + 'm' : ''}`;
+    return `${mins}m`;
   };
 
+  // ═══════════════════════════════════════════════════════════════
+  // READ MODE: Calm, inviting - "Start your flow session"
+  // ═══════════════════════════════════════════════════════════════
+  if (!isRSVPActive) {
+    return (
+      <div className="flex flex-col items-center gap-3 w-full">
+        {/* Simple row: Back | Flow button | Time */}
+        <div className="flex items-center justify-between w-full px-2">
+          {/* Left: Back to library */}
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-transform"
+            style={{ color: theme.secondaryText }}
+          >
+            <span className="text-lg">←</span>
+            <span className="text-sm font-medium">library</span>
+          </button>
+
+          {/* Center: Primary action - START FLOW */}
+          <button
+            onClick={handlePrimaryAction}
+            className="flex items-center gap-2 px-6 py-3 rounded-full active:scale-95 transition-transform shadow-lg"
+            style={{ 
+              backgroundColor: theme.accent,
+              color: '#fff'
+            }}
+          >
+            <Play size={18} className="fill-white" />
+            <span className="text-sm font-semibold tracking-wide">flow</span>
+          </button>
+
+          {/* Right: Time estimate */}
+          <div 
+            className="px-3 py-2"
+            style={{ color: theme.secondaryText }}
+          >
+            <span className="text-sm font-medium tabular-nums">{getTimeLeft()}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FLOW MODE: Focused, functional - "You're in the zone"
+  // ═══════════════════════════════════════════════════════════════
   return (
-    <div className="flex flex-col items-center gap-3">
-      {/* Progress line - full width, ultra thin */}
+    <div className="flex flex-col items-center gap-4 w-full">
+      {/* Progress bar - always visible, interactive */}
       <div 
-        className="w-full h-0.5 rounded-full overflow-hidden"
-        style={{ backgroundColor: `${theme.primaryText}10` }}
+        ref={trackRef}
+        className="w-full h-8 flex items-center cursor-pointer touch-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       >
         <div 
-          className="h-full rounded-full transition-all duration-150"
-          style={{ 
-            width: `${progress * 100}%`,
-            backgroundColor: theme.accent 
-          }}
-        />
+          className="w-full h-1 rounded-full overflow-hidden relative"
+          style={{ backgroundColor: `${theme.primaryText}12` }}
+        >
+          <div 
+            className={`h-full rounded-full ${isScrubbing ? '' : 'transition-all duration-150'}`}
+            style={{ 
+              width: `${progress * 100}%`,
+              backgroundColor: theme.accent 
+            }}
+          />
+          {/* Scrub indicator */}
+          {isScrubbing && (
+            <div 
+              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white shadow-lg"
+              style={{ 
+                left: `${progress * 100}%`,
+                transform: 'translate(-50%, -50%)',
+                backgroundColor: theme.accent
+              }}
+            />
+          )}
+        </div>
       </div>
 
-      {/* Control row - everything visible */}
-      <div className="flex items-center gap-4">
-        {/* Close */}
+      {/* Control row */}
+      <div className="flex items-center justify-between w-full px-2">
+        {/* Left: Back to book */}
         <button
-          onClick={onBack}
-          className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-          style={{ 
-            backgroundColor: `${theme.primaryText}08`,
-            color: theme.secondaryText 
-          }}
+          onClick={handleBack}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-transform"
+          style={{ color: theme.secondaryText }}
         >
-          <X size={18} />
+          <span className="text-lg">←</span>
+          <span className="text-sm font-medium">book</span>
         </button>
 
-        {/* Speed - tap to cycle */}
+        {/* Center: Play/Pause - THE primary action */}
         <button
-          onClick={cycleSpeed}
-          className="min-w-[64px] h-10 px-3 rounded-full flex items-center justify-center active:scale-95 transition-transform"
-          style={{ 
-            backgroundColor: `${theme.primaryText}08`,
-            color: theme.primaryText 
-          }}
-        >
-          <span className="text-sm font-semibold tabular-nums">{settings.rsvpSpeed}</span>
-          <span className="text-[10px] ml-1 opacity-50">wpm</span>
-        </button>
-
-        {/* Play/Pause - primary action */}
-        <button
-          onClick={handlePlayPause}
-          className="w-14 h-14 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-lg"
+          onClick={handlePrimaryAction}
+          className="w-16 h-16 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-xl"
           style={{ 
             backgroundColor: theme.accent,
             color: '#fff'
           }}
         >
-          {isRSVPActive && isPlaying ? (
-            <Pause size={22} className="fill-white" />
+          {isPlaying ? (
+            <Pause size={28} className="fill-white" />
           ) : (
-            <Play size={22} className="fill-white ml-0.5" />
+            <Play size={28} className="fill-white ml-1" />
           )}
         </button>
 
-        {/* Time left */}
-        <div 
-          className="min-w-[48px] h-10 px-3 rounded-full flex items-center justify-center"
-          style={{ 
-            backgroundColor: `${theme.primaryText}08`,
-            color: theme.secondaryText 
-          }}
+        {/* Right: Speed (tap to change) + Time */}
+        <button
+          onClick={cycleSpeed}
+          className="flex items-center gap-2 px-3 py-2 rounded-full active:scale-95 transition-transform"
+          style={{ color: theme.primaryText }}
         >
-          <span className="text-sm font-medium tabular-nums">{getTimeLeft()}</span>
-        </div>
-
-        {/* Spacer to balance close button */}
-        <div className="w-10" />
+          <span className="text-sm font-bold tabular-nums">{settings.rsvpSpeed}</span>
+          <span className="text-xs opacity-40">·</span>
+          <span className="text-sm font-medium tabular-nums" style={{ color: theme.secondaryText }}>{getTimeLeft()}</span>
+        </button>
       </div>
     </div>
   );
