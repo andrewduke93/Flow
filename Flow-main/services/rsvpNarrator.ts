@@ -312,19 +312,60 @@ export class RSVPNarrator {
    * Play audio using Web Audio API
    */
   private async playAudio(audio: any): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
+        console.log('[Narrator] Playing audio, type:', typeof audio, 'keys:', audio ? Object.keys(audio) : 'null');
+        
         // Create or resume audio context
         if (!this.audioContext) {
           this.audioContext = new AudioContext();
         }
         if (this.audioContext.state === 'suspended') {
-          this.audioContext.resume();
+          await this.audioContext.resume();
         }
         
-        // Get audio data - Kokoro returns { audio: Float32Array, sampling_rate: number }
-        const audioData = audio.audio || audio.data || audio;
-        const sampleRate = audio.sampling_rate || audio.sample_rate || 24000;
+        // Kokoro RawAudio has .audio (Float32Array) and .sampling_rate
+        // But the actual structure might vary, so let's be flexible
+        let audioData: Float32Array;
+        let sampleRate: number = 24000;
+        
+        if (audio.audio && audio.audio instanceof Float32Array) {
+          // Direct RawAudio object
+          audioData = audio.audio;
+          sampleRate = audio.sampling_rate || 24000;
+        } else if (audio instanceof Float32Array) {
+          // Just the raw data
+          audioData = audio;
+        } else if (audio.data && audio.data instanceof Float32Array) {
+          // Wrapped in data property
+          audioData = audio.data;
+          sampleRate = audio.sample_rate || audio.sampling_rate || 24000;
+        } else if (typeof audio.toBlob === 'function') {
+          // Has toBlob method - use HTML Audio instead
+          console.log('[Narrator] Using blob playback');
+          const blob = audio.toBlob();
+          const url = URL.createObjectURL(blob);
+          const htmlAudio = new Audio(url);
+          htmlAudio.volume = this._volume;
+          
+          htmlAudio.onended = () => {
+            URL.revokeObjectURL(url);
+            resolve();
+          };
+          htmlAudio.onerror = (e) => {
+            URL.revokeObjectURL(url);
+            reject(e);
+          };
+          
+          await htmlAudio.play();
+          return;
+        } else {
+          console.error('[Narrator] Unknown audio format:', audio);
+          reject(new Error('Unknown audio format'));
+          return;
+        }
+        
+        console.log('[Narrator] Audio data length:', audioData.length, 'sample rate:', sampleRate);
         
         // Create audio buffer
         const audioBuffer = this.audioContext.createBuffer(1, audioData.length, sampleRate);
@@ -350,7 +391,9 @@ export class RSVPNarrator {
         
         // Start playback
         this.currentSource.start(0);
+        console.log('[Narrator] Playback started');
       } catch (error) {
+        console.error('[Narrator] Playback error:', error);
         reject(error);
       }
     });
