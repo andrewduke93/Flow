@@ -54,27 +54,42 @@ export const FlowReader: React.FC<FlowReaderProps> = memo(({
 
   // Initialization - FAST PATH: show text immediately, tokenize in background
   useEffect(() => {
+    console.log('[FlowReader] Initializing for book:', book.id, 'chapters:', book.chapters?.length || 0);
     setIsReady(false);
     setLoadingProgress(0);
+    setContentText('');
 
     const init = async () => {
+      // If no chapters, show empty state but still mark as ready
       if (!book.chapters || book.chapters.length === 0) {
+        console.log('[FlowReader] No chapters found, showing empty state');
         setIsReady(true);
+        setContentText(''); // Empty = will show "No content to display"
         return;
       }
 
       try {
+        console.log('[FlowReader] Loading core...');
         // PHASE 1: Load core (fast - just text extraction)
         await core.load(book);
         
         // Capture content text for rendering
         const fullText = core.contentStorage.string;
+        console.log('[FlowReader] Content loaded, length:', fullText?.length || 0);
+        
+        if (!fullText || fullText.trim().length === 0) {
+          console.warn('[FlowReader] Content is empty after load');
+          setIsReady(true);
+          return;
+        }
+        
         setContentText(fullText);
         
         // IMMEDIATELY show reader with text
         // We don't need tokens for scroll view!
         setIsReady(true);
         setLoadingProgress(1);
+        console.log('[FlowReader] Ready!');
         
         // PHASE 2: Background tokenization (for RSVP)
         // This happens after the reader is already visible
@@ -82,9 +97,10 @@ export const FlowReader: React.FC<FlowReaderProps> = memo(({
         
         // Don't await - let it happen in background
         stream.loadContent(fullText, { tokenIndex: startIndex }).then(() => {
+          console.log('[FlowReader] Tokens loaded:', stream.tokens.length);
           setTokens(stream.tokens);
           setActiveIndex(stream.currentIndex);
-        }).catch(() => {});
+        }).catch((e) => console.error('[FlowReader] Token load failed:', e));
         
       } catch (e) {
         console.error('[FlowReader] Init failed:', e);
@@ -308,7 +324,14 @@ export const FlowReader: React.FC<FlowReaderProps> = memo(({
   const formattedBlocks = useMemo(() => {
     if (tokens.length > 0) return null; // Use token-based rendering when ready
     if (!contentText) return null;
-    return TextFormatter.formatText(contentText);
+    try {
+      const blocks = TextFormatter.formatText(contentText);
+      console.log('[FlowReader] Formatted blocks:', blocks?.length || 0);
+      return blocks;
+    } catch (e) {
+      console.error('[FlowReader] TextFormatter error:', e);
+      return null;
+    }
   }, [tokens.length, contentText]);
 
   return (
@@ -365,9 +388,14 @@ export const FlowReader: React.FC<FlowReaderProps> = memo(({
 
           {/* Empty state */}
           {!contentText && tokens.length === 0 && (
-            <p style={{ color: theme.primaryText, opacity: 0.5, textAlign: 'center', paddingTop: '2rem' }}>
-              No content to display
-            </p>
+            <div style={{ color: theme.primaryText, textAlign: 'center', paddingTop: '4rem' }}>
+              <p style={{ opacity: 0.5, fontSize: `${settings.fontSize}px` }}>
+                Unable to load book content
+              </p>
+              <p style={{ opacity: 0.3, fontSize: `${settings.fontSize * 0.8}px`, marginTop: '0.5rem' }}>
+                Book chapters: {book.chapters?.length || 0}
+              </p>
+            </div>
           )}
         </div>
       </div>
