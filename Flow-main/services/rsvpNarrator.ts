@@ -216,16 +216,27 @@ export class RSVPNarrator {
    * Load text and split into sentences
    */
   public loadText(text: string, startWordIndex: number = 0) {
-    // Split into sentences
-    this.sentences = text
+    // Split into sentences, then split long sentences further
+    const MAX_SENTENCE_LENGTH = 200; // Characters - WASM can't handle very long sentences
+    
+    let sentences = text
       .replace(/([.!?])\s+/g, '$1|SPLIT|')
       .split('|SPLIT|')
       .map(s => s.trim())
       .filter(s => s.length > 0);
     
+    // Split any sentence that's too long at comma/semicolon boundaries
+    this.sentences = sentences.flatMap(s => {
+      if (s.length <= MAX_SENTENCE_LENGTH) return [s];
+      // Split on commas, semicolons, or em-dashes for long sentences
+      return s.split(/[,;—]\s*/)
+        .map(part => part.trim())
+        .filter(part => part.length > 0);
+    });
+    
     this.currentSentenceIndex = 0;
     this.baseWordIndex = startWordIndex;
-    console.log(`[Narrator] Loaded ${this.sentences.length} sentences, starting from word ${startWordIndex}`);
+    console.log(`[Narrator] Loaded ${this.sentences.length} chunks (split from ${sentences.length} sentences), starting from word ${startWordIndex}`);
   }
 
   /**
@@ -271,15 +282,23 @@ export class RSVPNarrator {
     this.notify();
 
     try {
-      console.log(`[Narrator] Generating speech for sentence ${this.currentSentenceIndex}: "${sentence.substring(0, 50)}..."`);
+      console.log(`[Narrator] Generating speech for chunk ${this.currentSentenceIndex}/${this.sentences.length}: "${sentence.substring(0, 50)}..." (${sentence.length} chars)`);
       console.log(`[Narrator] Using voice: ${this._selectedVoice}, speed: ${this._rate}`);
       
-      // Generate audio with Kokoro
+      // Generate audio with Kokoro (with timeout for WASM)
       const startTime = Date.now();
-      const audio = await this.tts.generate(sentence, {
+      const TIMEOUT_MS = 30000; // 30 second timeout
+      
+      const generatePromise = this.tts.generate(sentence, {
         voice: this._selectedVoice,
         speed: this._rate
       });
+      
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Generation timed out')), TIMEOUT_MS);
+      });
+      
+      const audio = await Promise.race([generatePromise, timeoutPromise]);
       console.log(`[Narrator] Generation took ${Date.now() - startTime}ms, audio:`, audio);
       
       if (!this.isAutoPlaying) {
