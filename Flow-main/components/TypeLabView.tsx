@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTitanSettings } from '../services/configService';
 import { useTitanTheme } from '../services/titanTheme';
-import { Type, Zap, Minus, Plus, Sparkles } from 'lucide-react';
+import { Type, Zap, Minus, Plus } from 'lucide-react';
 
 /**
  * TypeLabView (Flow-Reader 2.0: Explicit Control)
@@ -95,35 +95,6 @@ export const TypeLabView: React.FC = () => {
         </div>
       </div>
 
-      {/* RSVP Options */}
-      <div 
-        className="rounded-2xl border overflow-hidden"
-        style={{ backgroundColor: theme.surface, borderColor: theme.borderColor }}
-      >
-        {/* Ghost Preview Toggle */}
-        <button
-          onClick={() => updateSettings({ showGhostPreview: !settings.showGhostPreview })}
-          className="w-full flex items-center justify-between p-4 active:bg-black/5 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div 
-              className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ 
-                backgroundColor: settings.showGhostPreview ? `${theme.accent}20` : theme.borderColor,
-                color: settings.showGhostPreview ? theme.accent : theme.secondaryText
-              }}
-            >
-              <Sparkles size={16} />
-            </div>
-            <div className="text-left">
-              <span className="text-sm font-medium block" style={{ color: theme.primaryText }}>word preview</span>
-              <span className="text-[10px] opacity-50" style={{ color: theme.secondaryText }}>show surrounding words while reading</span>
-            </div>
-          </div>
-          <ToggleSwitch enabled={settings.showGhostPreview || false} theme={theme} />
-        </button>
-      </div>
-
       <div className="w-full h-px" style={{ backgroundColor: theme.borderColor }} />
 
       {/* 2. Typography Controls */}
@@ -201,15 +172,3 @@ function getCSSFont(name: string): string {
     if (name === 'SF Pro') return 'sans-serif';
     return 'serif';
 }
-
-const ToggleSwitch: React.FC<{ enabled: boolean; theme: any }> = ({ enabled, theme }) => (
-  <div 
-    className="w-11 h-7 rounded-full p-0.5 transition-colors duration-200"
-    style={{ backgroundColor: enabled ? theme.accent : theme.borderColor }}
-  >
-    <div 
-      className="w-6 h-6 rounded-full bg-white shadow-sm transition-transform duration-200"
-      style={{ transform: enabled ? 'translateX(16px)' : 'translateX(0)' }}
-    />
-  </div>
-);
