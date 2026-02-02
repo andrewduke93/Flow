@@ -317,46 +317,52 @@ export class RSVPNarrator {
       }
     }
     
-    // Clear any ongoing speech (use cancel directly, not stop())
+    // Clear any ongoing speech
     this.synth.cancel();
     
-    // Build text from startIndex onwards
+    // Build text - CHUNK to avoid browser limits (max ~200 words per utterance)
     this.currentWordIndex = Math.max(0, Math.min(startIndex, this.tokens.length - 1));
-    const textFromHere = this.tokens.slice(this.currentWordIndex).join(' ');
+    const CHUNK_SIZE = 150; // Words per chunk - safe for all browsers
+    const endIndex = Math.min(this.currentWordIndex + CHUNK_SIZE, this.tokens.length);
+    const chunkTokens = this.tokens.slice(this.currentWordIndex, endIndex);
+    const textToSpeak = chunkTokens.join(' ');
     
-    console.log('[Narrator] Speaking text (first 100 chars):', textFromHere.substring(0, 100));
+    console.log('[Narrator] Speaking chunk:', { 
+      from: this.currentWordIndex, 
+      to: endIndex, 
+      words: chunkTokens.length,
+      text: textToSpeak.substring(0, 80) + '...'
+    });
     
-    // Rebuild char map for the substring
+    // Build char map for this chunk only
     this.charToWordMap = [];
     let charPos = 0;
-    for (let i = this.currentWordIndex; i < this.tokens.length; i++) {
-      const word = this.tokens[i];
+    for (let i = 0; i < chunkTokens.length; i++) {
+      const word = chunkTokens[i];
       for (let j = 0; j < word.length; j++) {
-        this.charToWordMap[charPos + j] = i;
+        this.charToWordMap[charPos + j] = this.currentWordIndex + i;
       }
       charPos += word.length;
-      if (i < this.tokens.length - 1) {
-        this.charToWordMap[charPos] = i;
+      if (i < chunkTokens.length - 1) {
+        this.charToWordMap[charPos] = this.currentWordIndex + i;
         charPos++;
       }
     }
     
     this._state = 'speaking';
     
-    const utterance = new SpeechSynthesisUtterance(textFromHere);
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utterance.voice = this.selectedVoice;
     utterance.rate = this._rate;
     utterance.pitch = this._pitch;
     utterance.volume = this._volume;
     
-    // CRITICAL: Word boundary event for sync
+    // Word boundary event for sync
     utterance.onboundary = (event) => {
       if (event.name === 'word') {
-        // Map character index to word index
         const wordIdx = this.charToWordMap[event.charIndex];
         if (wordIdx !== undefined && wordIdx !== this.currentWordIndex) {
           this.currentWordIndex = wordIdx;
-          // Notify visual display to update
           if (this.onWordCallback) {
             this.onWordCallback(this.currentWordIndex);
           }
@@ -370,9 +376,20 @@ export class RSVPNarrator {
     };
     
     utterance.onend = () => {
-      console.log('[Narrator] Speech ended');
-      this._state = 'idle';
-      this.notify();
+      console.log('[Narrator] Chunk ended at index', this.currentWordIndex);
+      // Auto-advance to next chunk if still enabled and playing
+      if (this._isEnabled && this._state === 'speaking' && endIndex < this.tokens.length) {
+        // Continue with next chunk
+        this.currentWordIndex = endIndex;
+        setTimeout(() => {
+          if (this._isEnabled) {
+            this.startFromIndex(this.currentWordIndex);
+          }
+        }, 50);
+      } else {
+        this._state = 'idle';
+        this.notify();
+      }
     };
     
     utterance.onerror = (e) => {
