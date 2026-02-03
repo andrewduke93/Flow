@@ -258,6 +258,10 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   // Sync Ref signal
   const pendingJumpIndex = useRef<number | null>(null);
 
+    // RSVP lock: when RSVP is playing we lock the view so the reader is authoritative
+    const isLockedByRSVP = useRef(false);
+    const rsvpLoopRef = useRef<number | null>(null);
+
   const updateActiveIndex = useCallback((idx: number) => {
       setActiveIndex(idx);
       activeIndexRef.current = idx;
@@ -468,6 +472,67 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       return () => unsubConductor();
   }, [updateActiveIndex, scrollToToken]);
 
+    // Keep view locked and synced while RSVP is PLAYING using RAF loop
+    useEffect(() => {
+        const conductor = RSVPConductor.getInstance();
+        const heartbeat = RSVPHeartbeat.getInstance();
+
+        const startLoop = () => {
+            if (rsvpLoopRef.current != null) return;
+            const loop = () => {
+                const idx = (heartbeat && typeof heartbeat.currentIndex === 'number') ? heartbeat.currentIndex : activeIndexRef.current;
+                if (typeof idx === 'number' && idx >= 0) {
+                    // update highlighted index and keep it in view without smooth jitter
+                    updateActiveIndex(idx);
+                    scrollToToken(idx, false);
+                }
+                rsvpLoopRef.current = window.requestAnimationFrame(loop);
+            };
+            rsvpLoopRef.current = window.requestAnimationFrame(loop);
+        };
+
+        const stopLoop = () => {
+            if (rsvpLoopRef.current != null) {
+                window.cancelAnimationFrame(rsvpLoopRef.current);
+                rsvpLoopRef.current = null;
+            }
+        };
+
+        const handleState = () => {
+            const s = conductor.state;
+            if (s === 'PLAYING') {
+                isLockedByRSVP.current = true;
+                // Ensure initial sync immediately
+                const idx = (heartbeat && typeof heartbeat.currentIndex === 'number') ? heartbeat.currentIndex : activeIndexRef.current;
+                if (typeof idx === 'number' && idx >= 0) {
+                    updateActiveIndex(idx);
+                    scrollToToken(idx, false);
+                }
+                startLoop();
+            } else {
+                // On pause/stop: stop RAF loop and do a single smooth sync
+                stopLoop();
+                isLockedByRSVP.current = false;
+                const idx = (heartbeat && typeof heartbeat.currentIndex === 'number') ? heartbeat.currentIndex : activeIndexRef.current;
+                if (typeof idx === 'number' && idx >= 0) {
+                    updateActiveIndex(idx);
+                    // Smooth scroll to show current word in background
+                    scrollToToken(idx, true);
+                }
+            }
+        };
+
+        const unsub = conductor.subscribe(handleState);
+        // run once to align with current state
+        handleState();
+
+        return () => {
+            unsub();
+            stopLoop();
+            isLockedByRSVP.current = false;
+        };
+    }, [updateActiveIndex, scrollToToken]);
+
   // -- 3. RESTORATION --
   useLayoutEffect(() => {
       if (!isReady || tokens.length === 0) return;
@@ -549,6 +614,8 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
     if (observerRef.current) observerRef.current.disconnect();
 
     const callback = (entries: IntersectionObserverEntry[]) => {
+        // If RSVP has locked the view, ignore observer updates
+        if (isLockedByRSVP.current) return;
         if (isProgrammaticScroll.current) return;
 
         // Find the first element intersecting the optical zone (top 30%)
