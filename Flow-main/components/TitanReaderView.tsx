@@ -236,6 +236,25 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
   // Intersection Observer for Smooth Scroll Tracking
   const observerRef = useRef<IntersectionObserver | null>(null);
 
+  // Cached paragraph starts and offsets for fast scroll target calculation
+  const paragraphStartsRef = useRef<{ startIndex: number; top: number }[]>([]);
+
+  const computeParagraphOffsets = useCallback(() => {
+      if (!containerRef.current) return;
+      const paras = Array.from(containerRef.current.querySelectorAll('p[data-start-index]')) as HTMLElement[];
+      const arr = paras.map(p => {
+          let offsetTop = p.offsetTop;
+          let parent = p.offsetParent as HTMLElement | null;
+          while (parent && parent !== containerRef.current) {
+              offsetTop += parent.offsetTop;
+              parent = parent.offsetParent as HTMLElement | null;
+          }
+          return { startIndex: parseInt(p.dataset.startIndex || '-1'), top: offsetTop };
+      }).filter(x => x.startIndex >= 0).sort((a, b) => a.startIndex - b.startIndex);
+
+      paragraphStartsRef.current = arr;
+  }, []);
+
   // Sync Ref signal
   const pendingJumpIndex = useRef<number | null>(null);
 
@@ -465,6 +484,25 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
       };
       requestAnimationFrame(performRestoration);
   }, [isReady, tokens.length, book.id, scrollToToken]);
+
+    // Recompute paragraph offsets after render and on resize/font changes
+    useLayoutEffect(() => {
+        if (!isRestored) return;
+        // Compute initial offsets after DOM painted
+        computeParagraphOffsets();
+
+        const ro = new ResizeObserver(() => {
+            computeParagraphOffsets();
+        });
+        if (containerRef.current) ro.observe(containerRef.current);
+
+        window.addEventListener('resize', computeParagraphOffsets);
+
+        return () => {
+            try { ro.disconnect(); } catch(e) {}
+            window.removeEventListener('resize', computeParagraphOffsets);
+        };
+    }, [tokens.length, isRestored, computeParagraphOffsets]);
 
   // Debounced save for scroll tracking - prevents excessive writes
   const scrollSaveTimer = useRef<number | null>(null);
