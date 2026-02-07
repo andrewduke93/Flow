@@ -52,6 +52,11 @@ export class TitanStorage {
         if (!db.objectStoreNames.contains('covers')) {
           db.createObjectStore('covers'); // Key: Book ID, Value: Blob
         }
+
+        // Store for tracking deleted books (prevent re-download from cloud)
+        if (!db.objectStoreNames.contains('deletions')) {
+          db.createObjectStore('deletions'); // Key: Book ID, Value: timestamp
+        }
       };
 
       request.onsuccess = (e) => {
@@ -89,6 +94,14 @@ export class TitanStorage {
     await this.delete('metadata', id);
     await this.delete('sources', id);
     await this.delete('covers', id); // Also delete cached cover
+    // Record deletion timestamp to prevent re-download from cloud
+    await this.put('deletions', Date.now(), id);
+  }
+
+  public async wasDeletionRecorded(id: string): Promise<boolean> {
+    await this.init();
+    const result = await this.get('deletions', id);
+    return result !== undefined;
   }
 
   public async getAllMetadata(): Promise<Book[]> {

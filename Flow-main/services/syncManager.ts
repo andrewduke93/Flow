@@ -248,6 +248,13 @@ export class SyncManager {
           // Check if we have a local book with same Title/Author but no Drive ID
           const parsed = this.parseFilename(file.name);
           const fingerprint = `${parsed.title}|${parsed.author}`;
+
+          // Check if we have a locally-deleted book with this title to skip re-download
+          const localByTitle = localMetadata.find(b => b.title === parsed.title && b.author === parsed.author);
+          if (localByTitle && await this.storage.wasDeletionRecorded(localByTitle.id)) {
+              // User explicitly deleted this book - don't re-download
+              continue;
+          }
           const existingLocal = mapByFingerprint.get(fingerprint);
 
           if (existingLocal) {

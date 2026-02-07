@@ -342,6 +342,8 @@ const App: React.FC = () => {
       for (const id of ids) {
           await TitanStorage.getInstance().deleteBook(id);
       }
+      // Trigger sync to remove from cloud if cloud-synced
+      SyncManager.getInstance().requestSync();
   }, []);
 
   const handleToggleReadStatus = useCallback(async (ids: string[], isRead: boolean) => {

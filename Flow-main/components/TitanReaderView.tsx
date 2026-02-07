@@ -261,9 +261,10 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
     // RSVP lock: when RSVP is playing we lock the view so the reader is authoritative
     const isLockedByRSVP = useRef(false);
     const rsvpLoopRef = useRef<number | null>(null);
-
-  const updateActiveIndex = useCallback((idx: number) => {
-      setActiveIndex(idx);
+  
+  // Visual highlight tracking: use ref to avoid React batching lag
+  const visualActiveIndexRef = useRef(-1);
+  const lastHighlightedElementRef = useRef<HTMLElement | null>(null);
       activeIndexRef.current = idx;
   }, []);
 
@@ -477,13 +478,37 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
         const conductor = RSVPConductor.getInstance();
         const heartbeat = RSVPHeartbeat.getInstance();
 
+        const updateHighlight = (idx: number) => {
+            if (visualActiveIndexRef.current === idx) return; // Already highlighted
+            visualActiveIndexRef.current = idx;
+
+            // Remove old highlight
+            if (lastHighlightedElementRef.current) {
+                const old = lastHighlightedElementRef.current;
+                const accent = theme.accent;
+                if (old.style.backgroundColor === accent) {
+                    old.style.backgroundColor = 'transparent';
+                    old.style.color = 'inherit';
+                }
+            }
+
+            // Apply new highlight directly to DOM (instant, no React batching)
+            const elem = document.getElementById(`w-$${idx}`);
+            if (elem) {
+                elem.style.backgroundColor = theme.accent;
+                elem.style.color = '#FFFFFF';
+                lastHighlightedElementRef.current = elem;
+            }
+        };
+
         const startLoop = () => {
             if (rsvpLoopRef.current != null) return;
             const loop = () => {
                 const idx = (heartbeat && typeof heartbeat.currentIndex === 'number') ? heartbeat.currentIndex : activeIndexRef.current;
                 if (typeof idx === 'number' && idx >= 0) {
-                    // update highlighted index and keep it in view without smooth jitter
-                    updateActiveIndex(idx);
+                    // Update highlight directly on DOM (no React batching)
+                    updateHighlight(idx);
+                    // Scroll to keep word in view (instant)
                     scrollToToken(idx, false);
                 }
                 rsvpLoopRef.current = window.requestAnimationFrame(loop);
@@ -505,18 +530,18 @@ export const TitanReaderView: React.FC<TitanReaderViewProps> = ({ book, onToggle
                 // Ensure initial sync immediately
                 const idx = (heartbeat && typeof heartbeat.currentIndex === 'number') ? heartbeat.currentIndex : activeIndexRef.current;
                 if (typeof idx === 'number' && idx >= 0) {
-                    updateActiveIndex(idx);
+                    updateHighlight(idx);
                     scrollToToken(idx, false);
                 }
                 startLoop();
             } else {
-                // On pause/stop: stop RAF loop and do a single smooth sync
+                // On pause/stop: stop RAF loop and return to React state highlighting
                 stopLoop();
                 isLockedByRSVP.current = false;
                 const idx = (heartbeat && typeof heartbeat.currentIndex === 'number') ? heartbeat.currentIndex : activeIndexRef.current;
                 if (typeof idx === 'number' && idx >= 0) {
+                    // Reset to React-controlled state
                     updateActiveIndex(idx);
-                    // Smooth scroll to show current word in background
                     scrollToToken(idx, true);
                 }
             }
