@@ -288,6 +288,11 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
       });
       setHighlightedParagraph(paraIndex);
       
+      // Scroll to position in scroll mode
+      if (!isPlaying) {
+        scrollToWord(pos, false);
+      }
+      
       // Save progress (debounced)
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
@@ -354,19 +359,53 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
         
         container.scrollTo({
           top: Math.max(0, targetY),
-          behavior: smooth ? 'smooth' : 'instant'
+          behavior: 'instant'
         });
       }
     }
     
     setTimeout(() => {
       ignoreScrollRef.current = false;
-    }, smooth ? 400 : 50);
+    }, 50);
   }, [paragraphs]);
 
   // ============================================
   // HANDLERS
   // ============================================
+  const handleScroll = useCallback(() => {
+    if (ignoreScrollRef.current || isPlaying) return;
+    
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const scrollTop = container.scrollTop;
+    const containerHeight = container.clientHeight;
+    const centerY = scrollTop + containerHeight / 2;
+    
+    const children = scrollRef.current?.children;
+    if (!children) return;
+    
+    let closestPara = 0;
+    let minDistance = Infinity;
+    
+    for (let i = 0; i < children.length; i++) {
+      const el = children[i] as HTMLElement;
+      const elTop = el.offsetTop;
+      const elHeight = el.offsetHeight;
+      const elCenter = elTop + elHeight / 2;
+      const distance = Math.abs(elCenter - centerY);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestPara = i;
+      }
+    }
+    
+    const para = paragraphs[closestPara];
+    if (para && para.startIndex !== engine.position) {
+      engine.position = para.startIndex;
+    }
+  }, [paragraphs, isPlaying]);
+
   const handleParagraphTap = useCallback((startIndex: number) => {
     RSVPHapticEngine.impactLight();
     engine.position = startIndex;
@@ -493,6 +532,7 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
         WebkitOverflowScrolling: 'touch'
       }}
       onClick={handleBackgroundTap}
+      onScroll={handleScroll}
     >
       <div 
         ref={scrollRef}
