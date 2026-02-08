@@ -155,12 +155,13 @@ const App: React.FC = () => {
             booksRef.current = hydrated;
 
             // COVER RESTORATION: Restore blob URLs for cached covers
-            // This runs in the background to avoid blocking initial render
+            // Blob URLs are session-specific and become invalid on reload
+            // This regenerates fresh blob URLs from persisted IndexedDB blobs
             (async () => {
                 const restoredBooks = await Promise.all(
                     hydrated.map(async (book) => {
-                        if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
-                            // Try to get cached cover blob
+                        if (book.coverUrl) {
+                            // Always check for cached blob - blob URLs are invalid after reload
                             const cachedUrl = await CoverService.getCachedCover(book.id);
                             if (cachedUrl) {
                                 return { ...book, coverUrl: cachedUrl };
