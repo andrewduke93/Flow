@@ -547,10 +547,6 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
   // HANDLERS
   // ============================================
   
-  // Track tap vs drag for better interaction
-  const touchStartPos = useRef<{ x: number; y: number; time: number } | null>(null);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
   const handleWordTap = useCallback((index: number) => {
     RSVPHapticEngine.impactLight();
     engine.position = index;
@@ -563,74 +559,74 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
     engine.toggle();
   }, []);
   
-  // Universal tap handler - works on text and empty space
-  const handleTapStart = useCallback((e: React.TouchEvent | React.MouseEvent) => {
-    // Ignore multi-touch gestures (pinch-to-zoom, etc)
-    if ('touches' in e && e.touches.length > 1) return;
+  // ============================================
+  // TAP HANDLING - Optimized for responsiveness
+  // ============================================
+  // Use refs for immediate gesture tracking without re-renders
+  const gestureRef = useRef<{
+    startX: number;
+    startY: number;
+    startTime: number;
+    target: HTMLElement | null;
+  } | null>(null);
+  
+  // Immediate tap response using pointerdown/pointerup
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    // Ignore multi-touch (e.pointerType === 'touch' && more than one active)
+    if (e.pointerType === 'touch' && e.isPrimary === false) return;
     
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    touchStartPos.current = { x: clientX, y: clientY, time: Date.now() };
-    
-    // Long press detection (for word selection)
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    longPressTimer.current = setTimeout(() => {
-      // Long press - could select word for later features
-      RSVPHapticEngine.impactLight();
-    }, 500);
+    gestureRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startTime: performance.now(), // More precise than Date.now()
+      target: e.target as HTMLElement
+    };
   }, []);
   
-  const handleTapEnd = useCallback((e: React.TouchEvent | React.MouseEvent) => {
-    // Ignore multi-touch gestures
-    if ('changedTouches' in e && e.changedTouches.length > 1) return;
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    const gesture = gestureRef.current;
+    if (!gesture) return;
+    gestureRef.current = null;
     
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
+    // Calculate gesture metrics
+    const dx = Math.abs(e.clientX - gesture.startX);
+    const dy = Math.abs(e.clientY - gesture.startY);
+    const dt = performance.now() - gesture.startTime;
+    
+    // Tap detection: very short and small movement
+    // Reduced thresholds for snappier response
+    const isTap = dt < 300 && dx < 15 && dy < 15;
+    
+    if (!isTap) return;
+    
+    // Walk up DOM to find data-idx (word) or data-start (paragraph)
+    let target = e.target as HTMLElement | null;
+    let wordIndex: string | undefined;
+    let paragraphStart: string | undefined;
+    
+    while (target && target !== e.currentTarget) {
+      if (!wordIndex) wordIndex = target.dataset?.idx;
+      if (!paragraphStart) paragraphStart = target.dataset?.start;
+      if (wordIndex) break; // Found a word, stop looking
+      target = target.parentElement;
     }
     
-    if (!touchStartPos.current) return;
-    
-    const clientX = 'changedTouches' in e ? e.changedTouches[0].clientX : e.clientX;
-    const clientY = 'changedTouches' in e ? e.changedTouches[0].clientY : e.clientY;
-    
-    const dx = Math.abs(clientX - touchStartPos.current.x);
-    const dy = Math.abs(clientY - touchStartPos.current.y);
-    const dt = Date.now() - touchStartPos.current.time;
-    
-    // It's a tap if: short duration, small movement
-    const isTap = dt < 400 && dx < 20 && dy < 20;
-    
-    if (isTap) {
-      // Check if we're clicking on a word (has data-idx) - walk up the DOM tree
-      let target = e.target as HTMLElement | null;
-      let wordIndex: string | undefined;
-      
-      while (target && !wordIndex) {
-        wordIndex = target.dataset?.idx;
-        target = target.parentElement;
-      }
-      
-      if (wordIndex !== undefined) {
-        // Tapped on a word - jump to this position and start RSVP
-        // Only prevent default for word taps, not general interactions
-        e.preventDefault();
-        handleWordTap(parseInt(wordIndex));
-      } else {
-        // Tapped on empty space - toggle chrome (don't prevent default)
-        onToggleChrome();
-      }
+    if (wordIndex !== undefined) {
+      // Tapped on an interactive word
+      e.preventDefault();
+      handleWordTap(parseInt(wordIndex));
+    } else if (paragraphStart !== undefined) {
+      // Tapped on a static paragraph - start from its first word
+      e.preventDefault();
+      handleWordTap(parseInt(paragraphStart));
+    } else {
+      // Tapped on empty space - toggle chrome
+      onToggleChrome();
     }
-    
-    touchStartPos.current = null;
   }, [handleWordTap, onToggleChrome]);
   
-  const handleTapCancel = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-    touchStartPos.current = null;
+  const handlePointerCancel = useCallback(() => {
+    gestureRef.current = null;
   }, []);
 
   // ============================================
@@ -681,13 +677,12 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
       style={{ 
         backgroundColor: theme.background,
         WebkitOverflowScrolling: 'touch',
-        overscrollBehavior: 'contain'
+        overscrollBehavior: 'contain',
+        touchAction: 'pan-y' // Allow vertical scrolling but enable tap detection
       }}
-      onTouchStart={handleTapStart}
-      onTouchEnd={handleTapEnd}
-      onTouchCancel={handleTapCancel}
-      onMouseDown={handleTapStart}
-      onMouseUp={handleTapEnd}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
     >
       {/* RSVP Overlay - Shows when playing */}
       {isPlaying && (
