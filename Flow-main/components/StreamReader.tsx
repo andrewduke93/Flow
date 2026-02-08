@@ -424,7 +424,7 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
       book.lastTokenIndex = pos;
       book.bookmarkProgress = engine.progress;
       
-      // Debounced save to storage
+      // REDUCED DEBOUNCE: 200ms instead of 500ms for faster saves
       if (saveTimeout.current) clearTimeout(saveTimeout.current);
       saveTimeout.current = setTimeout(() => {
         TitanStorage.getInstance().saveBook({
@@ -433,7 +433,7 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
           bookmarkProgress: engine.progress,
           lastOpened: new Date()
         });
-      }, 500);
+      }, 200);
     });
     
     const unsubPlay = engine.onPlayState((playing) => {
@@ -458,7 +458,16 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
     return () => {
       unsubPos();
       unsubPlay();
-      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      if (saveTimeout.current) {
+        clearTimeout(saveTimeout.current);
+        // IMMEDIATE FINAL SAVE on unmount
+        TitanStorage.getInstance().saveBook({
+          ...book,
+          lastTokenIndex: engine.position,
+          bookmarkProgress: engine.progress,
+          lastOpened: new Date()
+        });
+      }
     };
   }, [book.id]);
 

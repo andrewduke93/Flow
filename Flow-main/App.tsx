@@ -83,6 +83,11 @@ const App: React.FC = () => {
             // Init Storage
             await storage.init();
             
+            // Clean up orphaned localStorage backups
+            storage.cleanupOrphanedBackups().catch(e => {
+                console.warn('[App] Failed to cleanup localStorage:', e);
+            });
+            
             // Load Books (Metadata only for speed)
             let loadedBooks = await storage.getAllMetadata();
             
@@ -248,11 +253,23 @@ const App: React.FC = () => {
           }
       };
 
-      const intervalId = setInterval(() => syncToLibrary(false), 5000);
+      // REDUCED INTERVAL: 2s instead of 5s for more frequent saves
+      const intervalId = setInterval(() => syncToLibrary(false), 2000);
       
-      const handleBeforeUnload = () => {
-          syncToLibrary(true); // Force save on unload
-          SyncManager.getInstance().syncNow(false);
+      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+          // SYNCHRONOUS save - can't rely on async in beforeunload
+          // localStorage backup already handled by TitanCore.saveProgress
+          if (engine.currentBook && engine.currentBook.id === currentBookId) {
+              const updatedBook: Book = {
+                  ...engine.currentBook,
+                  bookmarkProgress: engine.currentProgress,
+                  isFinished: engine.currentBook.isFinished,
+                  lastTokenIndex: engine.currentBook.lastTokenIndex,
+                  lastOpened: new Date()
+              };
+              // Try to save to IDB (may not complete)
+              TitanStorage.getInstance().saveBook(updatedBook).catch(() => {});
+          }
       };
       
       // OPTIMIZATION: Save immediately when tab goes to background
@@ -279,32 +296,49 @@ const App: React.FC = () => {
       window.history.pushState({ bookOpen: true, bookId: book.id }, '', window.location.href);
     }
     
-    // Check if content is loaded
-    if (!book.chapters || book.chapters.length === 0) {
-        let fullBook = await TitanStorage.getInstance().getFullBook(book.id);
-        
-        // REPAIR: If full book is missing or corrupted, try to regenerate welcome book
-        if ((!fullBook || !fullBook.chapters || fullBook.chapters.length === 0) && book.id === 'guide-book-v1') {
-            const mocks = generateMockBooks();
-            const freshWelcome = mocks.find(b => b.id === 'guide-book-v1');
-            if (freshWelcome) {
-                freshWelcome.bookmarkProgress = book.bookmarkProgress || 0;
-                freshWelcome.lastTokenIndex = book.lastTokenIndex;
-                freshWelcome.lastOpened = book.lastOpened;
-                await TitanStorage.getInstance().saveBook(freshWelcome);
-                fullBook = freshWelcome;
+    // CRITICAL: Always fetch fresh book data from storage to get latest progress
+    // This ensures we never open with stale progress data
+    let fullBook = await TitanStorage.getInstance().getFullBook(book.id);
+    
+    // REPAIR: If full book is missing or corrupted, try to regenerate welcome book
+    if ((!fullBook || !fullBook.chapters || fullBook.chapters.length === 0) && book.id === 'guide-book-v1') {
+        const mocks = generateMockBooks();
+        const freshWelcome = mocks.find(b => b.id === 'guide-book-v1');
+        if (freshWelcome) {
+            freshWelcome.bookmarkProgress = book.bookmarkProgress || 0;
+            freshWelcome.lastTokenIndex = book.lastTokenIndex;
+            freshWelcome.lastOpened = book.lastOpened;
+            await TitanStorage.getInstance().saveBook(freshWelcome);
+            fullBook = freshWelcome;
+        }
+    }
+    
+    // Check localStorage backup for most recent progress
+    if (fullBook) {
+        try {
+            const backupKey = `book_progress_${book.id}`;
+            const backup = localStorage.getItem(backupKey);
+            if (backup) {
+                const parsed = JSON.parse(backup);
+                // Use backup if it exists and is more recent
+                if (parsed.lastTokenIndex !== undefined && 
+                    (fullBook.lastTokenIndex === undefined || parsed.lastTokenIndex > fullBook.lastTokenIndex)) {
+                    fullBook.lastTokenIndex = parsed.lastTokenIndex;
+                    fullBook.bookmarkProgress = parsed.bookmarkProgress;
+                    console.log('[App] Restored progress from localStorage backup');
+                }
             }
+        } catch (e) {
+            console.warn('[App] Failed to check localStorage backup:', e);
         }
-        
-        if (fullBook && fullBook.chapters && fullBook.chapters.length > 0) {
-            // CRITICAL FIX: Use flushSync to ensure books state commits synchronously
-            flushSync(() => {
-                setBooks(prev => prev.map(b => b.id === book.id ? fullBook : b));
-            });
-            setCurrentBookId(fullBook.id);
-        } else {
-            setCurrentBookId(book.id);
-        }
+    }
+    
+    if (fullBook && fullBook.chapters && fullBook.chapters.length > 0) {
+        // CRITICAL FIX: Use flushSync to ensure books state commits synchronously
+        flushSync(() => {
+            setBooks(prev => prev.map(b => b.id === book.id ? fullBook : b));
+        });
+        setCurrentBookId(fullBook.id);
     } else {
         setCurrentBookId(book.id);
     }

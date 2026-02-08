@@ -96,12 +96,51 @@ export class TitanStorage {
     await this.delete('covers', id); // Also delete cached cover
     // Record deletion timestamp to prevent re-download from cloud
     await this.put('deletions', Date.now(), id);
+    
+    // Clean up localStorage backup
+    try {
+      localStorage.removeItem(`book_progress_${id}`);
+    } catch (e) {
+      // Non-fatal if localStorage is unavailable
+    }
   }
 
   public async wasDeletionRecorded(id: string): Promise<boolean> {
     await this.init();
     const result = await this.get('deletions', id);
     return result !== undefined;
+  }
+
+  /**
+   * Clean up localStorage backups for books that no longer exist.
+   * Call this on app startup to prevent localStorage bloat.
+   */
+  public async cleanupOrphanedBackups(): Promise<void> {
+    try {
+      const allBooks = await this.getAllMetadata();
+      const validBookIds = new Set(allBooks.map(b => b.id));
+      
+      // Scan localStorage for book progress backups
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('book_progress_')) {
+          const bookId = key.replace('book_progress_', '');
+          if (!validBookIds.has(bookId)) {
+            keysToRemove.push(key);
+          }
+        }
+      }
+      
+      // Remove orphaned entries
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      
+      if (keysToRemove.length > 0) {
+        console.log(`[TitanStorage] Cleaned up ${keysToRemove.length} orphaned localStorage backups`);
+      }
+    } catch (e) {
+      console.warn('[TitanStorage] Failed to cleanup localStorage backups:', e);
+    }
   }
 
   public async getAllMetadata(): Promise<Book[]> {

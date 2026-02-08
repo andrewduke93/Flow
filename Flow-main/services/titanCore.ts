@@ -107,15 +107,33 @@ export class TitanCore {
 
     const mutableBook = { ...book };
 
-    // CACHE HIT - Instant return
+    // CACHE HIT - Check localStorage backup for latest progress
     if (this.currentBook?.id === book.id && this.contentStorage.string.length > 0) {
-        if (mutableBook.lastTokenIndex !== undefined) {
-             this.currentBook.lastTokenIndex = mutableBook.lastTokenIndex;
+        // Always check localStorage for most recent progress (survives crashes/reloads)
+        let restoredIndex = mutableBook.lastTokenIndex;
+        try {
+            const backupKey = `book_progress_${book.id}`;
+            const backup = localStorage.getItem(backupKey);
+            if (backup) {
+                const parsed = JSON.parse(backup);
+                // Use backup if it's newer and valid
+                if (parsed.lastTokenIndex !== undefined && 
+                    (restoredIndex === undefined || parsed.lastTokenIndex > restoredIndex)) {
+                    restoredIndex = parsed.lastTokenIndex;
+                }
+            }
+        } catch (e) {
+            console.warn('[TitanCore] Failed to restore from localStorage backup:', e);
+        }
+        
+        if (restoredIndex !== undefined) {
+             this.currentBook.lastTokenIndex = restoredIndex;
              if (this.totalTokens > 0) {
-                 this.currentProgress = Math.min(1, mutableBook.lastTokenIndex / this.totalTokens);
+                 this.currentProgress = Math.min(1, restoredIndex / this.totalTokens);
              }
         }
-        this.currentBook.bookmarkProgress = mutableBook.bookmarkProgress || this.currentProgress;
+        this.currentBook.bookmarkProgress = this.currentProgress;
+        this._lastSavedTokenIndex = this.currentBook.lastTokenIndex || 0;
         this.isLoading = false;
         this.loadingProgress = 1.0;
         this.notify();
@@ -164,10 +182,27 @@ export class TitanCore {
         this.contentStorage.string = cleanChunks.join("\n\n");
         this.currentBook = mutableBook;
         
-        // Hydrate progress
-        if (mutableBook.lastTokenIndex !== undefined) {
-            this.currentBook.lastTokenIndex = mutableBook.lastTokenIndex;
-            this.currentProgress = Math.min(1, mutableBook.lastTokenIndex / this.totalTokens);
+        // Hydrate progress - Check localStorage backup first (most recent)
+        let restoredIndex = mutableBook.lastTokenIndex;
+        try {
+            const backupKey = `book_progress_${mutableBook.id}`;
+            const backup = localStorage.getItem(backupKey);
+            if (backup) {
+                const parsed = JSON.parse(backup);
+                // Use backup if it's newer and valid
+                if (parsed.lastTokenIndex !== undefined && 
+                    (restoredIndex === undefined || parsed.lastTokenIndex > restoredIndex)) {
+                    restoredIndex = parsed.lastTokenIndex;
+                    console.log('[TitanCore] Restored progress from localStorage backup');
+                }
+            }
+        } catch (e) {
+            console.warn('[TitanCore] Failed to restore from localStorage backup:', e);
+        }
+        
+        if (restoredIndex !== undefined) {
+            this.currentBook.lastTokenIndex = restoredIndex;
+            this.currentProgress = Math.min(1, restoredIndex / this.totalTokens);
         } else {
             this.currentProgress = mutableBook.bookmarkProgress || 0;
             if (this.currentProgress > 0) {
@@ -176,6 +211,7 @@ export class TitanCore {
         }
         
         this.currentBook.bookmarkProgress = this.currentProgress;
+        this._lastSavedTokenIndex = this.currentBook.lastTokenIndex || 0;
         this.updateTypography();
         
         // DONE - Reader can now render
@@ -290,6 +326,20 @@ export class TitanCore {
     
     // Notify general subscribers for UI sync (e.g., background scroll in RSVP mode)
     this.notify();
+    
+    // 4. IMMEDIATE BACKUP TO LOCALSTORAGE (Synchronous - Survives crashes)
+    // This ensures we never lose more than a few seconds of reading progress
+    try {
+        const backupKey = `book_progress_${this.currentBook.id}`;
+        localStorage.setItem(backupKey, JSON.stringify({
+            lastTokenIndex: tokenIndex,
+            bookmarkProgress: this.currentProgress,
+            timestamp: Date.now()
+        }));
+    } catch (e) {
+        // localStorage full or disabled - non-fatal
+        console.warn('[TitanCore] localStorage backup failed:', e);
+    }
   }
 
   public restorePosition(totalScrollHeight: number, clientHeight: number): number {

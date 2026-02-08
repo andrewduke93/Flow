@@ -48,6 +48,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
     const unsubPos = engine.onPosition((pos) => {
       setProgress(engine.progress);
       
+      // REDUCED DEBOUNCE: 200ms instead of 500ms for faster saves
       if (saveTimeout.current) clearTimeout(saveTimeout.current);
       saveTimeout.current = setTimeout(() => {
         const updatedBook = {
@@ -56,8 +57,9 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
           bookmarkProgress: engine.progress,
           lastOpened: new Date()
         };
+        // Save to IndexedDB (localStorage backup happens in TitanCore.saveProgress)
         TitanStorage.getInstance().saveBook(updatedBook);
-      }, 500);
+      }, 200);
     });
     
     const unsubPlay = engine.onPlayState((playing) => {
@@ -68,6 +70,15 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       } else {
         // Show chrome when paused
         setIsChromeVisible(true);
+        // IMMEDIATE SAVE on pause - don't wait for debounce
+        if (saveTimeout.current) clearTimeout(saveTimeout.current);
+        const updatedBook = {
+          ...book,
+          lastTokenIndex: engine.position,
+          bookmarkProgress: engine.progress,
+          lastOpened: new Date()
+        };
+        TitanStorage.getInstance().saveBook(updatedBook);
       }
     });
     
@@ -75,7 +86,17 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       unsubPos();
       unsubPlay();
       if (chromeTimeout.current) clearTimeout(chromeTimeout.current);
-      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      if (saveTimeout.current) {
+        clearTimeout(saveTimeout.current);
+        // IMMEDIATE FINAL SAVE on unmount
+        const updatedBook = {
+          ...book,
+          lastTokenIndex: engine.position,
+          bookmarkProgress: engine.progress,
+          lastOpened: new Date()
+        };
+        TitanStorage.getInstance().saveBook(updatedBook);
+      }
     };
   }, [book.id]);
 
