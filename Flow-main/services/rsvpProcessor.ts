@@ -102,5 +102,15 @@ export class RSVPProcessor {
           this.workerUrl = null;
       }
       this.isProcessing = false;
+      this.pendingResolve = null;
+      this.pendingReject = null;
+  }
+
+  /**
+   * Clean up resources when no longer needed.
+   * Should be called on app cleanup or when switching contexts.
+   */
+  public static cleanup() {
+      this.terminate();
   }
 }

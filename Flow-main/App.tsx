@@ -10,6 +10,7 @@ import { CoverService } from './services/coverService';
 import { Book } from './types';
 import { useTitanTheme } from './services/titanTheme';
 import { SyncToast } from './components/SyncToast';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Lazy load heavy components
 const ReaderContainer = lazy(() => import('./components/ReaderContainer').then(m => ({ default: m.ReaderContainer })));
@@ -429,8 +430,28 @@ const App: React.FC = () => {
 
   const activeBook = books.find(b => b.id === currentBookId);
 
+  // PERFORMANCE: Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup any lingering resources
+      const engine = TitanCore.getInstance();
+      if (engine.currentBook) {
+        // Save final state
+        const updatedBook: Book = {
+          ...engine.currentBook,
+          bookmarkProgress: engine.currentProgress,
+          isFinished: engine.currentBook.isFinished,
+          lastTokenIndex: engine.currentBook.lastTokenIndex,
+          lastOpened: new Date()
+        };
+        TitanStorage.getInstance().saveBook(updatedBook).catch(() => {});
+      }
+    };
+  }, []);
+
   return (
-    <div 
+    <ErrorBoundary>
+      <div 
       className="fixed inset-0 overflow-hidden font-sans select-none antialiased"
       style={{ 
         backgroundColor: theme.background, 
@@ -490,6 +511,7 @@ const App: React.FC = () => {
          )}
       </AnimatePresence>
     </div>
+    </ErrorBoundary>
   );
 };
 

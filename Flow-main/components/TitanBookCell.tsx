@@ -283,4 +283,15 @@ export const TitanBookCell: React.FC<TitanBookCellProps> = memo(({ book, onSelec
       </div>
     </div>
   );
+}, (prevProps, nextProps) => {
+  // Custom comparison function for memo optimization
+  // Only re-render if these specific props change
+  return (
+    prevProps.book.id === nextProps.book.id &&
+    prevProps.book.coverUrl === nextProps.book.coverUrl &&
+    prevProps.book.bookmarkProgress === nextProps.book.bookmarkProgress &&
+    prevProps.book.isFinished === nextProps.book.isFinished &&
+    prevProps.isEditing === nextProps.isEditing &&
+    prevProps.isSelected === nextProps.isSelected
+  );
 });

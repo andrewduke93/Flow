@@ -153,16 +153,30 @@ export const TitanLibrary: React.FC<TitanLibraryProps> = memo(({ books, onBookSe
   }, []);
 
   // -- Splitting Active vs Finished vs Favorites vs Clippings --
+  // OPTIMIZED: Single pass through array with pre-allocated buckets
   const { activeBooks, finishedBooks, favoriteBooks, clippings } = useMemo(() => {
+      const favorites: Book[] = [];
+      const active: Book[] = [];
+      const finished: Book[] = [];
+      const clips: Book[] = [];
+      
+      // Single pass sorting and bucketing
       const sorted = [...books].sort((a, b) => 
         new Date(b.lastOpened).getTime() - new Date(a.lastOpened).getTime()
       );
       
+      for (const book of sorted) {
+          if (book.isFavorite) favorites.push(book);
+          if (book.sourceType === 'pasted') clips.push(book);
+          else if (book.isFinished) finished.push(book);
+          else active.push(book);
+      }
+      
       return {
-          favoriteBooks: sorted.filter(b => b.isFavorite),
-          activeBooks: sorted.filter(b => !b.isFinished && b.sourceType !== 'pasted'),
-          finishedBooks: sorted.filter(b => b.isFinished),
-          clippings: sorted.filter(b => b.sourceType === 'pasted')
+          favoriteBooks: favorites,
+          activeBooks: active,
+          finishedBooks: finished,
+          clippings: clips
       };
   }, [books]);
 

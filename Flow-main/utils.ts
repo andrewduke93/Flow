@@ -1,11 +1,29 @@
 import { Book } from './types';
 
+// Performance cache for color validation
+const colorCache = new Map<string, string>();
+
 // Helper to simulate the Swift `derivedColor` computed property
 export const getDerivedColor = (hex?: string): string => {
-  if (!hex || !/^#[0-9A-F]{6}$/i.test(hex)) {
-    return '#E25822'; // Unified Ember
+  if (!hex) return '#E25822'; // Unified Ember
+  
+  // Check cache first
+  if (colorCache.has(hex)) {
+    return colorCache.get(hex)!;
   }
-  return hex;
+  
+  // Validate and cache
+  const isValid = /^#[0-9A-F]{6}$/i.test(hex);
+  const result = isValid ? hex : '#E25822';
+  colorCache.set(hex, result);
+  
+  // Limit cache size
+  if (colorCache.size > 100) {
+    const firstKey = colorCache.keys().next().value;
+    colorCache.delete(firstKey);
+  }
+  
+  return result;
 };
 
 // Helper to format dates cleanly

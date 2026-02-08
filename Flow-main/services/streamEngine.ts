@@ -376,4 +376,17 @@ export class StreamEngine {
       wpm: this._wpm
     };
   }
+  
+  /**
+   * Clean up resources and listeners.
+   * Call this when switching books or unmounting reader.
+   */
+  cleanup(): void {
+    this.stop();
+    this.words = [];
+    this.sourceText = '';
+    this.totalWords = 0;
+    this._position = 0;
+    // Don't clear listeners - they're component subscriptions
+  }
 }

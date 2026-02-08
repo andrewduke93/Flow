@@ -242,6 +242,8 @@ export class TitanCore {
       this.isRSVPMode = false;
       this.totalTokens = 1; 
       this.chapterTokenOffsets = [];
+      this._lastSavedTokenIndex = -1;
+      this._userIntentionalRewind = false;
   }
 
   public updateTypography() {
