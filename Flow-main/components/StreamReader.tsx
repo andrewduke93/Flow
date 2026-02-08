@@ -14,13 +14,27 @@ interface StreamReaderProps {
 }
 
 // ============================================
-// PARAGRAPH - Static by default, interactive on demand
+// TYPOGRAPHY CONSTANTS - Book-quality rendering
+// ============================================
+const FONT_STACKS = {
+  'New York': '"New York", "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif',
+  'SF Pro': '"SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  'OpenDyslexic': '"OpenDyslexic", "Comic Sans MS", sans-serif',
+  'Atkinson Hyperlegible': '"Atkinson Hyperlegible", "Trebuchet MS", Verdana, sans-serif'
+} as const;
+
+// Optimal characters per line for reading comfort (45-75 is ideal)
+const OPTIMAL_LINE_LENGTH = '65ch';
+
+// ============================================
+// PARAGRAPH - Professional book typography
 // ============================================
 const Paragraph = memo(({ 
   words, 
   startIndex, 
   activeIndex,
   isNearActive,
+  isFirstParagraph,
   fontSize, 
   lineHeight,
   paragraphSpacing,
@@ -33,6 +47,7 @@ const Paragraph = memo(({
   startIndex: number;
   activeIndex: number;
   isNearActive: boolean;
+  isFirstParagraph?: boolean;
   fontSize: number;
   lineHeight: number;
   paragraphSpacing: number;
@@ -41,13 +56,40 @@ const Paragraph = memo(({
   accentColor: string;
   onWordTap: (index: number) => void;
 }) => {
-  const fontFamilyCSS = fontFamily === 'New York' 
-    ? '"New York", "Iowan Old Style", Georgia, serif' 
-    : fontFamily === 'OpenDyslexic' 
-    ? '"OpenDyslexic", sans-serif'
-    : fontFamily === 'Atkinson Hyperlegible' 
-    ? '"Atkinson Hyperlegible", sans-serif'
-    : 'system-ui, -apple-system, sans-serif';
+  const fontFamilyCSS = FONT_STACKS[fontFamily as keyof typeof FONT_STACKS] 
+    || FONT_STACKS['SF Pro'];
+
+  // Typography styles shared between static and interactive modes
+  const typographyStyles: React.CSSProperties = {
+    fontSize: `${fontSize}px`,
+    lineHeight,
+    fontFamily: fontFamilyCSS,
+    color: textColor,
+    // Text justification with proper hyphenation
+    textAlign: 'justify',
+    hyphens: 'auto',
+    WebkitHyphens: 'auto',
+    // Advanced typography features
+    textRendering: 'optimizeLegibility',
+    WebkitFontSmoothing: 'antialiased',
+    MozOsxFontSmoothing: 'grayscale',
+    fontKerning: 'normal',
+    fontFeatureSettings: '"kern" 1, "liga" 1, "calt" 1',
+    // Prevent orphans/widows where possible
+    orphans: 2,
+    widows: 2,
+    // Word spacing for better justification
+    wordSpacing: '0.05em',
+    // Letter spacing tightens slightly at larger sizes
+    letterSpacing: fontSize > 20 ? '-0.01em' : '0',
+    // First-line indent (traditional book style)
+    textIndent: isFirstParagraph ? '0' : '1.5em',
+    // Paragraph spacing
+    marginBottom: `${paragraphSpacing}px`,
+    marginTop: 0,
+    // Hanging punctuation for optical alignment
+    hangingPunctuation: 'first last',
+  };
 
   // PERFORMANCE: If not near active, render as plain text
   if (!isNearActive) {
@@ -55,18 +97,7 @@ const Paragraph = memo(({
     return (
       <p
         data-start={startIndex}
-        style={{
-          fontSize: `${fontSize}px`,
-          lineHeight,
-          marginBottom: `${paragraphSpacing}px`,
-          fontFamily: fontFamilyCSS,
-          color: textColor,
-          textAlign: 'justify',
-          hyphens: 'auto',
-          WebkitHyphens: 'auto',
-          textRendering: 'optimizeLegibility',
-          WebkitFontSmoothing: 'antialiased'
-        }}
+        style={typographyStyles}
       >
         {plainText}
       </p>
@@ -77,18 +108,7 @@ const Paragraph = memo(({
   return (
     <p
       data-start={startIndex}
-      style={{
-        fontSize: `${fontSize}px`,
-        lineHeight,
-        marginBottom: `${paragraphSpacing}px`,
-        fontFamily: fontFamilyCSS,
-        color: textColor,
-        textAlign: 'justify',
-        hyphens: 'auto',
-        WebkitHyphens: 'auto',
-        textRendering: 'optimizeLegibility',
-        WebkitFontSmoothing: 'antialiased'
-      }}
+      style={typographyStyles}
     >
       {words.map((word, i) => {
         const isActive = word.index === activeIndex;
@@ -99,11 +119,13 @@ const Paragraph = memo(({
               style={{
                 backgroundColor: isActive ? accentColor : 'transparent',
                 color: isActive ? '#FFFFFF' : 'inherit',
-                padding: isActive ? '3px 6px' : '0',
-                margin: isActive ? '-3px -6px' : '0',
-                borderRadius: isActive ? '6px' : '0',
-                transition: 'all 0.15s ease-out',
-                boxShadow: isActive ? `0 2px 8px ${accentColor}40` : 'none'
+                padding: isActive ? '2px 5px' : '0',
+                margin: isActive ? '-2px -5px' : '0',
+                borderRadius: isActive ? '4px' : '0',
+                transition: 'background-color 0.1s ease-out, color 0.1s ease-out',
+                boxShadow: isActive ? `0 1px 4px ${accentColor}30` : 'none',
+                // Prevent word breaks within highlighted word
+                whiteSpace: 'nowrap'
               }}
             >
               {word.text}
@@ -140,13 +162,8 @@ const RSVPDisplay = memo(({
 }) => {
   if (!word) return null;
 
-  const fontFamilyCSS = fontFamily === 'New York' 
-    ? '"New York", "Iowan Old Style", Georgia, serif' 
-    : fontFamily === 'OpenDyslexic' 
-    ? '"OpenDyslexic", sans-serif'
-    : fontFamily === 'Atkinson Hyperlegible' 
-    ? '"Atkinson Hyperlegible", sans-serif'
-    : 'system-ui, -apple-system, sans-serif';
+  const fontFamilyCSS = FONT_STACKS[fontFamily as keyof typeof FONT_STACKS] 
+    || FONT_STACKS['SF Pro'];
 
   const rsvpFontSize = Math.min(fontSize * 2.2, 56);
 
@@ -732,35 +749,47 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
         </div>
       )}
 
-      {/* Scroll Content */}
+      {/* Scroll Content - Book-style reading area */}
       <div 
         ref={scrollRef}
         className="w-full min-h-full"
         style={{
-          maxWidth: '680px',
+          maxWidth: OPTIMAL_LINE_LENGTH,
           margin: '0 auto',
-          padding: '80px 24px 200px 24px'
+          padding: 'clamp(60px, 12vh, 100px) clamp(16px, 5vw, 32px) 200px',
         }}
       >
-        {paragraphs.map((para, idx) => {
-          const isNearActive = Math.abs(para.startIndex - position) < 500;
-          return (
-            <Paragraph
-              key={para.startIndex}
-              words={para.words}
-              startIndex={para.startIndex}
-              activeIndex={position}
-              isNearActive={isNearActive}
-              fontSize={settings.fontSize}
-              lineHeight={settings.lineHeight}
-              paragraphSpacing={settings.paragraphSpacing}
-              fontFamily={settings.fontFamily}
-              textColor={theme.primaryText}
-              accentColor={theme.accent}
-              onWordTap={handleWordTap}
-            />
-          );
-        })}
+        {/* Reading content with professional typography */}
+        <article 
+          className="prose-flow"
+          style={{
+            // CSS columns for very wide screens (optional - disabled by default)
+            // columnCount: 1,
+            // columnGap: '2em',
+          }}
+        >
+          {paragraphs.map((para, idx) => {
+            const isNearActive = Math.abs(para.startIndex - position) < 500;
+            const isFirst = idx === 0;
+            return (
+              <Paragraph
+                key={para.startIndex}
+                words={para.words}
+                startIndex={para.startIndex}
+                activeIndex={position}
+                isNearActive={isNearActive}
+                isFirstParagraph={isFirst}
+                fontSize={settings.fontSize}
+                lineHeight={settings.lineHeight}
+                paragraphSpacing={settings.paragraphSpacing}
+                fontFamily={settings.fontFamily}
+                textColor={theme.primaryText}
+                accentColor={theme.accent}
+                onWordTap={handleWordTap}
+              />
+            );
+          })}
+        </article>
       </div>
     </div>
   );
