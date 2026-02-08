@@ -14,358 +14,185 @@ interface StreamReaderProps {
 }
 
 // ============================================
-// TYPOGRAPHY CONSTANTS - Book-quality rendering
+// FONT CONFIGURATION
 // ============================================
-const FONT_STACKS = {
-  'New York': '"New York", "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif',
-  'SF Pro': '"SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+const FONT_STACKS: Record<string, string> = {
+  'New York': '"New York", "Iowan Old Style", Palatino, Georgia, serif',
+  'SF Pro': '"SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   'OpenDyslexic': '"OpenDyslexic", "Comic Sans MS", sans-serif',
-  'Atkinson Hyperlegible': '"Atkinson Hyperlegible", "Trebuchet MS", Verdana, sans-serif'
-} as const;
-
-// Optimal characters per line for reading comfort (45-75 is ideal)
-const OPTIMAL_LINE_LENGTH = '65ch';
+  'Atkinson Hyperlegible': '"Atkinson Hyperlegible", Verdana, sans-serif'
+};
 
 // ============================================
-// PARAGRAPH - Professional book typography
+// SIMPLE RSVP DISPLAY - Stable, no state conflicts
 // ============================================
-const Paragraph = memo(({ 
-  words, 
-  startIndex, 
-  activeIndex,
-  isNearActive,
-  isFirstParagraph,
-  fontSize, 
-  lineHeight,
-  paragraphSpacing,
-  fontFamily, 
-  textColor,
-  accentColor,
-  onWordTap
-}: {
-  words: WordSpan[];
-  startIndex: number;
-  activeIndex: number;
-  isNearActive: boolean;
-  isFirstParagraph?: boolean;
-  fontSize: number;
-  lineHeight: number;
-  paragraphSpacing: number;
-  fontFamily: string;
-  textColor: string;
-  accentColor: string;
-  onWordTap: (index: number) => void;
-}) => {
-  const fontFamilyCSS = FONT_STACKS[fontFamily as keyof typeof FONT_STACKS] 
-    || FONT_STACKS['SF Pro'];
-
-  // Typography styles shared between static and interactive modes
-  const typographyStyles: React.CSSProperties = {
-    fontSize: `${fontSize}px`,
-    lineHeight,
-    fontFamily: fontFamilyCSS,
-    color: textColor,
-    // Text justification with proper hyphenation
-    textAlign: 'justify',
-    hyphens: 'auto',
-    WebkitHyphens: 'auto',
-    // Advanced typography features
-    textRendering: 'optimizeLegibility',
-    WebkitFontSmoothing: 'antialiased',
-    MozOsxFontSmoothing: 'grayscale',
-    fontKerning: 'normal',
-    fontFeatureSettings: '"kern" 1, "liga" 1, "calt" 1',
-    // Prevent orphans/widows where possible
-    orphans: 2,
-    widows: 2,
-    // Word spacing for better justification
-    wordSpacing: '0.05em',
-    // Letter spacing tightens slightly at larger sizes
-    letterSpacing: fontSize > 20 ? '-0.01em' : '0',
-    // First-line indent (traditional book style)
-    textIndent: isFirstParagraph ? '0' : '1.5em',
-    // Paragraph spacing
-    marginBottom: `${paragraphSpacing}px`,
-    marginTop: 0,
-    // Hanging punctuation for optical alignment
-    hangingPunctuation: 'first last',
-  };
-
-  // PERFORMANCE: If not near active, render as plain text
-  if (!isNearActive) {
-    const plainText = words.map(w => w.text).join(' ');
-    return (
-      <p
-        data-start={startIndex}
-        style={typographyStyles}
-      >
-        {plainText}
-      </p>
-    );
-  }
-
-  // INTERACTIVE: Render individual words when near active
-  return (
-    <p
-      data-start={startIndex}
-      style={typographyStyles}
-    >
-      {words.map((word, i) => {
-        const isActive = word.index === activeIndex;
-        return (
-          <React.Fragment key={word.index}>
-            <span
-              data-idx={word.index}
-              style={{
-                backgroundColor: isActive ? accentColor : 'transparent',
-                color: isActive ? '#FFFFFF' : 'inherit',
-                padding: isActive ? '2px 5px' : '0',
-                margin: isActive ? '-2px -5px' : '0',
-                borderRadius: isActive ? '4px' : '0',
-                transition: 'background-color 0.1s ease-out, color 0.1s ease-out',
-                boxShadow: isActive ? `0 1px 4px ${accentColor}30` : 'none',
-                // Prevent word breaks within highlighted word
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {word.text}
-            </span>
-            {i < words.length - 1 ? ' ' : ''}
-          </React.Fragment>
-        );
-      })}
-    </p>
-  );
-});
-
-// ============================================
-// RSVP DISPLAY - Clean ORP with single focus line
-// ============================================
-const RSVPDisplay = memo(({ 
+const RSVPWord = memo(({ 
   word, 
-  nextWords,
-  prevWords,
-  fontSize,
-  fontFamily,
-  textColor,
-  accentColor,
-  showGhost
+  fontSize, 
+  fontFamily, 
+  textColor, 
+  accentColor 
 }: {
-  word: WordSpan | null;
-  nextWords: WordSpan[];
-  prevWords: WordSpan[];
+  word: WordSpan;
   fontSize: number;
   fontFamily: string;
   textColor: string;
   accentColor: string;
-  showGhost: boolean;
 }) => {
-  if (!word) return null;
-
-  const fontFamilyCSS = FONT_STACKS[fontFamily as keyof typeof FONT_STACKS] 
-    || FONT_STACKS['SF Pro'];
-
-  const rsvpFontSize = Math.min(fontSize * 2.2, 56);
-
-  // Find optimal recognition point (ORP) for current word
   const text = word.text;
+  
+  // ORP calculation
   const orpIndex = text.length <= 1 ? 0 
     : text.length <= 5 ? 1 
     : text.length <= 9 ? 2 
     : text.length <= 13 ? 3 
-    : 4;
+    : Math.floor(text.length * 0.35);
 
   const before = text.slice(0, orpIndex);
   const pivot = text[orpIndex] || '';
   const after = text.slice(orpIndex + 1);
 
-  // Book-style layout with LOCKED focus word - context flows around the centered word
-  if (showGhost) {
-    const contextFontSize = rsvpFontSize * 0.5;
-    const verticalGap = rsvpFontSize * 0.9;
-    
-    return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
-        {/* Previous words - above, flowing right-to-left into focus */}
-        {prevWords.length > 0 && (
-          <div 
-            className="absolute text-right px-6"
-            style={{ 
-              bottom: `calc(50% + ${verticalGap}px)`,
-              right: '50%',
-              marginRight: `${rsvpFontSize * 0.15}px`,
-              fontFamily: fontFamilyCSS,
-              fontSize: `${contextFontSize}px`,
-              color: textColor,
-              opacity: 0.3,
-              maxWidth: '45vw',
-              lineHeight: 1.5,
-              textAlign: 'justify'
-            }}
-          >
-            {prevWords.map(w => w.text).join(' ')}
-          </div>
-        )}
-
-        {/* LOCKED Main word with ORP alignment */}
-        <div className="relative flex items-center justify-center w-full">
-          {/* Word positioned so ORP aligns with center */}
-          <div 
-            className="flex items-baseline relative"
-            style={{ 
-              fontFamily: fontFamilyCSS,
-              fontSize: `${rsvpFontSize}px`,
-              fontWeight: 500,
-              letterSpacing: '0.01em'
-            }}
-          >
-            <span 
-              className="text-right"
-              style={{ 
-                color: textColor,
-                minWidth: '42vw',
-                paddingRight: '3px'
-              }}
-            >
-              {before}
-            </span>
-            <span className="relative" style={{ color: accentColor, fontWeight: 700 }}>
-              {pivot}
-              {/* Focus dot under pivot */}
-              <span 
-                className="absolute left-1/2 -translate-x-1/2 rounded-full"
-                style={{
-                  bottom: `-${rsvpFontSize * 0.25}px`,
-                  width: `${Math.max(4, rsvpFontSize * 0.12)}px`,
-                  height: `${Math.max(4, rsvpFontSize * 0.12)}px`,
-                  backgroundColor: accentColor,
-                  boxShadow: `0 0 8px ${accentColor}60, 0 0 16px ${accentColor}30`
-                }}
-              />
-            </span>
-            <span 
-              className="text-left"
-              style={{ 
-                color: textColor,
-                minWidth: '42vw',
-                paddingLeft: '3px'
-              }}
-            >
-              {after}
-            </span>
-          </div>
-        </div>
-
-        {/* Next words - below, flowing left-to-right from focus */}
-        {nextWords.length > 0 && (
-          <div 
-            className="absolute text-left px-6"
-            style={{ 
-              top: `calc(50% + ${verticalGap}px)`,
-              left: '50%',
-              marginLeft: `${rsvpFontSize * 0.15}px`,
-              fontFamily: fontFamilyCSS,
-              fontSize: `${contextFontSize}px`,
-              color: textColor,
-              opacity: 0.25,
-              maxWidth: '45vw',
-              lineHeight: 1.5,
-              textAlign: 'justify'
-            }}
-          >
-            {nextWords.map(w => w.text).join(' ')}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Classic RSVP mode (ghost disabled) - single word with ORP
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center select-none overflow-hidden">
-      {/* Main word display with ORP alignment */}
-      <div className="relative flex items-center justify-center w-full">
-        {/* Word positioned so ORP aligns with center */}
-        <div 
-          className="flex items-baseline relative"
-          style={{ 
-            fontFamily: fontFamilyCSS,
-            fontSize: `${rsvpFontSize}px`,
-            fontWeight: 500,
-            letterSpacing: '0.01em'
-          }}
-        >
-          {/* Before ORP - right-aligned */}
-          <span 
-            className="text-right"
-            style={{ 
-              color: textColor,
-              minWidth: '42vw',
-              paddingRight: '3px'
-            }}
-          >
-            {before}
-          </span>
-          
-          {/* Pivot letter with focus dot */}
-          <span 
-            className="relative"
-            style={{ 
-              color: accentColor, 
-              fontWeight: 700
-            }}
-          >
-            {pivot}
-            {/* Focus dot under pivot */}
-            <span 
-              className="absolute left-1/2 -translate-x-1/2 rounded-full"
-              style={{
-                bottom: `-${rsvpFontSize * 0.25}px`,
-                width: `${Math.max(4, rsvpFontSize * 0.12)}px`,
-                height: `${Math.max(4, rsvpFontSize * 0.12)}px`,
-                backgroundColor: accentColor,
-                boxShadow: `0 0 8px ${accentColor}60, 0 0 16px ${accentColor}30`
-              }}
-            />
-          </span>
-          
-          {/* After ORP - left-aligned */}
-          <span 
-            className="text-left"
-            style={{ 
-              color: textColor,
-              minWidth: '42vw',
-              paddingLeft: '3px'
-            }}
-          >
-            {after}
-          </span>
-        </div>
-      </div>
+    <div 
+      style={{ 
+        display: 'grid',
+        gridTemplateColumns: '1fr auto 1fr',
+        alignItems: 'baseline',
+        fontFamily,
+        fontSize: `${fontSize}px`,
+        fontWeight: 500,
+        whiteSpace: 'nowrap',
+        width: '100%',
+        maxWidth: '90vw'
+      }}
+    >
+      <span style={{ color: textColor, textAlign: 'right', paddingRight: '2px' }}>
+        {before}
+      </span>
+      <span style={{ color: accentColor, fontWeight: 700 }}>
+        {pivot}
+      </span>
+      <span style={{ color: textColor, textAlign: 'left', paddingLeft: '2px' }}>
+        {after}
+      </span>
     </div>
   );
 });
 
 // ============================================
-// STREAM READER - Unified scroll + RSVP
+// SIMPLE PARAGRAPH - Minimal re-renders
 // ============================================
-export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome, isActive, showGhostWords = true }) => {
+const SimpleParagraph = memo(({ 
+  text, 
+  startIndex,
+  isHighlighted,
+  fontSize, 
+  lineHeight,
+  paragraphSpacing,
+  fontFamily, 
+  textColor,
+  onClick
+}: {
+  text: string;
+  startIndex: number;
+  isHighlighted: boolean;
+  fontSize: number;
+  lineHeight: number;
+  paragraphSpacing: number;
+  fontFamily: string;
+  textColor: string;
+  onClick: () => void;
+}) => {
+  return (
+    <p
+      data-start={startIndex}
+      onClick={onClick}
+      style={{
+        fontSize: `${fontSize}px`,
+        lineHeight,
+        marginBottom: `${paragraphSpacing}px`,
+        marginTop: 0,
+        fontFamily,
+        color: textColor,
+        textAlign: 'justify',
+        hyphens: 'auto',
+        WebkitHyphens: 'auto',
+        textRendering: 'optimizeLegibility',
+        cursor: 'pointer',
+        opacity: isHighlighted ? 1 : 0.85,
+        transition: 'opacity 0.2s ease'
+      }}
+    >
+      {text}
+    </p>
+  );
+});
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+export const StreamReader: React.FC<StreamReaderProps> = ({
+  book,
+  onToggleChrome,
+  isActive,
+  showGhostWords = true
+}) => {
   const engine = StreamEngine.getInstance();
   const theme = useTitanTheme();
-  const { settings, updateSettings } = useTitanSettings();
+  const { settings } = useTitanSettings();
   
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   
-  // State
+  // Core state - minimal updates
   const [isReady, setIsReady] = useState(false);
-  const [position, setPosition] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [totalWords, setTotalWords] = useState(0);
+  const [currentWord, setCurrentWord] = useState<WordSpan | null>(null);
+  const [highlightedParagraph, setHighlightedParagraph] = useState(-1);
   
-  // Refs for scroll sync
-  const isProgrammaticScroll = useRef(false);
-  const lastScrollPosition = useRef(0);
+  // Refs to avoid stale closures
+  const isPlayingRef = useRef(false);
+  const positionRef = useRef(0);
+  const ignoreScrollRef = useRef(false);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Font family CSS
+  const fontFamilyCSS = FONT_STACKS[settings.fontFamily] || FONT_STACKS['SF Pro'];
+  const rsvpFontSize = Math.min(settings.fontSize * 2.5, 60);
+
+  // ============================================
+  // PARAGRAPHS - Computed once on load
+  // ============================================
+  const paragraphs = useMemo(() => {
+    if (!isReady) return [];
+    
+    const result: { text: string; startIndex: number }[] = [];
+    const words = engine.getRange(0, engine.total);
+    
+    if (words.length === 0) return result;
+    
+    let currentPara: string[] = [];
+    let currentStart = 0;
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      if (currentPara.length === 0) {
+        currentStart = word.index;
+      }
+      currentPara.push(word.text);
+      
+      // Check for paragraph break
+      if (word.trailingPause === 3 || i === words.length - 1) {
+        result.push({
+          text: currentPara.join(' '),
+          startIndex: currentStart
+        });
+        currentPara = [];
+      }
+    }
+    
+    return result;
+  }, [isReady]);
 
   // ============================================
   // INITIALIZATION
@@ -378,13 +205,12 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
 
     setIsReady(false);
 
-    // Extract text from all chapters (fast)
+    // Extract text from chapters
     const chapters = [...book.chapters].sort((a, b) => a.sortOrder - b.sortOrder);
     const textParts: string[] = [];
     
     for (const chapter of chapters) {
       if (chapter.content) {
-        // Strip HTML fast
         const clean = chapter.content
           .replace(/<[^>]*>/g, ' ')
           .replace(/&[a-z]+;/gi, ' ')
@@ -395,69 +221,61 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
     }
     
     const fullText = textParts.join('\n\n');
-    
-    // Load into engine (one-time tokenization)
     engine.load(fullText);
-    setTotalWords(engine.total);
     
     // Restore position
     if (book.lastTokenIndex !== undefined && book.lastTokenIndex > 0) {
-      engine.position = book.lastTokenIndex;
+      engine.position = Math.min(book.lastTokenIndex, engine.total - 1);
     } else if (book.bookmarkProgress && book.bookmarkProgress > 0) {
       engine.progress = book.bookmarkProgress;
     }
     
-    // Restore WPM
-    engine.wpm = settings.wpm || 300;
-    
-    setPosition(engine.position);
+    engine.wpm = settings.rsvpSpeed || 300;
+    positionRef.current = engine.position;
+    setCurrentWord(engine.getCurrentWord());
     setIsReady(true);
     
-    // Scroll to position after render
+    // Initial scroll
     requestAnimationFrame(() => {
-      scrollToPosition(engine.position, false);
+      scrollToWord(engine.position, false);
     });
   }, [book.id]);
 
   // ============================================
-  // ENGINE SUBSCRIPTIONS
+  // ENGINE SUBSCRIPTION - Single listener
   // ============================================
-  const saveTimeout = useRef<ReturnType<typeof setTimeout>>();
-  
   useEffect(() => {
-    const unsubPos = engine.onPosition((pos) => {
-      setPosition(pos);
+    if (!isReady) return;
+
+    const handlePosition = (pos: number) => {
+      positionRef.current = pos;
+      const word = engine.getWord(pos);
+      setCurrentWord(word);
       
-      // Auto-scroll during RSVP playback
-      if (engine.isPlaying) {
-        scrollToPosition(pos, true);
-      }
+      // Find which paragraph this belongs to
+      const paraIndex = paragraphs.findIndex((p, i) => {
+        const nextStart = paragraphs[i + 1]?.startIndex ?? Infinity;
+        return pos >= p.startIndex && pos < nextStart;
+      });
+      setHighlightedParagraph(paraIndex);
       
-      // Save progress to book object
-      book.lastTokenIndex = pos;
-      book.bookmarkProgress = engine.progress;
-      
-      // REDUCED DEBOUNCE: 200ms instead of 500ms for faster saves
-      if (saveTimeout.current) clearTimeout(saveTimeout.current);
-      saveTimeout.current = setTimeout(() => {
+      // Save progress (debounced)
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => {
         TitanStorage.getInstance().saveBook({
           ...book,
           lastTokenIndex: pos,
           bookmarkProgress: engine.progress,
           lastOpened: new Date()
         });
-      }, 200);
-    });
-    
-    const unsubPlay = engine.onPlayState((playing) => {
+      }, 500);
+    };
+
+    const handlePlayState = (playing: boolean) => {
+      isPlayingRef.current = playing;
       setIsPlaying(playing);
       
-      // When RSVP stops, center the current word in scroll view and save immediately
       if (!playing) {
-        setTimeout(() => {
-          scrollToPosition(engine.position, true);
-        }, 100);
-        
         // Immediate save when stopping
         TitanStorage.getInstance().saveBook({
           ...book,
@@ -466,196 +284,80 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
           lastOpened: new Date()
         });
       }
-    });
+    };
+
+    const unsubPos = engine.onPosition(handlePosition);
+    const unsubPlay = engine.onPlayState(handlePlayState);
+    
+    // Sync initial state
+    handlePosition(engine.position);
+    handlePlayState(engine.isPlaying);
     
     return () => {
       unsubPos();
       unsubPlay();
-      if (saveTimeout.current) {
-        clearTimeout(saveTimeout.current);
-        // IMMEDIATE FINAL SAVE on unmount
-        TitanStorage.getInstance().saveBook({
-          ...book,
-          lastTokenIndex: engine.position,
-          bookmarkProgress: engine.progress,
-          lastOpened: new Date()
-        });
-      }
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [book.id]);
+  }, [isReady, paragraphs, book]);
 
   // ============================================
-  // SCROLL SYNC
+  // SCROLL HELPERS
   // ============================================
-  const scrollToPosition = useCallback((pos: number, smooth: boolean) => {
-    if (!scrollRef.current || totalWords === 0) return;
+  const scrollToWord = useCallback((pos: number, smooth: boolean) => {
+    if (!scrollRef.current || !containerRef.current) return;
     
-    isProgrammaticScroll.current = true;
+    ignoreScrollRef.current = true;
     
-    const container = containerRef.current;
-    if (!container) return;
+    // Find paragraph containing this position
+    const paraIndex = paragraphs.findIndex((p, i) => {
+      const nextStart = paragraphs[i + 1]?.startIndex ?? Infinity;
+      return pos >= p.startIndex && pos < nextStart;
+    });
     
-    // Find the paragraph containing this position
-    const element = scrollRef.current.querySelector(`[data-start="${pos}"]`) as HTMLElement;
-    
-    if (element) {
-      // Center the element in the viewport
-      const elementTop = element.offsetTop;
-      const elementHeight = element.offsetHeight;
-      const containerHeight = container.clientHeight;
-      const targetY = elementTop - (containerHeight / 2) + (elementHeight / 2);
-      
-      container.scrollTo({
-        top: Math.max(0, targetY),
-        behavior: smooth ? 'smooth' : 'instant'
-      });
-    } else {
-      // Fallback: estimate scroll position and center
-      const progress = pos / totalWords;
-      const targetY = progress * (container.scrollHeight - container.clientHeight);
-      container.scrollTo({
-        top: targetY,
-        behavior: smooth ? 'smooth' : 'instant'
-      });
+    if (paraIndex >= 0) {
+      const element = scrollRef.current.children[paraIndex] as HTMLElement;
+      if (element) {
+        const container = containerRef.current;
+        const elementTop = element.offsetTop;
+        const elementHeight = element.offsetHeight;
+        const containerHeight = container.clientHeight;
+        const targetY = elementTop - (containerHeight / 2) + (elementHeight / 2);
+        
+        container.scrollTo({
+          top: Math.max(0, targetY),
+          behavior: smooth ? 'smooth' : 'instant'
+        });
+      }
     }
     
     setTimeout(() => {
-      isProgrammaticScroll.current = false;
-    }, smooth ? 500 : 50);
-  }, [totalWords]);
-
-  // Scroll tracking
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !isReady) return;
-    
-    let ticking = false;
-    
-    const handleScroll = () => {
-      if (isProgrammaticScroll.current || ticking) return;
-      
-      ticking = true;
-      requestAnimationFrame(() => {
-        if (!isProgrammaticScroll.current && container) {
-          const scrollPct = container.scrollTop / Math.max(1, container.scrollHeight - container.clientHeight);
-          const newPos = Math.floor(scrollPct * (totalWords - 1));
-          
-          // Only update if significant change
-          if (Math.abs(newPos - position) > 20) {
-            engine.position = newPos;
-          }
-        }
-        ticking = false;
-      });
-    };
-    
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [isReady, totalWords, position]);
-
-  // ============================================
-  // TOUCH GESTURES - Removed custom pinch-to-zoom to fix glitchy behavior
-  // Native browser zoom now works properly without conflicts
-  // ============================================
-  // Pinch gesture removed - was causing conflicts with native zoom
-  // Users can now use standard browser zoom gestures without glitches
+      ignoreScrollRef.current = false;
+    }, smooth ? 400 : 50);
+  }, [paragraphs]);
 
   // ============================================
   // HANDLERS
   // ============================================
-  
-  const handleWordTap = useCallback((index: number) => {
+  const handleParagraphTap = useCallback((startIndex: number) => {
     RSVPHapticEngine.impactLight();
-    engine.position = index;
-    // Start playing from this word
+    engine.position = startIndex;
     engine.play();
   }, []);
 
-  const handlePlayToggle = useCallback(() => {
+  const handleRSVPTap = useCallback(() => {
     RSVPHapticEngine.impactMedium();
     engine.toggle();
   }, []);
-  
-  // ============================================
-  // TAP HANDLING - Optimized for responsiveness
-  // ============================================
-  // Use refs for immediate gesture tracking without re-renders
-  const gestureRef = useRef<{
-    startX: number;
-    startY: number;
-    startTime: number;
-    target: HTMLElement | null;
-  } | null>(null);
-  
-  // Immediate tap response using pointerdown/pointerup
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    // Ignore multi-touch (e.pointerType === 'touch' && more than one active)
-    if (e.pointerType === 'touch' && e.isPrimary === false) return;
-    
-    gestureRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startTime: performance.now(), // More precise than Date.now()
-      target: e.target as HTMLElement
-    };
-  }, []);
-  
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    const gesture = gestureRef.current;
-    if (!gesture) return;
-    gestureRef.current = null;
-    
-    // Calculate gesture metrics
-    const dx = Math.abs(e.clientX - gesture.startX);
-    const dy = Math.abs(e.clientY - gesture.startY);
-    const dt = performance.now() - gesture.startTime;
-    
-    // Tap detection: very short and small movement
-    // Reduced thresholds for snappier response
-    const isTap = dt < 300 && dx < 15 && dy < 15;
-    
-    if (!isTap) return;
-    
-    // Walk up DOM to find data-idx (word) or data-start (paragraph)
-    let target = e.target as HTMLElement | null;
-    let wordIndex: string | undefined;
-    let paragraphStart: string | undefined;
-    
-    while (target && target !== e.currentTarget) {
-      if (!wordIndex) wordIndex = target.dataset?.idx;
-      if (!paragraphStart) paragraphStart = target.dataset?.start;
-      if (wordIndex) break; // Found a word, stop looking
-      target = target.parentElement;
-    }
-    
-    if (wordIndex !== undefined) {
-      // Tapped on an interactive word
-      e.preventDefault();
-      handleWordTap(parseInt(wordIndex));
-    } else if (paragraphStart !== undefined) {
-      // Tapped on a static paragraph - start from its first word
-      e.preventDefault();
-      handleWordTap(parseInt(paragraphStart));
-    } else {
-      // Tapped on empty space - toggle chrome
+
+  const handleBackgroundTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    // Only toggle chrome if tapping on the background, not on paragraphs
+    if ((e.target as HTMLElement).dataset?.start === undefined) {
       onToggleChrome();
     }
-  }, [handleWordTap, onToggleChrome]);
-  
-  const handlePointerCancel = useCallback(() => {
-    gestureRef.current = null;
-  }, []);
+  }, [onToggleChrome]);
 
   // ============================================
-  // PARAGRAPH DATA
-  // ============================================
-  const paragraphs = useMemo(() => {
-    if (totalWords === 0) return [];
-    return engine.getParagraphs(0, 10000); // Get all paragraphs
-  }, [totalWords, isReady]);
-
-  // ============================================
-  // RENDER
+  // RENDER: LOADING
   // ============================================
   if (!isReady) {
     return (
@@ -664,132 +366,118 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
         style={{ backgroundColor: theme.background }}
       >
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-2 rounded-full animate-spin" 
-               style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} />
-          <span className="text-sm lowercase tracking-wider" style={{ color: theme.secondaryText }}>loading</span>
+          <div 
+            className="w-10 h-10 border-2 rounded-full animate-spin" 
+            style={{ borderColor: theme.accent, borderTopColor: 'transparent' }} 
+          />
+          <span className="text-sm lowercase tracking-wider" style={{ color: theme.secondaryText }}>
+            loading
+          </span>
         </div>
       </div>
     );
   }
 
-  if (totalWords === 0) {
+  // ============================================
+  // RENDER: EMPTY
+  // ============================================
+  if (paragraphs.length === 0) {
     return (
       <div 
         className="absolute inset-0 flex items-center justify-center"
         style={{ backgroundColor: theme.background }}
       >
         <div className="text-center px-8">
-          <div className="text-5xl mb-4 animate-bounce">🍃</div>
-          <p className="text-lg font-medium" style={{ color: theme.secondaryText }}>nothing here yet~</p>
-          <p className="text-sm mt-2 opacity-60" style={{ color: theme.secondaryText }}>this book seems empty!</p>
+          <div className="text-5xl mb-4">📚</div>
+          <p className="text-lg font-medium" style={{ color: theme.secondaryText }}>
+            no content found
+          </p>
         </div>
       </div>
     );
   }
 
+  // ============================================
+  // RENDER: RSVP MODE (Playing)
+  // ============================================
+  if (isPlaying && currentWord) {
+    return (
+      <div 
+        className="absolute inset-0 flex items-center justify-center select-none"
+        style={{ backgroundColor: theme.background }}
+        onClick={handleRSVPTap}
+      >
+        <RSVPWord
+          word={currentWord}
+          fontSize={rsvpFontSize}
+          fontFamily={fontFamilyCSS}
+          textColor={theme.primaryText}
+          accentColor={theme.accent}
+        />
+        
+        {/* Progress bar */}
+        <div 
+          className="absolute left-8 right-8 bottom-8 h-1 rounded-full overflow-hidden"
+          style={{ backgroundColor: theme.borderColor }}
+        >
+          <div 
+            className="h-full rounded-full"
+            style={{ 
+              width: `${engine.progress * 100}%`,
+              backgroundColor: theme.accent,
+              opacity: 0.6,
+              transition: 'width 100ms linear'
+            }}
+          />
+        </div>
+        
+        {/* Tap to pause hint */}
+        <div 
+          className="absolute top-8 left-1/2 -translate-x-1/2 text-xs uppercase tracking-widest"
+          style={{ color: theme.secondaryText, opacity: 0.4 }}
+        >
+          tap to pause
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER: SCROLL MODE (Paused)
+  // ============================================
   return (
     <div 
       ref={containerRef}
       className="absolute inset-0 overflow-y-auto overflow-x-hidden"
       style={{ 
         backgroundColor: theme.background,
-        WebkitOverflowScrolling: 'touch',
-        overscrollBehavior: 'contain',
-        touchAction: 'pan-y' // Allow vertical scrolling but enable tap detection
+        WebkitOverflowScrolling: 'touch'
       }}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
+      onClick={handleBackgroundTap}
     >
-      {/* RSVP Overlay - Shows when playing */}
-      {isPlaying && (
-        <div 
-          className="fixed inset-0 z-50"
-          style={{ backgroundColor: theme.background }}
-          onClick={handlePlayToggle}
-        >
-          {/* Subtle film grain overlay for cozy reading vibe */}
-          <div 
-            className="absolute inset-0 pointer-events-none opacity-[0.03]"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-              backgroundRepeat: 'repeat'
-            }}
-          />
-          
-          <RSVPDisplay
-            word={engine.getCurrentWord()}
-            nextWords={engine.getRange(position + 1, 6)}
-            prevWords={engine.getRange(Math.max(0, position - 4), 4)}
-            fontSize={settings.fontSize}
-            fontFamily={settings.fontFamily}
-            textColor={theme.primaryText}
-            accentColor={theme.accent}
-            showGhost={showGhostWords}
-          />
-          
-          {/* Breathing progress indicator */}
-          <div className="absolute bottom-6 left-6 right-6 pointer-events-none">
-            <div 
-              className="h-1 rounded-full overflow-hidden"
-              style={{ backgroundColor: `${theme.primaryText}08` }}
-            >
-              <div 
-                className="h-full rounded-full"
-                style={{ 
-                  backgroundColor: theme.accent,
-                  opacity: 0.5,
-                  width: `${engine.progress * 100}%`,
-                  transition: 'width 0.15s ease-out',
-                  boxShadow: `0 0 12px ${theme.accent}40`
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Scroll Content - Book-style reading area */}
       <div 
         ref={scrollRef}
         className="w-full min-h-full"
         style={{
-          maxWidth: OPTIMAL_LINE_LENGTH,
+          maxWidth: '65ch',
           margin: '0 auto',
-          padding: 'clamp(60px, 12vh, 100px) clamp(16px, 5vw, 32px) 200px',
+          padding: '80px 24px 200px'
         }}
       >
-        {/* Reading content with professional typography */}
-        <article 
-          className="prose-flow"
-          style={{
-            // CSS columns for very wide screens (optional - disabled by default)
-            // columnCount: 1,
-            // columnGap: '2em',
-          }}
-        >
-          {paragraphs.map((para, idx) => {
-            const isNearActive = Math.abs(para.startIndex - position) < 500;
-            const isFirst = idx === 0;
-            return (
-              <Paragraph
-                key={para.startIndex}
-                words={para.words}
-                startIndex={para.startIndex}
-                activeIndex={position}
-                isNearActive={isNearActive}
-                isFirstParagraph={isFirst}
-                fontSize={settings.fontSize}
-                lineHeight={settings.lineHeight}
-                paragraphSpacing={settings.paragraphSpacing}
-                fontFamily={settings.fontFamily}
-                textColor={theme.primaryText}
-                accentColor={theme.accent}
-                onWordTap={handleWordTap}
-              />
-            );
-          })}
-        </article>
+        {paragraphs.map((para, idx) => (
+          <SimpleParagraph
+            key={para.startIndex}
+            text={para.text}
+            startIndex={para.startIndex}
+            isHighlighted={idx === highlightedParagraph}
+            fontSize={settings.fontSize}
+            lineHeight={settings.lineHeight}
+            paragraphSpacing={settings.paragraphSpacing}
+            fontFamily={fontFamilyCSS}
+            textColor={theme.primaryText}
+            onClick={() => handleParagraphTap(para.startIndex)}
+          />
+        ))}
       </div>
     </div>
   );
