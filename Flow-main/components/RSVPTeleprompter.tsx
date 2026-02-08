@@ -138,40 +138,65 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
       style={{ backgroundColor: theme.background }}
       onClick={handleTap}
     >
-      {/* CENTERED WORD - Reedy style */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center px-8">
-        {/* Main focus word - centered and prominent */}
+      {/* CENTERED WORD - Reedy style: ORP locked in exact center */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        {/* Main focus word - ORP character locked in center */}
         <div 
-          className="inline-flex items-baseline font-sans font-semibold relative"
+          className="relative"
           style={{ 
             fontSize: FONT_SIZE,
             fontFamily: settings.fontFamily === 'New York' ? 'Georgia, serif' : 'system-ui, sans-serif',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
           }}
         >
-          <span style={{ color: theme.primaryText }}>{leftPart}</span>
+          {/* Left part - positioned to the left of center */}
+          <span 
+            style={{ 
+              color: theme.primaryText,
+              position: 'absolute',
+              right: '50%',
+              textAlign: 'right',
+            }}
+          >
+            {leftPart}
+          </span>
+          {/* ORP character - anchored exactly at center */}
           <span style={{ 
             color: FOCUS_COLOR, 
             fontWeight: 700,
-            textShadow: `0 0 20px ${FOCUS_COLOR}25`
+            textShadow: `0 0 20px ${FOCUS_COLOR}25`,
+            display: 'inline-block',
+            textAlign: 'center',
           }}>{orpChar}</span>
-          <span style={{ color: theme.primaryText }}>{rightPart}</span>
-          {focusToken.punctuation && (
-            <span style={{ color: theme.secondaryText, opacity: 0.7 }}>
-              {focusToken.punctuation}
-            </span>
-          )}
+          {/* Right part - positioned to the right of center */}
+          <span 
+            style={{ 
+              color: theme.primaryText,
+              position: 'absolute',
+              left: '50%',
+            }}
+          >
+            {rightPart}
+            {focusToken.punctuation && (
+              <span style={{ color: theme.secondaryText, opacity: 0.7 }}>
+                {focusToken.punctuation}
+              </span>
+            )}
+          </span>
         </div>
 
         {/* Upcoming words preview - Reedy shows next words when paused */}
         {showContext && upcomingWords.length > 0 && (
           <div 
-            className="mt-6 text-center"
+            className="mt-8 text-center"
             style={{
-              fontSize: `calc(${FONT_SIZE} * 0.4)`,
+              fontSize: `calc(${FONT_SIZE} * 0.35)`,
               fontFamily: settings.fontFamily === 'New York' ? 'Georgia, serif' : 'system-ui, sans-serif',
               color: theme.secondaryText,
-              opacity: 0.5,
-              letterSpacing: '0.05em'
+              opacity: 0.4,
+              letterSpacing: '0.05em',
+              whiteSpace: 'nowrap',
             }}
           >
             {upcomingWords.map((token, i) => (

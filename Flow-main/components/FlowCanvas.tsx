@@ -87,11 +87,12 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = memo(({ onTap }) => {
     const rightWidth = ctx.measureText(rightPart).width;
     const punctWidth = punct ? ctx.measureText(punct).width : 0;
     
-    // Reedy-style: Center the entire word, not the ORP
-    const totalWidth = leftWidth + orpWidth + rightWidth + punctWidth;
+    // Reedy-style: Lock ORP character in exact center of screen
     const centerX = (width * dpr) / 2;
     const centerY = (height * dpr) / 2;
-    const startX = centerX - totalWidth / 2;
+    // Position so the CENTER of the ORP character is at screen center
+    const orpCenterX = centerX - orpWidth / 2;
+    const startX = orpCenterX - leftWidth;
     
     // No reticle line in Reedy-style mode - cleaner look
     
@@ -99,22 +100,22 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = memo(({ onTap }) => {
     ctx.fillStyle = theme.primaryText;
     ctx.fillText(leftPart, startX, centerY);
     
-    // Draw ORP character (highlighted) - stronger highlight like Reedy
+    // Draw ORP character (highlighted) - locked in center
     ctx.fillStyle = '#E25822';
     ctx.shadowColor = '#E2582240';
     ctx.shadowBlur = 20 * dpr;
-    ctx.fillText(orpChar, startX + leftWidth, centerY);
+    ctx.fillText(orpChar, orpCenterX, centerY);
     ctx.shadowBlur = 0;
     
     // Draw right part
     ctx.fillStyle = theme.primaryText;
-    ctx.fillText(rightPart, startX + leftWidth + orpWidth, centerY);
+    ctx.fillText(rightPart, orpCenterX + orpWidth, centerY);
     
     // Draw punctuation (more visible for natural reading flow)
     if (punct) {
       ctx.fillStyle = theme.secondaryText;
       ctx.globalAlpha = 0.6;
-      ctx.fillText(punct, startX + leftWidth + orpWidth + rightWidth, centerY);
+      ctx.fillText(punct, orpCenterX + orpWidth + rightWidth, centerY);
       ctx.globalAlpha = 1;
     }
 
