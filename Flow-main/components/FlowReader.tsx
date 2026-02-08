@@ -212,6 +212,11 @@ export const FlowReader: React.FC<FlowReaderProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentWord, setCurrentWord] = useState<FlowWord | null>(null);
   const [visibleParagraphs, setVisibleParagraphs] = useState<FlowParagraph[]>([]);
+  
+  // Loading state
+  const [loadingPhase, setLoadingPhase] = useState<'extracting' | 'tokenizing' | 'optimizing' | 'ready'>('extracting');
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
 
   // Refs for performance
   const isPlayingRef = useRef(false);
@@ -244,11 +249,18 @@ export const FlowReader: React.FC<FlowReaderProps> = ({
     }
 
     setIsReady(false);
+    setLoadingPhase('extracting');
+    setLoadingProgress(0);
+
+    // Estimate processing time based on content length
+    const totalContentLength = book.chapters.reduce((sum, ch) => sum + (ch.content?.length || 0), 0);
+    const estimatedMs = Math.min(5000, Math.max(1000, totalContentLength * 0.1)); // 0.1ms per char, min 1s, max 5s
+    setEstimatedTime(estimatedMs);
 
     // Extract text from chapters
     const chapters = [...book.chapters].sort((a, b) => a.sortOrder - b.sortOrder);
     const textParts: string[] = [];
-
+    
     for (const chapter of chapters) {
       if (chapter.content) {
         const clean = chapter.content
@@ -259,22 +271,23 @@ export const FlowReader: React.FC<FlowReaderProps> = ({
         if (clean) textParts.push(clean);
       }
     }
-
+    
     const fullText = textParts.join('\n\n');
+    setLoadingProgress(10);
 
     // Process with FlowBookProcessor - this is the expensive part
-    processor.processBook(book.id, book.title || 'Untitled', fullText).then((processedBook) => {
-      setFlowBook(processedBook);
-
-      // Load into engine for compatibility
-      engine.load(fullText);
-
-      // Restore position
-      if (book.lastTokenIndex !== undefined && book.lastTokenIndex > 0) {
-        engine.position = Math.min(book.lastTokenIndex, processedBook.totalWords - 1);
-      } else if (book.bookmarkProgress && book.bookmarkProgress > 0) {
-        engine.progress = book.bookmarkProgress;
+    processor.processBook(
+      book.id, 
+      book.title || 'Untitled', 
+      fullText,
+      (phase, progress) => {
+        setLoadingPhase(phase as any);
+        setLoadingProgress(progress);
       }
+    ).then((processedBook) => {
+      setFlowBook(processedBook);
+      setLoadingProgress(100);
+      setLoadingPhase('ready');
 
       engine.wpm = settings.rsvpSpeed || 300;
       positionRef.current = engine.position;
@@ -408,19 +421,99 @@ export const FlowReader: React.FC<FlowReaderProps> = ({
   // RENDER: LOADING
   // ============================================
   if (!isReady) {
+    const phaseMessages = {
+      extracting: 'Extracting text from chapters...',
+      tokenizing: 'Analyzing word patterns...',
+      optimizing: 'Optimizing for speed...',
+      ready: 'Ready to read!'
+    };
+
+    const phaseIcons = {
+      extracting: '📖',
+      tokenizing: '🔍',
+      optimizing: '⚡',
+      ready: '✨'
+    };
+
     return (
       <div
-        className="absolute inset-0 flex items-center justify-center"
+        className="absolute inset-0 flex items-center justify-center p-8"
         style={{ backgroundColor: theme.background }}
       >
-        <div className="flex flex-col items-center gap-4">
+        <div className="w-full max-w-md mx-auto">
+          {/* Book Info Card */}
           <div
-            className="w-12 h-12 border-3 rounded-full animate-spin"
-            style={{ borderColor: theme.accent, borderTopColor: 'transparent' }}
-          />
-          <span className="text-sm lowercase tracking-wider" style={{ color: theme.secondaryText }}>
-            processing book...
-          </span>
+            className="bg-opacity-50 backdrop-blur-sm rounded-2xl p-6 mb-8 border"
+            style={{
+              backgroundColor: theme.surface || theme.background,
+              borderColor: theme.borderColor,
+              boxShadow: `0 8px 32px ${theme.accent}10`
+            }}
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-16 bg-gradient-to-br rounded-lg flex items-center justify-center text-2xl"
+                   style={{ background: `linear-gradient(135deg, ${theme.accent}20, ${theme.accent}40)` }}>
+                📚
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-lg truncate" style={{ color: theme.primaryText }}>
+                  {book.title || 'Untitled Book'}
+                </h3>
+                {book.author && (
+                  <p className="text-sm opacity-75 truncate" style={{ color: theme.secondaryText }}>
+                    by {book.author}
+                  </p>
+                )}
+                {book.chapters && (
+                  <p className="text-xs opacity-60 mt-1" style={{ color: theme.secondaryText }}>
+                    {book.chapters.length} chapter{book.chapters.length !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Processing Status */}
+          <div className="text-center mb-8">
+            <div className="text-4xl mb-4">{phaseIcons[loadingPhase]}</div>
+            <h4 className="text-lg font-medium mb-2" style={{ color: theme.primaryText }}>
+              {phaseMessages[loadingPhase]}
+            </h4>
+            {estimatedTime && loadingPhase !== 'ready' && (
+              <p className="text-sm opacity-70" style={{ color: theme.secondaryText }}>
+                ~{Math.ceil(estimatedTime / 1000)}s remaining
+              </p>
+            )}
+          </div>
+
+          {/* Progress Bar */}
+          <div className="mb-6">
+            <div className="flex justify-between text-xs mb-2" style={{ color: theme.secondaryText }}>
+              <span>Progress</span>
+              <span>{loadingProgress}%</span>
+            </div>
+            <div
+              className="h-2 rounded-full overflow-hidden"
+              style={{ backgroundColor: theme.borderColor }}
+            >
+              <div
+                className="h-full rounded-full transition-all duration-500 ease-out"
+                style={{
+                  width: `${loadingProgress}%`,
+                  backgroundColor: theme.accent,
+                  boxShadow: `0 0 10px ${theme.accent}40`
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Tips */}
+          <div className="text-center">
+            <p className="text-xs opacity-60 leading-relaxed" style={{ color: theme.secondaryText }}>
+              First-time setup optimizes your book for lightning-fast reading.
+              Future loads will be instant! ⚡
+            </p>
+          </div>
         </div>
       </div>
     );

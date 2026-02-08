@@ -59,18 +59,28 @@ export class FlowBookProcessor {
    * Process book text into optimized FlowBook format.
    * This is the expensive operation - done once during import.
    */
-  async processBook(bookId: string, title: string, text: string): Promise<FlowBook> {
+  async processBook(
+    bookId: string, 
+    title: string, 
+    text: string,
+    onProgress?: (phase: string, progress: number) => void
+  ): Promise<FlowBook> {
     const startTime = performance.now();
 
     // Phase 1: Tokenize with ORP precomputation
+    onProgress?.('tokenizing', 20);
     const words = this.tokenizeWithORP(text);
 
     // Phase 2: Group into paragraphs
+    onProgress?.('tokenizing', 60);
     const paragraphs = this.buildParagraphs(words);
 
     // Phase 3: Pre-render paragraph HTML
+    onProgress?.('optimizing', 80);
     const paragraphsWithHTML = await this.preRenderParagraphs(paragraphs);
 
+    onProgress?.('ready', 100);
+    
     const processingTime = performance.now() - startTime;
 
     const book: FlowBook = {
