@@ -349,10 +349,6 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
   // Refs for scroll sync
   const isProgrammaticScroll = useRef(false);
   const lastScrollPosition = useRef(0);
-  
-  // Pinch zoom
-  const pinchStart = useRef<number | null>(null);
-  const pinchFontSize = useRef(settings.fontSize);
 
   // ============================================
   // INITIALIZATION
@@ -541,49 +537,11 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
   }, [isReady, totalWords, position]);
 
   // ============================================
-  // TOUCH GESTURES
+  // TOUCH GESTURES - Removed custom pinch-to-zoom to fix glitchy behavior
+  // Native browser zoom now works properly without conflicts
   // ============================================
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        pinchStart.current = Math.sqrt(dx * dx + dy * dy);
-        pinchFontSize.current = settings.fontSize;
-      }
-    };
-    
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && pinchStart.current !== null) {
-        e.preventDefault();
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const scale = dist / pinchStart.current;
-        const newSize = Math.round(Math.max(12, Math.min(40, pinchFontSize.current * scale)));
-        if (newSize !== settings.fontSize) {
-          updateSettings({ fontSize: newSize });
-        }
-      }
-    };
-    
-    const handleTouchEnd = () => {
-      pinchStart.current = null;
-    };
-    
-    container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd, { passive: true });
-    
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [settings.fontSize, updateSettings]);
+  // Pinch gesture removed - was causing conflicts with native zoom
+  // Users can now use standard browser zoom gestures without glitches
 
   // ============================================
   // HANDLERS
@@ -607,6 +565,9 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
   
   // Universal tap handler - works on text and empty space
   const handleTapStart = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    // Ignore multi-touch gestures (pinch-to-zoom, etc)
+    if ('touches' in e && e.touches.length > 1) return;
+    
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     touchStartPos.current = { x: clientX, y: clientY, time: Date.now() };
@@ -620,6 +581,9 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
   }, []);
   
   const handleTapEnd = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    // Ignore multi-touch gestures
+    if ('changedTouches' in e && e.changedTouches.length > 1) return;
+    
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
@@ -649,11 +613,11 @@ export const StreamReader: React.FC<StreamReaderProps> = ({ book, onToggleChrome
       
       if (wordIndex !== undefined) {
         // Tapped on a word - jump to this position and start RSVP
+        // Only prevent default for word taps, not general interactions
         e.preventDefault();
-        e.stopPropagation();
         handleWordTap(parseInt(wordIndex));
       } else {
-        // Tapped on empty space - toggle chrome
+        // Tapped on empty space - toggle chrome (don't prevent default)
         onToggleChrome();
       }
     }
