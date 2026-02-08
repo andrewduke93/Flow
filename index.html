@@ -65,9 +65,53 @@
         color: #FFFFFF;
         font-family: "Inter", sans-serif;
         -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
         overflow: hidden; /* App-like feel */
         overscroll-behavior: none; /* Prevent bounce on Mac/iOS */
+        text-rendering: optimizeLegibility;
       }
+      
+      /* ========================================
+         TYPOGRAPHY - Professional reading experience
+         ======================================== */
+      
+      /* Better text rendering for reading content */
+      .prose-flow {
+        font-variant-ligatures: common-ligatures contextual;
+        font-variant-numeric: oldstyle-nums proportional-nums;
+        font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1, "pnum" 1;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      /* Proper hanging punctuation support where available */
+      .prose-flow p {
+        hanging-punctuation: first last;
+      }
+      
+      /* First-letter drop cap support (optional - add class .drop-cap to enable) */
+      .prose-flow .drop-cap::first-letter {
+        float: left;
+        font-size: 3.5em;
+        line-height: 0.8;
+        padding-right: 0.1em;
+        padding-top: 0.1em;
+        font-weight: 500;
+      }
+      
+      /* Better selection colors */
+      ::selection {
+        background-color: rgba(226, 88, 34, 0.3);
+        color: inherit;
+      }
+      
+      /* Smoother scrolling for reading */
+      .smooth-scroll {
+        scroll-behavior: smooth;
+      }
+      
       /* Zero Scrollbar Policy */
       ::-webkit-scrollbar {
         width: 0px;
@@ -127,7 +171,7 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/Flow/assets/index-D6O_5dQL.js"></script>
+  <script type="module" crossorigin src="/Flow/assets/index-CaiCUtMC.js"></script>
   <link rel="modulepreload" crossorigin href="/Flow/assets/animations-D9Wo9mUM.js">
   <link rel="modulepreload" crossorigin href="/Flow/assets/vendor-react-uIRdnfX0.js">
   <link rel="modulepreload" crossorigin href="/Flow/assets/rsvp-ChCL7CNZ.js">
