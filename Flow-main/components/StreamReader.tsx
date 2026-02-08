@@ -83,7 +83,7 @@ const RSVPWord = memo(({
 // SIMPLE PARAGRAPH - Minimal re-renders
 // ============================================
 const SimpleParagraph = memo(({ 
-  text, 
+  words,
   startIndex,
   isHighlighted,
   fontSize, 
@@ -91,9 +91,10 @@ const SimpleParagraph = memo(({
   paragraphSpacing,
   fontFamily, 
   textColor,
-  onClick
+  onParagraphClick,
+  onWordClick
 }: {
-  text: string;
+  words: WordSpan[];
   startIndex: number;
   isHighlighted: boolean;
   fontSize: number;
@@ -101,12 +102,13 @@ const SimpleParagraph = memo(({
   paragraphSpacing: number;
   fontFamily: string;
   textColor: string;
-  onClick: () => void;
+  onParagraphClick: (startIndex: number) => void;
+  onWordClick: (wordIndex: number) => void;
 }) => {
   return (
     <p
       data-start={startIndex}
-      onClick={onClick}
+      onClick={() => onParagraphClick(startIndex)}
       style={{
         fontSize: `${fontSize}px`,
         lineHeight,
@@ -118,12 +120,27 @@ const SimpleParagraph = memo(({
         hyphens: 'auto',
         WebkitHyphens: 'auto',
         textRendering: 'optimizeLegibility',
-        cursor: 'pointer',
+        cursor: 'text',
         opacity: isHighlighted ? 1 : 0.85,
         transition: 'opacity 0.2s ease'
       }}
     >
-      {text}
+      {words.map((w, i) => (
+        <span
+          key={w.index}
+          data-index={w.index}
+          onClick={(e) => { e.stopPropagation(); onWordClick(w.index); }}
+          style={{
+            cursor: 'pointer',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            marginRight: '0.25ch'
+          }}
+        >
+          {w.text}
+          {i < words.length - 1 ? ' ' : ''}
+        </span>
+      ))}
     </p>
   );
 });
@@ -165,32 +182,32 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
   // ============================================
   const paragraphs = useMemo(() => {
     if (!isReady) return [];
-    
-    const result: { text: string; startIndex: number }[] = [];
+
+    const result: { words: WordSpan[]; startIndex: number }[] = [];
     const words = engine.getRange(0, engine.total);
-    
+
     if (words.length === 0) return result;
-    
-    let currentPara: string[] = [];
+
+    let currentPara: WordSpan[] = [];
     let currentStart = 0;
-    
+
     for (let i = 0; i < words.length; i++) {
       const word = words[i];
       if (currentPara.length === 0) {
         currentStart = word.index;
       }
-      currentPara.push(word.text);
-      
+      currentPara.push(word);
+
       // Check for paragraph break
       if (word.trailingPause === 3 || i === words.length - 1) {
         result.push({
-          text: currentPara.join(' '),
+          words: currentPara.slice(),
           startIndex: currentStart
         });
         currentPara = [];
       }
     }
-    
+
     return result;
   }, [isReady]);
 
@@ -344,6 +361,12 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
     engine.play();
   }, []);
 
+  const handleWordTap = useCallback((wordIndex: number) => {
+    RSVPHapticEngine.impactLight();
+    engine.position = wordIndex;
+    engine.play();
+  }, []);
+
   const handleRSVPTap = useCallback(() => {
     RSVPHapticEngine.impactMedium();
     engine.toggle();
@@ -467,7 +490,7 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
         {paragraphs.map((para, idx) => (
           <SimpleParagraph
             key={para.startIndex}
-            text={para.text}
+            words={para.words}
             startIndex={para.startIndex}
             isHighlighted={idx === highlightedParagraph}
             fontSize={settings.fontSize}
@@ -475,7 +498,8 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
             paragraphSpacing={settings.paragraphSpacing}
             fontFamily={fontFamilyCSS}
             textColor={theme.primaryText}
-            onClick={() => handleParagraphTap(para.startIndex)}
+            onParagraphClick={(si) => handleParagraphTap(si)}
+            onWordClick={(wi) => handleWordTap(wi)}
           />
         ))}
       </div>
