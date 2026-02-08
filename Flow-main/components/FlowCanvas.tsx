@@ -87,32 +87,22 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = memo(({ onTap }) => {
     const rightWidth = ctx.measureText(rightPart).width;
     const punctWidth = punct ? ctx.measureText(punct).width : 0;
     
-    // Position: ORP character at 35.5% from left (reticle position)
-    const reticleX = width * 0.355 * dpr;
-    const centerY = height * 0.42 * dpr; // Slightly above center
+    // Reedy-style: Center the entire word, not the ORP
+    const totalWidth = leftWidth + orpWidth + rightWidth + punctWidth;
+    const centerX = (width * dpr) / 2;
+    const centerY = (height * dpr) / 2;
+    const startX = centerX - totalWidth / 2;
     
-    // Calculate start position so ORP is at reticle
-    const orpCenterOffset = leftWidth + orpWidth / 2;
-    const startX = reticleX - orpCenterOffset;
-    
-    // Draw reticle line (subtle)
-    ctx.strokeStyle = '#E25822';
-    ctx.globalAlpha = 0.12;
-    ctx.lineWidth = 1.5 * dpr;
-    ctx.beginPath();
-    ctx.moveTo(reticleX, height * 0.25 * dpr);
-    ctx.lineTo(reticleX, height * 0.75 * dpr);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    // No reticle line in Reedy-style mode - cleaner look
     
     // Draw left part
     ctx.fillStyle = theme.primaryText;
     ctx.fillText(leftPart, startX, centerY);
     
-    // Draw ORP character (highlighted)
+    // Draw ORP character (highlighted) - stronger highlight like Reedy
     ctx.fillStyle = '#E25822';
-    ctx.shadowColor = '#E2582230';
-    ctx.shadowBlur = 24 * dpr;
+    ctx.shadowColor = '#E2582240';
+    ctx.shadowBlur = 20 * dpr;
     ctx.fillText(orpChar, startX + leftWidth, centerY);
     ctx.shadowBlur = 0;
     
@@ -128,56 +118,30 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = memo(({ onTap }) => {
       ctx.globalAlpha = 1;
     }
 
-    // Context words when paused or ghost preview enabled
+    // Reedy-style: Only show upcoming words when paused, below the main word
     if (!stream.isPlaying || settings.showGhostPreview) {
-      const contextCount = 8; // More words for natural reading flow
+      const contextCount = 3; // Show fewer upcoming words
       const tokens = stream.tokens;
       const currentIdx = stream.currentIndex;
       
-      ctx.font = `400 ${fontSize * 0.9 * dpr}px ${fontFamily}`;
+      ctx.font = `400 ${fontSize * 0.5 * dpr}px ${fontFamily}`;
+      ctx.fillStyle = theme.secondaryText;
+      ctx.globalAlpha = 0.5;
       
-      // Natural word spacing (0.35em) for reading flow
-      const wordGap = fontSize * 0.35 * dpr;
-      
-      // Previous words (fade left)
-      let prevX = startX - wordGap;
-      for (let i = currentIdx - 1; i >= Math.max(0, currentIdx - contextCount); i--) {
-        const prevToken = tokens[i];
-        if (!prevToken) break;
-        
-        const prevText = prevToken.originalText + (prevToken.punctuation || '');
-        const prevWidth = ctx.measureText(prevText).width;
-        prevX -= prevWidth;
-        
-        const distance = currentIdx - i;
-        // Smoother opacity gradient for natural reading
-        const opacity = Math.max(0.15, 0.6 - distance * 0.06);
-        
-        ctx.fillStyle = theme.primaryText;
-        ctx.globalAlpha = opacity;
-        ctx.fillText(prevText, prevX, centerY);
-        
-        prevX -= wordGap;
-      }
-      
-      // Next words (fade right)
-      let nextX = startX + leftWidth + orpWidth + rightWidth + punctWidth + wordGap;
+      // Show upcoming words below, centered
+      const upcomingWords: string[] = [];
       for (let i = currentIdx + 1; i <= Math.min(tokens.length - 1, currentIdx + contextCount); i++) {
         const nextToken = tokens[i];
         if (!nextToken) break;
-        
-        const nextText = nextToken.originalText + (nextToken.punctuation || '');
-        const nextWidth = ctx.measureText(nextText).width;
-        
-        const distance = i - currentIdx;
-        // Smoother opacity gradient for natural reading
-        const opacity = Math.max(0.15, 0.6 - distance * 0.06);
-        
-        ctx.fillStyle = theme.primaryText;
-        ctx.globalAlpha = opacity;
-        ctx.fillText(nextText, nextX, centerY);
-        
-        nextX += nextWidth + wordGap;
+        upcomingWords.push(nextToken.originalText + (nextToken.punctuation || ''));
+      }
+      
+      if (upcomingWords.length > 0) {
+        const previewText = upcomingWords.join(' ');
+        const previewWidth = ctx.measureText(previewText).width;
+        const previewY = centerY + fontSize * dpr * 0.8;
+        const previewX = centerX - previewWidth / 2;
+        ctx.fillText(previewText, previewX, previewY);
       }
       
       ctx.globalAlpha = 1;

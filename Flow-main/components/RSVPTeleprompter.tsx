@@ -29,25 +29,21 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
   const { settings } = useTitanSettings();
   
   const containerRef = useRef<HTMLDivElement>(null);
-  const ribbonRef = useRef<HTMLDivElement>(null);
   
   // State
   const [currentIndex, setCurrentIndex] = useState(0);
   const [tokens, setTokens] = useState<RSVPToken[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [ribbonOffset, setRibbonOffset] = useState(0);
   
   // Refs
   const lastIndexRef = useRef(-1);
   const tokensRef = useRef<RSVPToken[]>([]);
-  const wordPositions = useRef<Map<number, { left: number, width: number, center: number }>>(new Map());
   
-  // Constants - Refined for polish
+  // Constants - Reedy-style simplicity
   const FOCUS_COLOR = '#E25822';
-  const RETICLE_POSITION = 35.5;
-  // Dynamic font size based on user settings - scales proportionally
+  // Dynamic font size based on user settings
   const baseFontSize = settings.fontSize || 18;
-  const FONT_SIZE = `clamp(${baseFontSize * 1.8}px, 8vw, ${baseFontSize * 3}px)`;
+  const FONT_SIZE = `clamp(${baseFontSize * 2}px, 10vw, ${baseFontSize * 3.5}px)`;
 
   // Sync with heartbeat - optimized with RAF batching
   useEffect(() => {
@@ -99,25 +95,17 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
   // Focus token
   const focusToken = useMemo(() => tokens[currentIndex] || null, [tokens, currentIndex]);
 
-  // Show context when paused or when ghost preview is enabled
+  // Show context when paused - Reedy shows upcoming words when paused
   const showContext = !isPlaying || settings.showGhostPreview;
-  const contextCount = 8; // More words for natural reading flow
+  const contextCount = showContext ? 3 : 0; // Show fewer words for cleaner look
 
-  // Build token window
-  const streamTokens = useMemo(() => {
-    if (tokens.length === 0) return [];
-    if (!showContext) {
-      return focusToken ? [{ token: focusToken, globalIdx: currentIndex }] : [];
-    }
-    
-    const start = Math.max(0, currentIndex - contextCount);
-    const end = Math.min(tokens.length - 1, currentIndex + contextCount);
-    
-    return tokens.slice(start, end + 1).map((token, i) => ({
-      token,
-      globalIdx: start + i
-    }));
-  }, [tokens, currentIndex, showContext, contextCount, focusToken]);
+  // Get upcoming words for preview
+  const upcomingWords = useMemo(() => {
+    if (!showContext || tokens.length === 0) return [];
+    const start = currentIndex + 1;
+    const end = Math.min(tokens.length, currentIndex + 1 + contextCount);
+    return tokens.slice(start, end);
+  }, [tokens, currentIndex, showContext, contextCount]);
 
   // ORP calculation - Optimal Recognition Point (~30% into word)
   const getORP = (text: string) => {
@@ -126,52 +114,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
     return Math.min(len - 1, Math.max(0, Math.floor(len * 0.3)));
   };
 
-  // Position ribbon - align focus letter with reticle
-  useLayoutEffect(() => {
-    if (!ribbonRef.current) return;
-    
-    const ribbon = ribbonRef.current;
-    const children = Array.from(ribbon.children) as HTMLElement[];
-    const containerWidth = containerRef.current?.clientWidth || window.innerWidth;
-    const reticleX = containerWidth * (RETICLE_POSITION / 100);
-    
-    wordPositions.current.clear();
-    
-    children.forEach((child) => {
-      const idx = parseInt(child.dataset.idx || '0');
-      const rect = child.getBoundingClientRect();
-      const ribbonRect = ribbon.getBoundingClientRect();
-      const left = rect.left - ribbonRect.left;
-      
-      let focusLetterPos = left + rect.width / 2;
-      
-      if (idx === currentIndex && focusToken) {
-        const text = focusToken.originalText;
-        const focusCharIdx = getORP(text);
-
-        try {
-          const orpSpan = child.querySelector?.('span:nth-child(2)') as HTMLElement;
-          if (orpSpan?.getBoundingClientRect) {
-            const orpRect = orpSpan.getBoundingClientRect();
-            focusLetterPos = (orpRect.left + orpRect.right) / 2 - ribbonRect.left;
-          } else if (text.length > 0) {
-            const estimatedCharWidth = rect.width / text.length;
-            focusLetterPos = left + focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
-          }
-        } catch {
-          const estimatedCharWidth = rect.width / Math.max(1, text.length);
-          focusLetterPos = left + focusCharIdx * estimatedCharWidth + estimatedCharWidth / 2;
-        }
-      }
-      
-      wordPositions.current.set(idx, { left, width: rect.width, center: focusLetterPos });
-    });
-    
-    const activePos = wordPositions.current.get(currentIndex);
-    if (activePos) {
-      setRibbonOffset(reticleX - activePos.center);
-    }
-  }, [streamTokens, currentIndex, focusToken]);
+  // No complex positioning needed - Reedy-style centered display
 
   // Simple tap handler - toggle play/pause (memoized)
   const handleTap = useCallback(() => {
@@ -195,105 +138,49 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
       style={{ backgroundColor: theme.background }}
       onClick={handleTap}
     >
-      {/* Subtle gradient overlay for depth */}
-      <div 
-        className="absolute inset-0 pointer-events-none"
-        style={{ 
-          background: `radial-gradient(ellipse 90% 60% at ${RETICLE_POSITION}% 42%, transparent 0%, ${theme.background}90 100%)`
-        }}
-      />
-
-      {/* Minimal reticle line */}
-      <div 
-        className="absolute top-[25%] bottom-[25%] w-[1.5px] z-0 pointer-events-none"
-        style={{ 
-          left: `${RETICLE_POSITION}%`, 
-          backgroundColor: FOCUS_COLOR, 
-          opacity: 0.12
-        }}
-      />
-
-      {/* WORD STREAM */}
-      <div className="absolute inset-x-0 top-[42%] -translate-y-1/2 flex items-center justify-start overflow-visible z-20">
-        {/* Edge fades */}
-        {showContext && (
-          <>
-            <div 
-              className="absolute left-0 top-[-50%] bottom-[-50%] w-24 z-30 pointer-events-none"
-              style={{ background: `linear-gradient(to right, ${theme.background}, transparent)` }}
-            />
-            <div 
-              className="absolute right-0 top-[-50%] bottom-[-50%] w-24 z-30 pointer-events-none"
-              style={{ background: `linear-gradient(to left, ${theme.background}, transparent)` }}
-            />
-          </>
-        )}
-
-        {/* Word Ribbon - GPU accelerated, line-based like Reedy */}
-        <div
-          ref={ribbonRef}
-          className="flex items-baseline whitespace-nowrap"
-          style={{
-            transform: `translate3d(${ribbonOffset}px, 0, 0)`,
-            willChange: 'transform',
-            gap: '0.35em' // Natural word spacing for reading flow
+      {/* CENTERED WORD - Reedy style */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-8">
+        {/* Main focus word - centered and prominent */}
+        <div 
+          className="inline-flex items-baseline font-sans font-semibold relative"
+          style={{ 
+            fontSize: FONT_SIZE,
+            fontFamily: settings.fontFamily === 'New York' ? 'Georgia, serif' : 'system-ui, sans-serif',
           }}
         >
-          {streamTokens.map(({ token, globalIdx }) => {
-            const isFocus = globalIdx === currentIndex;
-            const distance = Math.abs(globalIdx - currentIndex);
-            // Smoother opacity gradient for natural reading
-            const contextOpacity = Math.max(0.15, 0.6 - (distance * 0.06));
-            
-            if (isFocus) {
-              return (
-                <span
-                  key={token.id}
-                  data-idx={globalIdx}
-                  className="inline-flex items-baseline font-sans font-semibold"
-                  style={{ 
-                    fontSize: FONT_SIZE,
-                    fontFamily: settings.fontFamily === 'New York' ? 'Georgia, serif' : 'system-ui, sans-serif'
-                  }}
-                >
-                  <span style={{ color: theme.primaryText }}>{leftPart}</span>
-                  <span style={{ 
-                    color: FOCUS_COLOR, 
-                    textShadow: `0 0 24px ${FOCUS_COLOR}30`
-                  }}>{orpChar}</span>
-                  <span style={{ color: theme.primaryText }}>{rightPart}</span>
-                  {token.punctuation && (
-                    <span style={{ color: theme.secondaryText, opacity: 0.6 }}>
-                      {token.punctuation}
-                    </span>
-                  )}
-                </span>
-              );
-            }
-            
-            return (
-              <span
-                key={token.id}
-                data-idx={globalIdx}
-                className="font-sans"
-                style={{
-                  fontSize: FONT_SIZE,
-                  fontWeight: 400,
-                  fontFamily: settings.fontFamily === 'New York' ? 'Georgia, serif' : 'system-ui, sans-serif',
-                  color: theme.primaryText,
-                  opacity: contextOpacity,
-                }}
-              >
-                {token.originalText}
-                {token.punctuation && (
-                  <span style={{ opacity: 0.8 }}>
-                    {token.punctuation}
-                  </span>
-                )}
-              </span>
-            );
-          })}
+          <span style={{ color: theme.primaryText }}>{leftPart}</span>
+          <span style={{ 
+            color: FOCUS_COLOR, 
+            fontWeight: 700,
+            textShadow: `0 0 20px ${FOCUS_COLOR}25`
+          }}>{orpChar}</span>
+          <span style={{ color: theme.primaryText }}>{rightPart}</span>
+          {focusToken.punctuation && (
+            <span style={{ color: theme.secondaryText, opacity: 0.7 }}>
+              {focusToken.punctuation}
+            </span>
+          )}
         </div>
+
+        {/* Upcoming words preview - Reedy shows next words when paused */}
+        {showContext && upcomingWords.length > 0 && (
+          <div 
+            className="mt-6 text-center"
+            style={{
+              fontSize: `calc(${FONT_SIZE} * 0.4)`,
+              fontFamily: settings.fontFamily === 'New York' ? 'Georgia, serif' : 'system-ui, sans-serif',
+              color: theme.secondaryText,
+              opacity: 0.5,
+              letterSpacing: '0.05em'
+            }}
+          >
+            {upcomingWords.map((token, i) => (
+              <span key={token.id}>
+                {token.originalText}{token.punctuation || ''}{i < upcomingWords.length - 1 ? ' ' : ''}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Progress indicator - subtle bottom line */}
