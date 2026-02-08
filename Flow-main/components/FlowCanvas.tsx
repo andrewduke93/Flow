@@ -120,24 +120,24 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = memo(({ onTap }) => {
     ctx.fillStyle = theme.primaryText;
     ctx.fillText(rightPart, startX + leftWidth + orpWidth, centerY);
     
-    // Draw punctuation (dimmed)
+    // Draw punctuation (more visible for natural reading flow)
     if (punct) {
       ctx.fillStyle = theme.secondaryText;
-      ctx.globalAlpha = 0.4;
-      ctx.fillText(punct, startX + leftWidth + orpWidth + rightWidth + 2 * dpr, centerY);
+      ctx.globalAlpha = 0.6;
+      ctx.fillText(punct, startX + leftWidth + orpWidth + rightWidth, centerY);
       ctx.globalAlpha = 1;
     }
 
     // Context words when paused or ghost preview enabled
     if (!stream.isPlaying || settings.showGhostPreview) {
-      const contextCount = 4;
+      const contextCount = 8; // More words for natural reading flow
       const tokens = stream.tokens;
       const currentIdx = stream.currentIndex;
       
       ctx.font = `400 ${fontSize * 0.9 * dpr}px ${fontFamily}`;
       
-      // Calculate spacing
-      const wordGap = fontSize * 0.6 * dpr;
+      // Natural word spacing (0.35em) for reading flow
+      const wordGap = fontSize * 0.35 * dpr;
       
       // Previous words (fade left)
       let prevX = startX - wordGap;
@@ -145,12 +145,13 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = memo(({ onTap }) => {
         const prevToken = tokens[i];
         if (!prevToken) break;
         
-        const prevText = prevToken.originalText;
+        const prevText = prevToken.originalText + (prevToken.punctuation || '');
         const prevWidth = ctx.measureText(prevText).width;
         prevX -= prevWidth;
         
         const distance = currentIdx - i;
-        const opacity = Math.max(0.08, 0.4 - distance * 0.08);
+        // Smoother opacity gradient for natural reading
+        const opacity = Math.max(0.15, 0.6 - distance * 0.06);
         
         ctx.fillStyle = theme.primaryText;
         ctx.globalAlpha = opacity;
@@ -165,11 +166,12 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = memo(({ onTap }) => {
         const nextToken = tokens[i];
         if (!nextToken) break;
         
-        const nextText = nextToken.originalText;
+        const nextText = nextToken.originalText + (nextToken.punctuation || '');
         const nextWidth = ctx.measureText(nextText).width;
         
         const distance = i - currentIdx;
-        const opacity = Math.max(0.08, 0.4 - distance * 0.08);
+        // Smoother opacity gradient for natural reading
+        const opacity = Math.max(0.15, 0.6 - distance * 0.06);
         
         ctx.fillStyle = theme.primaryText;
         ctx.globalAlpha = opacity;

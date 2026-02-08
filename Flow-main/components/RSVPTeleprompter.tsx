@@ -101,7 +101,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
 
   // Show context when paused or when ghost preview is enabled
   const showContext = !isPlaying || settings.showGhostPreview;
-  const contextCount = 4;
+  const contextCount = 8; // More words for natural reading flow
 
   // Build token window
   const streamTokens = useMemo(() => {
@@ -229,19 +229,21 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
           </>
         )}
 
-        {/* Word Ribbon - GPU accelerated */}
+        {/* Word Ribbon - GPU accelerated, line-based like Reedy */}
         <div
           ref={ribbonRef}
-          className="flex items-baseline gap-4 whitespace-nowrap"
+          className="flex items-baseline whitespace-nowrap"
           style={{
             transform: `translate3d(${ribbonOffset}px, 0, 0)`,
-            willChange: 'transform'
+            willChange: 'transform',
+            gap: '0.35em' // Natural word spacing for reading flow
           }}
         >
           {streamTokens.map(({ token, globalIdx }) => {
             const isFocus = globalIdx === currentIndex;
             const distance = Math.abs(globalIdx - currentIndex);
-            const contextOpacity = Math.max(0.08, 0.4 - (distance * 0.08));
+            // Smoother opacity gradient for natural reading
+            const contextOpacity = Math.max(0.15, 0.6 - (distance * 0.06));
             
             if (isFocus) {
               return (
@@ -261,7 +263,7 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
                   }}>{orpChar}</span>
                   <span style={{ color: theme.primaryText }}>{rightPart}</span>
                   {token.punctuation && (
-                    <span style={{ color: theme.secondaryText, opacity: 0.4, marginLeft: '2px' }}>
+                    <span style={{ color: theme.secondaryText, opacity: 0.6 }}>
                       {token.punctuation}
                     </span>
                   )}
@@ -283,6 +285,11 @@ export const RSVPTeleprompter: React.FC<RSVPTeleprompterProps> = memo(({
                 }}
               >
                 {token.originalText}
+                {token.punctuation && (
+                  <span style={{ opacity: 0.8 }}>
+                    {token.punctuation}
+                  </span>
+                )}
               </span>
             );
           })}
