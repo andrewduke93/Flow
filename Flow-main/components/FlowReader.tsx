@@ -1,683 +1,534 @@
-import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
-import { Book, RSVPToken } from '../types';
-import { TitanCore } from '../services/titanCore';
-import { TitanReadStream, StreamMode } from '../services/titanReadStream';
-import { FlowCanvas } from './FlowCanvas';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { Book } from '../types';
+import { StreamEngine } from '../services/streamEngine';
 import { useTitanTheme } from '../services/titanTheme';
 import { useTitanSettings } from '../services/configService';
 import { RSVPHapticEngine } from '../services/rsvpHaptics';
-import { TextFormatter, FormattedBlock, BlockType, BLOCK_STYLES } from '../services/textFormatter';
+import { TitanStorage } from '../services/titanStorage';
+import { FlowBookProcessor, FlowBook, FlowWord, FlowParagraph } from '../services/flowBookProcessor';
 
 interface FlowReaderProps {
   book: Book;
   onToggleChrome: () => void;
-  onRequestPlay?: (tokenIndex: number) => void;
-  isRSVPActive: boolean;
+  isActive: boolean;
+  showGhostWords?: boolean;
 }
 
-/**
- * FlowReader - Unified Reading Surface
- * 
- * The secret: There's only ONE reader. Scroll and RSVP are the same thing,
- * just rendered differently. The stream position is shared.
- * 
- * When scrolling: User controls position, canvas is hidden
- * When RSVP: Canvas shows, time controls position, scroll view fades
- * 
- * The transition is seamless because both use the same token stream.
- */
-export const FlowReader: React.FC<FlowReaderProps> = memo(({ 
-  book, 
-  onToggleChrome,
-  onRequestPlay,
-  isRSVPActive 
+// ============================================
+// PROPRIETARY FLOW WORD DISPLAY
+// ============================================
+const FlowWordSpan = React.memo(({
+  word,
+  fontSize,
+  fontFamily,
+  textColor,
+  accentColor,
+  isHighlighted,
+  onClick
+}: {
+  word: FlowWord;
+  fontSize: number;
+  fontFamily: string;
+  textColor: string;
+  accentColor: string;
+  isHighlighted: boolean;
+  onClick: (wordIndex: number) => void;
 }) => {
-  const core = TitanCore.getInstance();
-  const stream = TitanReadStream.getInstance();
-  const theme = useTitanTheme();
-  const { settings, updateSettings } = useTitanSettings();
-  
-  const containerRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  
-  // State
-  const [tokens, setTokens] = useState<RSVPToken[]>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [isReady, setIsReady] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [contentText, setContentText] = useState(''); // Track content for re-render
-  
-  // Refs
-  const isProgrammaticScroll = useRef(false);
-  const initialPinchDistance = useRef<number | null>(null);
-  const initialFontSize = useRef<number>(settings.fontSize);
+  const text = word.text;
 
-  // Initialization - FAST PATH: show text immediately, tokenize in background
-  useEffect(() => {
-    console.log('[FlowReader] Initializing for book:', book.id, 'chapters:', book.chapters?.length || 0);
-    setIsReady(false);
-    setLoadingProgress(0);
-    setContentText('');
-
-    const init = async () => {
-      // If no chapters, show empty state but still mark as ready
-      if (!book.chapters || book.chapters.length === 0) {
-        console.log('[FlowReader] No chapters found, showing empty state');
-        setIsReady(true);
-        setContentText(''); // Empty = will show "No content to display"
-        return;
-      }
-
-      try {
-        console.log('[FlowReader] Loading core...');
-        // PHASE 1: Load core (fast - just text extraction)
-        await core.load(book);
-        
-        // Capture content text for rendering
-        const fullText = core.contentStorage.string;
-        console.log('[FlowReader] Content loaded, length:', fullText?.length || 0);
-        
-        if (!fullText || fullText.trim().length === 0) {
-          console.warn('[FlowReader] Content is empty after load');
-          setIsReady(true);
-          return;
-        }
-        
-        setContentText(fullText);
-        
-        // IMMEDIATELY show reader with text
-        // We don't need tokens for scroll view!
-        setIsReady(true);
-        setLoadingProgress(1);
-        console.log('[FlowReader] Ready!');
-        
-        // PHASE 2: Background tokenization (for RSVP)
-        // This happens after the reader is already visible
-        const startIndex = book.lastTokenIndex || 0;
-        
-        // Don't await - let it happen in background
-        stream.loadContent(fullText, { tokenIndex: startIndex }).then(() => {
-          console.log('[FlowReader] Tokens loaded:', stream.tokens.length);
-          setTokens(stream.tokens);
-          setActiveIndex(stream.currentIndex);
-        }).catch((e) => console.error('[FlowReader] Token load failed:', e));
-        
-      } catch (e) {
-        console.error('[FlowReader] Init failed:', e);
-        setIsReady(true);
-      }
-    };
-
-    init();
-  }, [book.id]);
-
-  // Sync with stream
-  useEffect(() => {
-    const unsub = stream.subscribe(() => {
-      // Update tokens if they changed (from background load)
-      if (stream.tokens.length > 0 && stream.tokens !== tokens) {
-        setTokens(stream.tokens);
-      }
-      setActiveIndex(stream.currentIndex);
-      
-      // Sync scroll position when stream moves (e.g., during RSVP exit)
-      if (!isRSVPActive && scrollContainerRef.current && stream.tokens.length > 0) {
-        const pct = stream.progress;
-        const scrollMax = scrollContainerRef.current.scrollHeight - scrollContainerRef.current.clientHeight;
-        const targetScroll = pct * scrollMax;
-        
-        // Only programmatic scroll if we're far off
-        const currentScroll = scrollContainerRef.current.scrollTop;
-        if (Math.abs(targetScroll - currentScroll) > 500) {
-          isProgrammaticScroll.current = true;
-          scrollContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
-          setTimeout(() => { isProgrammaticScroll.current = false; }, 600);
-        }
-      }
-    });
-    
-    return unsub;
-  }, [isRSVPActive]);
-
-  // Scroll tracking → stream position (when in scroll mode)
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container || !isReady || tokens.length === 0 || isRSVPActive) return;
-    
-    let ticking = false;
-    
-    const handleScroll = () => {
-      if (isProgrammaticScroll.current || ticking) return;
-      
-      ticking = true;
-      requestAnimationFrame(() => {
-        if (!isProgrammaticScroll.current && container) {
-          const scrollPct = container.scrollTop / Math.max(1, container.scrollHeight - container.clientHeight);
-          const newIndex = Math.floor(scrollPct * (tokens.length - 1));
-          
-          // Update stream position (this is the key unification!)
-          if (Math.abs(newIndex - stream.currentIndex) > 5) {
-            stream.seek({ tokenIndex: newIndex });
-            core.saveProgress(newIndex);
-          }
-        }
-        ticking = false;
-      });
-    };
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [isReady, tokens.length, isRSVPActive]);
-
-  // Pinch-to-zoom
-  const handleTouchStart = useCallback((e: TouchEvent) => {
-    if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      initialPinchDistance.current = Math.sqrt(dx * dx + dy * dy);
-      initialFontSize.current = settings.fontSize;
-    }
-  }, [settings.fontSize]);
-
-  const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (e.touches.length === 2 && initialPinchDistance.current !== null) {
-      e.preventDefault();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const currentDistance = Math.sqrt(dx * dx + dy * dy);
-      const scale = currentDistance / initialPinchDistance.current;
-      const newFontSize = Math.round(Math.max(12, Math.min(40, initialFontSize.current * scale)));
-      
-      if (newFontSize !== settings.fontSize) {
-        updateSettings({ fontSize: newFontSize });
-      }
-    }
-  }, [settings.fontSize, updateSettings]);
-
-  const handleTouchEnd = useCallback(() => {
-    initialPinchDistance.current = null;
-  }, []);
-
-  // Setup pinch listeners
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
-
-  // Simplified paragraph grouping
-  const paragraphs = useMemo(() => {
-    if (tokens.length === 0) return [];
-    
-    const result: { 
-      tokens: RSVPToken[], 
-      startIndex: number, 
-      plainText: string,
-      blockType: BlockType,
-    }[] = [];
-    let currentPara: RSVPToken[] = [];
-    let startIndex = 0;
-    
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-      currentPara.push(token);
-      
-      // Check if this token ends a paragraph
-      if (token.isParagraphEnd || i === tokens.length - 1) {
-        const plainText = currentPara.map(t => t.originalText).join(' ');
-        
-        result.push({
-          tokens: currentPara,
-          startIndex,
-          plainText,
-          blockType: 'paragraph' as BlockType,
-        });
-        
-        currentPara = [];
-        startIndex = i + 1;
-      }
-    }
-    
-    return result;
-  }, [tokens]);
-
-  // Handle word click → start RSVP from that position
-  const handleWordClick = useCallback((index: number) => {
-    RSVPHapticEngine.impactMedium();
-    stream.seek({ tokenIndex: index });
-    onRequestPlay?.(index);
-  }, [onRequestPlay]);
-
-  // Handle canvas tap
-  const handleCanvasTap = useCallback(() => {
-    stream.toggle();
-  }, []);
-
-  // Font family
-  const fontFamily = settings.fontFamily === 'New York' 
-    ? '"New York", "Iowan Old Style", Georgia, serif' 
-    : settings.fontFamily === 'OpenDyslexic' 
-      ? '"OpenDyslexic", sans-serif'
-      : settings.fontFamily === 'Atkinson Hyperlegible'
-        ? '"Atkinson Hyperlegible", sans-serif'
-        : 'system-ui, -apple-system, sans-serif';
-
-  // Loading state - minimal spinner (should be very brief now)
-  if (!isReady) {
-    return (
-      <div 
-        className="absolute inset-0 flex items-center justify-center"
-        style={{ backgroundColor: theme.background }}
-      >
-        <div 
-          className="w-6 h-6 rounded-full border-2 animate-spin"
-          style={{ borderColor: `${theme.accent}20`, borderTopColor: theme.accent }}
-        />
-      </div>
-    );
-  }
-
-  // Formatted blocks for enhanced display (smart formatting)
-  // Disabled temporarily - using simple paragraphs for stability
-  const formattedBlocks = useMemo((): FormattedBlock[] | null => {
-    if (tokens.length > 0) return null; // Use token-based rendering when ready
-    if (!contentText) return null;
-    
-    // Simple paragraph splitting for now - TextFormatter causing re-render issues
-    try {
-      const paragraphs = contentText.split(/\n\n+/).filter(p => p.trim());
-      return paragraphs.map((p, i) => ({
-        type: 'paragraph' as BlockType,
-        content: p.trim()
-      }));
-    } catch (e) {
-      console.error('[FlowReader] Format error:', e);
-      return null;
-    }
-  }, [tokens.length, contentText]);
+  // Use precomputed ORP
+  const before = text.slice(0, word.orpIndex);
+  const pivot = text[word.orpIndex] || '';
+  const after = text.slice(word.orpIndex + 1);
 
   return (
-    <div ref={containerRef} className="absolute inset-0">
-      {/* LAYER 0: Scroll View - Always present, fades when RSVP active */}
-      <div 
-        ref={scrollContainerRef}
-        className="absolute inset-0 overflow-y-auto overscroll-contain transition-opacity duration-300"
-        style={{ 
-          backgroundColor: theme.background,
-          opacity: isRSVPActive ? (stream.isPlaying ? 0 : 0.4) : 1,
-          pointerEvents: isRSVPActive ? 'none' : 'auto'
-        }}
-        onClick={onToggleChrome}
-      >
-        <div 
-          className="max-w-2xl mx-auto px-6 py-safe"
-          style={{ paddingTop: 'calc(5rem + env(safe-area-inset-top))', paddingBottom: '12rem' }}
-        >
-          {/* FAST PATH: Enhanced formatted blocks before tokens ready */}
-          {formattedBlocks && formattedBlocks.length > 0 && formattedBlocks.map((block, idx) => (
-            <FormattedBlockView
-              key={idx}
-              block={block}
-              fontSize={settings.fontSize}
-              lineHeight={settings.lineHeight}
-              paragraphSpacing={settings.paragraphSpacing}
-              fontFamily={fontFamily}
-              theme={theme}
-            />
-          ))}
-
-          {/* FULL PATH: Token-based rendering with block type styling */}
-          {!formattedBlocks && paragraphs.length > 0 && paragraphs.map((para) => (
-            <TokenizedBlockView
-              key={para.startIndex}
-              para={para}
-              activeIndex={activeIndex}
-              fontSize={settings.fontSize}
-              lineHeight={settings.lineHeight}
-              paragraphSpacing={settings.paragraphSpacing}
-              fontFamily={fontFamily}
-              theme={theme}
-              onWordClick={handleWordClick}
-            />
-          ))}
-
-          {/* Fallback: No content available */}
-          {!formattedBlocks && paragraphs.length === 0 && contentText && (
-            <p style={{ color: theme.primaryText, fontSize: `${settings.fontSize}px`, fontFamily }}>
-              {contentText}
-            </p>
-          )}
-
-          {/* Empty state */}
-          {!contentText && tokens.length === 0 && (
-            <div style={{ color: theme.primaryText, textAlign: 'center', paddingTop: '4rem' }}>
-              <p style={{ opacity: 0.5, fontSize: `${settings.fontSize}px` }}>
-                Unable to load book content
-              </p>
-              <p style={{ opacity: 0.3, fontSize: `${settings.fontSize * 0.8}px`, marginTop: '0.5rem' }}>
-                Book chapters: {book.chapters?.length || 0}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* LAYER 1: Canvas Display - Shown when RSVP active */}
-      <div 
-        className={`absolute inset-0 transition-all duration-300 ${
-          isRSVPActive ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
-        }`}
-        style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0, 0, 1)' }}
-      >
-        <FlowCanvas onTap={handleCanvasTap} />
-      </div>
-    </div>
+    <span
+      data-index={word.index}
+      onClick={(e) => { e.stopPropagation(); onClick(word.index); }}
+      className={`flow-word ${isHighlighted ? 'highlighted' : ''}`}
+      style={{
+        cursor: 'pointer',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        marginRight: '0.25ch',
+        padding: '0 0.15ch',
+        borderRadius: 4,
+        transition: 'all 0.15s ease',
+        backgroundColor: isHighlighted ? 'rgba(255,215,0,0.08)' : 'transparent',
+        fontSize: `${fontSize}px`,
+        fontFamily,
+        color: textColor,
+        lineHeight: 1.4
+      }}
+    >
+      <span style={{ color: textColor, opacity: 0.8 }}>{before}</span>
+      <span style={{ color: accentColor, fontWeight: 700 }}>{pivot}</span>
+      <span style={{ color: textColor, opacity: 0.8 }}>{after}</span>
+    </span>
   );
 });
 
-/**
- * FormattedBlockView - Renders each block type with appropriate styling
- */
-interface FormattedBlockViewProps {
-  block: FormattedBlock;
-  fontSize: number;
-  lineHeight: number;
-  paragraphSpacing: number;
-  fontFamily: string;
-  theme: { primaryText: string; accent: string; background: string };
-}
-
-const FormattedBlockView: React.FC<FormattedBlockViewProps> = memo(({ 
-  block, 
-  fontSize, 
-  lineHeight, 
-  paragraphSpacing, 
-  fontFamily,
-  theme 
-}) => {
-  const baseStyles: React.CSSProperties = {
-    fontSize: `${fontSize}px`,
-    lineHeight,
-    fontFamily,
-    color: theme.primaryText,
-    textRendering: 'optimizeLegibility',
-    WebkitFontSmoothing: 'antialiased',
-  };
-
-  const blockStyles = BLOCK_STYLES[block.type];
-
-  switch (block.type) {
-    case 'chapter-heading':
-      return (
-        <h2
-          style={{
-            ...baseStyles,
-            ...blockStyles,
-            fontSize: `${fontSize * 1.5}px`,
-          }}
-        >
-          {block.content}
-        </h2>
-      );
-
-    case 'scene-break':
-      return (
-        <div style={{ ...baseStyles, ...blockStyles }} role="separator">
-          {block.content}
-        </div>
-      );
-
-    case 'dialogue':
-    case 'dialogue-attribution':
-      return (
-        <p
-          style={{
-            ...baseStyles,
-            ...blockStyles,
-            marginBottom: `${paragraphSpacing * 0.6}px`,
-          }}
-        >
-          {block.content}
-        </p>
-      );
-
-    case 'toc-entry':
-      // Extract page number if present
-      const tocMatch = block.content.match(/^(.+?)(\s*\.{2,}\s*|\s{2,})(\d+)$/);
-      if (tocMatch) {
-        return (
-          <div
-            style={{
-              ...baseStyles,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'baseline',
-              gap: '0.5em',
-              marginBottom: '0.25em',
-              paddingLeft: block.metadata?.indentLevel ? `${block.metadata.indentLevel * 1.5}em` : 0,
-            }}
-          >
-            <span style={{ flex: '1' }}>{tocMatch[1].trim()}</span>
-            <span style={{ 
-              borderBottom: '1px dotted currentColor', 
-              flex: '1', 
-              opacity: 0.3,
-              marginBottom: '0.25em'
-            }} />
-            <span style={{ opacity: 0.6 }}>{tocMatch[3]}</span>
-          </div>
-        );
-      }
-      return (
-        <p style={{ ...baseStyles, ...blockStyles, marginBottom: '0.25em' }}>
-          {block.content}
-        </p>
-      );
-
-    case 'letter':
-      return (
-        <blockquote
-          style={{
-            ...baseStyles,
-            ...blockStyles,
-            marginBottom: `${paragraphSpacing}px`,
-            borderLeftColor: theme.accent,
-          }}
-        >
-          {block.content}
-        </blockquote>
-      );
-
-    case 'poetry':
-      return (
-        <p
-          style={{
-            ...baseStyles,
-            ...blockStyles,
-            marginBottom: `${paragraphSpacing * 0.5}px`,
-          }}
-        >
-          {block.content}
-        </p>
-      );
-
-    case 'blockquote':
-      return (
-        <blockquote
-          style={{
-            ...baseStyles,
-            ...blockStyles,
-            marginBottom: `${paragraphSpacing}px`,
-            borderLeftColor: theme.accent,
-            paddingLeft: block.metadata?.indentLevel ? `${block.metadata.indentLevel}em` : '1em',
-          }}
-        >
-          {block.content}
-        </blockquote>
-      );
-
-    case 'list-item':
-      const marker = block.metadata?.listStyle === 'number' 
-        ? `${block.metadata.listIndex}. `
-        : block.metadata?.listStyle === 'letter'
-          ? `${String.fromCharCode(96 + (block.metadata.listIndex || 1))}. `
-          : '• ';
-      return (
-        <p style={{ ...baseStyles, ...blockStyles, marginBottom: '0.25em' }}>
-          <span style={{ opacity: 0.6 }}>{marker}</span>
-          {block.content}
-        </p>
-      );
-
-    case 'first-paragraph':
-      // Drop cap for first paragraph of chapter
-      const firstChar = block.content.charAt(0);
-      const rest = block.content.slice(1);
-      return (
-        <p
-          style={{
-            ...baseStyles,
-            marginBottom: `${paragraphSpacing}px`,
-            textAlign: 'justify',
-            textJustify: 'inter-word',
-          }}
-        >
-          <span
-            style={{
-              float: 'left',
-              fontSize: `${fontSize * 3.2}px`,
-              lineHeight: 0.8,
-              marginRight: '0.08em',
-              marginTop: '0.05em',
-              fontWeight: 500,
-              color: theme.accent,
-            }}
-          >
-            {firstChar}
-          </span>
-          {rest}
-        </p>
-      );
-
-    case 'epigraph':
-      return (
-        <p
-          style={{
-            ...baseStyles,
-            ...blockStyles,
-            marginBottom: `${paragraphSpacing * 2}px`,
-            fontSize: `${fontSize * 0.95}px`,
-          }}
-        >
-          {block.content}
-        </p>
-      );
-
-    case 'paragraph':
-    default:
-      return (
-        <p
-          style={{
-            ...baseStyles,
-            marginBottom: `${paragraphSpacing}px`,
-            opacity: 0.92,
-            textAlign: 'justify',
-            textJustify: 'inter-word',
-            hyphens: 'auto',
-            WebkitHyphens: 'auto',
-            wordBreak: 'break-word',
-            letterSpacing: '-0.01em',
-          }}
-        >
-          {block.content}
-        </p>
-      );
-  }
-});
-
-/**
- * TokenizedBlockView - Renders token-based paragraphs
- * Used when full token data is available (for RSVP clicking)
- */
-interface TokenizedBlockViewProps {
-  para: {
-    tokens: RSVPToken[];
-    startIndex: number;
-    plainText: string;
-    blockType: BlockType;
-  };
-  activeIndex: number;
-  fontSize: number;
-  lineHeight: number;
-  paragraphSpacing: number;
-  fontFamily: string;
-  theme: { primaryText: string; accent: string; background: string };
-  onWordClick: (index: number) => void;
-}
-
-const TokenizedBlockView: React.FC<TokenizedBlockViewProps> = memo(({
-  para,
-  activeIndex,
+// ============================================
+// VIRTUAL PARAGRAPH - Only renders visible content
+// ============================================
+const VirtualParagraph = React.memo(({
+  paragraph,
   fontSize,
   lineHeight,
   paragraphSpacing,
   fontFamily,
-  theme,
-  onWordClick,
+  textColor,
+  accentColor,
+  currentWordIndex,
+  onWordClick
+}: {
+  paragraph: FlowParagraph;
+  fontSize: number;
+  lineHeight: number;
+  paragraphSpacing: number;
+  fontFamily: string;
+  textColor: string;
+  accentColor: string;
+  currentWordIndex: number;
+  onWordClick: (wordIndex: number) => void;
 }) => {
+  const isCurrentPara = currentWordIndex >= paragraph.startIndex && currentWordIndex <= paragraph.endIndex;
+
   return (
     <p
-      className="cursor-pointer transition-opacity hover:opacity-100"
+      data-start={paragraph.startIndex}
+      className="flow-paragraph"
       style={{
         fontSize: `${fontSize}px`,
         lineHeight,
-        fontFamily,
-        color: theme.primaryText,
         marginBottom: `${paragraphSpacing}px`,
-        opacity: 0.92,
+        marginTop: 0,
+        fontFamily,
+        color: textColor,
         textAlign: 'justify',
-        textJustify: 'inter-word',
         hyphens: 'auto',
         WebkitHyphens: 'auto',
-        wordBreak: 'break-word',
-        letterSpacing: '-0.01em',
         textRendering: 'optimizeLegibility',
-        WebkitFontSmoothing: 'antialiased',
+        opacity: isCurrentPara ? 1 : 0.85,
+        transition: 'opacity 0.2s ease',
+        cursor: 'text'
       }}
     >
-      {para.tokens.map((token) => {
-        const isActive = token.globalIndex === activeIndex;
-        return (
-          <React.Fragment key={token.id}>
-            <span
-              onClick={(e) => {
-                e.stopPropagation();
-                onWordClick(token.globalIndex);
-              }}
-              className="inline rounded-sm cursor-pointer select-none transition-colors duration-150"
-              style={{
-                backgroundColor: isActive ? theme.accent : 'transparent',
-                color: isActive ? '#FFFFFF' : 'inherit',
-                padding: isActive ? '0.1em 0.15em' : '0',
-                margin: isActive ? '-0.1em -0.15em' : '0',
-              }}
-            >
-              {token.originalText}
-            </span>
-            {' '}
-          </React.Fragment>
-        );
-      })}
+      {paragraph.words.map((word) => (
+        <FlowWordSpan
+          key={word.index}
+          word={word}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          textColor={textColor}
+          accentColor={accentColor}
+          isHighlighted={word.index === currentWordIndex}
+          onClick={onWordClick}
+        />
+      ))}
     </p>
   );
 });
+
+// ============================================
+// FLOW RSVP DISPLAY - Precomputed ORP, GPU accelerated
+// ============================================
+const FlowRSVP = React.memo(({
+  currentWord,
+  fontSize,
+  fontFamily,
+  textColor,
+  accentColor
+}: {
+  currentWord: FlowWord | null;
+  fontSize: number;
+  fontFamily: string;
+  textColor: string;
+  accentColor: string;
+}) => {
+  if (!currentWord) return null;
+
+  const text = currentWord.text;
+
+  // Use precomputed ORP - instant rendering
+  const before = text.slice(0, currentWord.orpIndex);
+  const pivot = text[currentWord.orpIndex] || '';
+  const after = text.slice(currentWord.orpIndex + 1);
+
+  return (
+    <div
+      className="flow-rsvp-display"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto 1fr',
+        alignItems: 'baseline',
+        fontFamily,
+        fontSize: `${fontSize}px`,
+        fontWeight: 500,
+        whiteSpace: 'nowrap',
+        width: '100%',
+        maxWidth: '90vw',
+        willChange: 'transform', // GPU acceleration hint
+        transform: 'translateZ(0)' // Force GPU layer
+      }}
+    >
+      <span style={{ color: textColor, textAlign: 'right', paddingRight: '2px' }}>
+        {before}
+      </span>
+      <span style={{
+        color: accentColor,
+        fontWeight: 700,
+        textShadow: `0 0 8px ${accentColor}20` // Subtle glow effect
+      }}>
+        {pivot}
+      </span>
+      <span style={{ color: textColor, textAlign: 'left', paddingLeft: '2px' }}>
+        {after}
+      </span>
+    </div>
+  );
+});
+
+// ============================================
+// MAIN FLOW READER - Proprietary high-performance implementation
+// ============================================
+export const FlowReader: React.FC<FlowReaderProps> = ({
+  book,
+  onToggleChrome,
+  isActive,
+  showGhostWords = true
+}) => {
+  const engine = StreamEngine.getInstance();
+  const processor = FlowBookProcessor.getInstance();
+  const theme = useTitanTheme();
+  const { settings } = useTitanSettings();
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Core state - minimal updates
+  const [flowBook, setFlowBook] = useState<FlowBook | null>(null);
+  const [isReady, setIsReady] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentWord, setCurrentWord] = useState<FlowWord | null>(null);
+  const [visibleParagraphs, setVisibleParagraphs] = useState<FlowParagraph[]>([]);
+
+  // Refs for performance
+  const isPlayingRef = useRef(false);
+  const positionRef = useRef(0);
+  const ignoreScrollRef = useRef(false);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Virtual scrolling state
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+
+  // Font configuration
+  const fontFamilyCSS = {
+    'New York': '"New York", "Iowan Old Style", Palatino, Georgia, serif',
+    'SF Pro': '"SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    'OpenDyslexic': '"OpenDyslexic", "Comic Sans MS", sans-serif',
+    'Atkinson Hyperlegible': '"Atkinson Hyperlegible", Verdana, sans-serif'
+  }[settings.fontFamily] || '"SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+  const rsvpFontSize = Math.min(settings.fontSize * 2.5, 60);
+
+  // ============================================
+  // BOOK PROCESSING - Expensive but one-time
+  // ============================================
+  useEffect(() => {
+    if (!book.chapters || book.chapters.length === 0) {
+      setIsReady(true);
+      return;
+    }
+
+    setIsReady(false);
+
+    // Extract text from chapters
+    const chapters = [...book.chapters].sort((a, b) => a.sortOrder - b.sortOrder);
+    const textParts: string[] = [];
+
+    for (const chapter of chapters) {
+      if (chapter.content) {
+        const clean = chapter.content
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/&[a-z]+;/gi, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (clean) textParts.push(clean);
+      }
+    }
+
+    const fullText = textParts.join('\n\n');
+
+    // Process with FlowBookProcessor - this is the expensive part
+    processor.processBook(book.id, book.title || 'Untitled', fullText).then((processedBook) => {
+      setFlowBook(processedBook);
+
+      // Load into engine for compatibility
+      engine.load(fullText);
+
+      // Restore position
+      if (book.lastTokenIndex !== undefined && book.lastTokenIndex > 0) {
+        engine.position = Math.min(book.lastTokenIndex, processedBook.totalWords - 1);
+      } else if (book.bookmarkProgress && book.bookmarkProgress > 0) {
+        engine.progress = book.bookmarkProgress;
+      }
+
+      engine.wpm = settings.rsvpSpeed || 300;
+      positionRef.current = engine.position;
+      setCurrentWord(processor.getWord(processedBook, engine.position));
+      setIsReady(true);
+
+      // Initial virtual scroll update
+      updateVisibleParagraphs(processedBook, engine.position);
+    });
+  }, [book.id]);
+
+  // ============================================
+  // VIRTUAL SCROLLING - Only render visible paragraphs
+  // ============================================
+  const updateVisibleParagraphs = useCallback((book: FlowBook, currentPos: number) => {
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+    const viewportHeight = container.clientHeight;
+    const scrollTop = container.scrollTop;
+
+    // Calculate which paragraphs are visible
+    const paraHeight = settings.fontSize * settings.lineHeight + settings.paragraphSpacing;
+    const visibleCount = Math.ceil(viewportHeight / paraHeight) + 2; // +2 for buffer
+
+    const currentParaIndex = book.paragraphs.findIndex(p =>
+      currentPos >= p.startIndex && currentPos <= p.endIndex
+    );
+
+    const startPara = Math.max(0, currentParaIndex - Math.floor(visibleCount / 2));
+    const endPara = Math.min(book.paragraphs.length, startPara + visibleCount);
+
+    const visible = book.paragraphs.slice(startPara, endPara);
+    setVisibleParagraphs(visible);
+  }, [settings.fontSize, settings.lineHeight, settings.paragraphSpacing]);
+
+  // ============================================
+  // ENGINE SUBSCRIPTION - Optimized listeners
+  // ============================================
+  useEffect(() => {
+    if (!isReady || !flowBook) return;
+
+    const handlePosition = (pos: number) => {
+      positionRef.current = pos;
+      const word = processor.getWord(flowBook, pos);
+      setCurrentWord(word);
+
+      // Update virtual scrolling
+      updateVisibleParagraphs(flowBook, pos);
+
+      // Save progress (debounced)
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => {
+        TitanStorage.getInstance().saveBook({
+          ...book,
+          lastTokenIndex: pos,
+          bookmarkProgress: engine.progress,
+          lastOpened: new Date()
+        });
+      }, 500);
+    };
+
+    const handlePlayState = (playing: boolean) => {
+      isPlayingRef.current = playing;
+      setIsPlaying(playing);
+
+      if (!playing) {
+        // Immediate save when stopping
+        TitanStorage.getInstance().saveBook({
+          ...book,
+          lastTokenIndex: engine.position,
+          bookmarkProgress: engine.progress,
+          lastOpened: new Date()
+        });
+      }
+    };
+
+    const unsubPos = engine.onPosition(handlePosition);
+    const unsubPlay = engine.onPlayState(handlePlayState);
+
+    // Sync initial state
+    handlePosition(engine.position);
+    handlePlayState(engine.isPlaying);
+
+    return () => {
+      unsubPos();
+      unsubPlay();
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [isReady, flowBook, updateVisibleParagraphs, book]);
+
+  // ============================================
+  // HANDLERS
+  // ============================================
+  const handleWordTap = useCallback((wordIndex: number) => {
+    RSVPHapticEngine.impactLight();
+    engine.position = wordIndex;
+    engine.play();
+  }, []);
+
+  const handleRSVPTap = useCallback(() => {
+    RSVPHapticEngine.impactMedium();
+    engine.toggle();
+  }, []);
+
+  const handleBackgroundTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if ((e.target as HTMLElement).closest('.flow-word')) return;
+    onToggleChrome();
+  }, [onToggleChrome]);
+
+  const handleScroll = useCallback(() => {
+    if (ignoreScrollRef.current || isPlaying || !flowBook) return;
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    const newScrollTop = container.scrollTop;
+    setScrollTop(newScrollTop);
+
+    // Calculate current position based on scroll
+    const paraHeight = settings.fontSize * settings.lineHeight + settings.paragraphSpacing;
+    const scrolledParas = Math.floor(newScrollTop / paraHeight);
+
+    const targetPara = flowBook.paragraphs[scrolledParas];
+    if (targetPara && targetPara.startIndex !== engine.position) {
+      engine.position = targetPara.startIndex;
+    }
+  }, [flowBook, isPlaying, settings.fontSize, settings.lineHeight, settings.paragraphSpacing]);
+
+  // ============================================
+  // RENDER: LOADING
+  // ============================================
+  if (!isReady) {
+    return (
+      <div
+        className="absolute inset-0 flex items-center justify-center"
+        style={{ backgroundColor: theme.background }}
+      >
+        <div className="flex flex-col items-center gap-4">
+          <div
+            className="w-12 h-12 border-3 rounded-full animate-spin"
+            style={{ borderColor: theme.accent, borderTopColor: 'transparent' }}
+          />
+          <span className="text-sm lowercase tracking-wider" style={{ color: theme.secondaryText }}>
+            processing book...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER: EMPTY
+  // ============================================
+  if (!flowBook || flowBook.paragraphs.length === 0) {
+    return (
+      <div
+        className="absolute inset-0 flex items-center justify-center"
+        style={{ backgroundColor: theme.background }}
+      >
+        <div className="text-center px-8">
+          <div className="text-6xl mb-4">⚡</div>
+          <p className="text-lg font-medium" style={{ color: theme.secondaryText }}>
+            no content found
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER: RSVP MODE (Playing)
+  // ============================================
+  if (isPlaying && currentWord) {
+    return (
+      <div
+        className="absolute inset-0 flex items-center justify-center select-none"
+        style={{ backgroundColor: theme.background }}
+        onClick={handleRSVPTap}
+      >
+        <FlowRSVP
+          currentWord={currentWord}
+          fontSize={rsvpFontSize}
+          fontFamily={fontFamilyCSS}
+          textColor={theme.primaryText}
+          accentColor={theme.accent}
+        />
+
+        {/* Progress bar */}
+        <div
+          className="absolute left-8 right-8 bottom-8 h-1 rounded-full overflow-hidden"
+          style={{ backgroundColor: theme.borderColor }}
+        >
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${engine.progress * 100}%`,
+              backgroundColor: theme.accent,
+              opacity: 0.6,
+              transition: 'width 100ms linear'
+            }}
+          />
+        </div>
+
+        {/* Tap to pause hint */}
+        <div
+          className="absolute top-8 left-1/2 -translate-x-1/2 text-xs uppercase tracking-widest"
+          style={{ color: theme.secondaryText, opacity: 0.4 }}
+        >
+          tap to pause
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER: SCROLL MODE (Paused) - Virtual scrolling
+  // ============================================
+  return (
+    <div
+      ref={containerRef}
+      className="absolute inset-0 overflow-y-auto overflow-x-hidden"
+      style={{
+        backgroundColor: theme.background,
+        WebkitOverflowScrolling: 'touch'
+      }}
+      onClick={handleBackgroundTap}
+      onScroll={handleScroll}
+    >
+      <div
+        ref={scrollRef}
+        className="w-full min-h-full"
+        style={{
+          maxWidth: '65ch',
+          margin: '0 auto',
+          padding: '80px 24px 200px'
+        }}
+      >
+        {visibleParagraphs.map((para) => (
+          <VirtualParagraph
+            key={para.startIndex}
+            paragraph={para}
+            fontSize={settings.fontSize}
+            lineHeight={settings.lineHeight}
+            paragraphSpacing={settings.paragraphSpacing}
+            fontFamily={fontFamilyCSS}
+            textColor={theme.primaryText}
+            accentColor={theme.accent}
+            currentWordIndex={engine.position}
+            onWordClick={handleWordTap}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
 

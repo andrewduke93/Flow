@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Book } from '../types';
-import { StreamReader } from './StreamReader';
+import { FlowReader } from './FlowReader';
 import { StreamEngine } from '../services/streamEngine';
 import { 
   ChevronLeft, Play, Pause, RotateCcw, Sun, Moon, Sunset,
@@ -182,7 +182,7 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       style={{ backgroundColor: theme.background }}
     >
       {/* READER */}
-      <StreamReader 
+      <FlowReader 
         book={book}
         onToggleChrome={handleToggleChrome}
         isActive={true}
