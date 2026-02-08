@@ -91,6 +91,8 @@ const SimpleParagraph = memo(({
   paragraphSpacing,
   fontFamily, 
   textColor,
+  accentColor,
+  tappedWord,
   onParagraphClick,
   onWordClick
 }: {
@@ -102,6 +104,8 @@ const SimpleParagraph = memo(({
   paragraphSpacing: number;
   fontFamily: string;
   textColor: string;
+  accentColor: string;
+  tappedWord: number | null;
   onParagraphClick: (startIndex: number) => void;
   onWordClick: (wordIndex: number) => void;
 }) => {
@@ -134,7 +138,12 @@ const SimpleParagraph = memo(({
             cursor: 'pointer',
             userSelect: 'none',
             WebkitUserSelect: 'none',
-            marginRight: '0.25ch'
+            marginRight: '0.25ch',
+            padding: '0 0.15ch',
+            borderRadius: 4,
+            transition: 'transform 120ms ease, background-color 120ms ease',
+            transform: tappedWord === w.index ? 'translateY(-2px) scale(1.02)' : 'none',
+            backgroundColor: tappedWord === w.index ? 'rgba(255,215,0,0.12)' : 'transparent'
           }}
         >
           {w.text}
@@ -172,6 +181,9 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
   const positionRef = useRef(0);
   const ignoreScrollRef = useRef(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [tappedWord, setTappedWord] = useState<number | null>(null);
 
   // Font family CSS
   const fontFamilyCSS = FONT_STACKS[settings.fontFamily] || FONT_STACKS['SF Pro'];
@@ -363,7 +375,11 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
 
   const handleWordTap = useCallback((wordIndex: number) => {
     RSVPHapticEngine.impactLight();
+    // Jump to clicked word and start RSVP from there
     engine.position = wordIndex;
+    setTappedWord(wordIndex);
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current as any);
+    tapTimeoutRef.current = setTimeout(() => setTappedWord(null), 350);
     engine.play();
   }, []);
 
@@ -498,6 +514,8 @@ export const StreamReader: React.FC<StreamReaderProps> = ({
             paragraphSpacing={settings.paragraphSpacing}
             fontFamily={fontFamilyCSS}
             textColor={theme.primaryText}
+            accentColor={theme.accent}
+            tappedWord={tappedWord}
             onParagraphClick={(si) => handleParagraphTap(si)}
             onWordClick={(wi) => handleWordTap(wi)}
           />
