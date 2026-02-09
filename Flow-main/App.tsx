@@ -10,7 +10,6 @@ import { CoverService } from './services/coverService';
 import { Book } from './types';
 import { useTitanTheme } from './services/titanTheme';
 import { SyncToast } from './components/SyncToast';
-import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Lazy load heavy components
 const ReaderContainer = lazy(() => import('./components/ReaderContainer').then(m => ({ default: m.ReaderContainer })));
@@ -84,11 +83,6 @@ const App: React.FC = () => {
             // Init Storage
             await storage.init();
             
-            // Clean up orphaned localStorage backups
-            storage.cleanupOrphanedBackups().catch(e => {
-                console.warn('[App] Failed to cleanup localStorage:', e);
-            });
-            
             // Load Books (Metadata only for speed)
             let loadedBooks = await storage.getAllMetadata();
             
@@ -155,13 +149,12 @@ const App: React.FC = () => {
             booksRef.current = hydrated;
 
             // COVER RESTORATION: Restore blob URLs for cached covers
-            // Blob URLs are session-specific and become invalid on reload
-            // This regenerates fresh blob URLs from persisted IndexedDB blobs
+            // This runs in the background to avoid blocking initial render
             (async () => {
                 const restoredBooks = await Promise.all(
                     hydrated.map(async (book) => {
-                        if (book.coverUrl) {
-                            // Always check for cached blob - blob URLs are invalid after reload
+                        if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
+                            // Try to get cached cover blob
                             const cachedUrl = await CoverService.getCachedCover(book.id);
                             if (cachedUrl) {
                                 return { ...book, coverUrl: cachedUrl };
@@ -255,23 +248,11 @@ const App: React.FC = () => {
           }
       };
 
-      // REDUCED INTERVAL: 2s instead of 5s for more frequent saves
-      const intervalId = setInterval(() => syncToLibrary(false), 2000);
+      const intervalId = setInterval(() => syncToLibrary(false), 5000);
       
-      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-          // SYNCHRONOUS save - can't rely on async in beforeunload
-          // localStorage backup already handled by TitanCore.saveProgress
-          if (engine.currentBook && engine.currentBook.id === currentBookId) {
-              const updatedBook: Book = {
-                  ...engine.currentBook,
-                  bookmarkProgress: engine.currentProgress,
-                  isFinished: engine.currentBook.isFinished,
-                  lastTokenIndex: engine.currentBook.lastTokenIndex,
-                  lastOpened: new Date()
-              };
-              // Try to save to IDB (may not complete)
-              TitanStorage.getInstance().saveBook(updatedBook).catch(() => {});
-          }
+      const handleBeforeUnload = () => {
+          syncToLibrary(true); // Force save on unload
+          SyncManager.getInstance().syncNow(false);
       };
       
       // OPTIMIZATION: Save immediately when tab goes to background
@@ -298,49 +279,32 @@ const App: React.FC = () => {
       window.history.pushState({ bookOpen: true, bookId: book.id }, '', window.location.href);
     }
     
-    // CRITICAL: Always fetch fresh book data from storage to get latest progress
-    // This ensures we never open with stale progress data
-    let fullBook = await TitanStorage.getInstance().getFullBook(book.id);
-    
-    // REPAIR: If full book is missing or corrupted, try to regenerate welcome book
-    if ((!fullBook || !fullBook.chapters || fullBook.chapters.length === 0) && book.id === 'guide-book-v1') {
-        const mocks = generateMockBooks();
-        const freshWelcome = mocks.find(b => b.id === 'guide-book-v1');
-        if (freshWelcome) {
-            freshWelcome.bookmarkProgress = book.bookmarkProgress || 0;
-            freshWelcome.lastTokenIndex = book.lastTokenIndex;
-            freshWelcome.lastOpened = book.lastOpened;
-            await TitanStorage.getInstance().saveBook(freshWelcome);
-            fullBook = freshWelcome;
-        }
-    }
-    
-    // Check localStorage backup for most recent progress
-    if (fullBook) {
-        try {
-            const backupKey = `book_progress_${book.id}`;
-            const backup = localStorage.getItem(backupKey);
-            if (backup) {
-                const parsed = JSON.parse(backup);
-                // Use backup if it exists and is more recent
-                if (parsed.lastTokenIndex !== undefined && 
-                    (fullBook.lastTokenIndex === undefined || parsed.lastTokenIndex > fullBook.lastTokenIndex)) {
-                    fullBook.lastTokenIndex = parsed.lastTokenIndex;
-                    fullBook.bookmarkProgress = parsed.bookmarkProgress;
-                    console.log('[App] Restored progress from localStorage backup');
-                }
+    // Check if content is loaded
+    if (!book.chapters || book.chapters.length === 0) {
+        let fullBook = await TitanStorage.getInstance().getFullBook(book.id);
+        
+        // REPAIR: If full book is missing or corrupted, try to regenerate welcome book
+        if ((!fullBook || !fullBook.chapters || fullBook.chapters.length === 0) && book.id === 'guide-book-v1') {
+            const mocks = generateMockBooks();
+            const freshWelcome = mocks.find(b => b.id === 'guide-book-v1');
+            if (freshWelcome) {
+                freshWelcome.bookmarkProgress = book.bookmarkProgress || 0;
+                freshWelcome.lastTokenIndex = book.lastTokenIndex;
+                freshWelcome.lastOpened = book.lastOpened;
+                await TitanStorage.getInstance().saveBook(freshWelcome);
+                fullBook = freshWelcome;
             }
-        } catch (e) {
-            console.warn('[App] Failed to check localStorage backup:', e);
         }
-    }
-    
-    if (fullBook && fullBook.chapters && fullBook.chapters.length > 0) {
-        // CRITICAL FIX: Use flushSync to ensure books state commits synchronously
-        flushSync(() => {
-            setBooks(prev => prev.map(b => b.id === book.id ? fullBook : b));
-        });
-        setCurrentBookId(fullBook.id);
+        
+        if (fullBook && fullBook.chapters && fullBook.chapters.length > 0) {
+            // CRITICAL FIX: Use flushSync to ensure books state commits synchronously
+            flushSync(() => {
+                setBooks(prev => prev.map(b => b.id === book.id ? fullBook : b));
+            });
+            setCurrentBookId(fullBook.id);
+        } else {
+            setCurrentBookId(book.id);
+        }
     } else {
         setCurrentBookId(book.id);
     }
@@ -431,28 +395,8 @@ const App: React.FC = () => {
 
   const activeBook = books.find(b => b.id === currentBookId);
 
-  // PERFORMANCE: Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      // Cleanup any lingering resources
-      const engine = TitanCore.getInstance();
-      if (engine.currentBook) {
-        // Save final state
-        const updatedBook: Book = {
-          ...engine.currentBook,
-          bookmarkProgress: engine.currentProgress,
-          isFinished: engine.currentBook.isFinished,
-          lastTokenIndex: engine.currentBook.lastTokenIndex,
-          lastOpened: new Date()
-        };
-        TitanStorage.getInstance().saveBook(updatedBook).catch(() => {});
-      }
-    };
-  }, []);
-
   return (
-    <ErrorBoundary>
-      <div 
+    <div 
       className="fixed inset-0 overflow-hidden font-sans select-none antialiased"
       style={{ 
         backgroundColor: theme.background, 
@@ -512,7 +456,6 @@ const App: React.FC = () => {
          )}
       </AnimatePresence>
     </div>
-    </ErrorBoundary>
   );
 };
 
