@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="A quiet place to read. No distractions, just your books." />
+    
+    <!-- iOS PWA Capabilities -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Flow" />
+    
+    <title>Flow</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/Flow/manifest.json">
+    
+    <!-- Icons: Using PNG for Better Compatibility -->
+    <link rel="icon" type="image/png" href="/Flow/favicon.png">
+    <link rel="apple-touch-icon" href="/Flow/icons/apple-touch-icon-180x180.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script>
+      // Register the Service Worker for PWA functionality
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          // Get the base path from the current location
+          const basePath = window.location.pathname.split('/Flow')[0] + '/Flow';
+          navigator.serviceWorker.register(basePath + '/sw.js', { scope: basePath + '/' })
+            .then(registration => {
+              console.log('Flow Service Worker registered:', registration);
+            })
+            .catch(err => {
+              console.error('Flow Service Worker registration failed:', err);
+            });
+        });
+      }
+      
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Inter"', '-apple-system', 'sans-serif'],
+              zune: ['"Inter"', 'sans-serif'],
+            },
+            colors: {
+              zune: {
+                black: '#000000',
+                white: '#FFFFFF',
+                ember: '#E25822',
+                gray: '#333333',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #000000;
+        color: #FFFFFF;
+        font-family: "Inter", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        overflow: hidden; /* App-like feel */
+        overscroll-behavior: none; /* Prevent bounce on Mac/iOS */
+        text-rendering: optimizeLegibility;
+      }
+      
+      /* ========================================
+         TYPOGRAPHY - Professional reading experience
+         ======================================== */
+      
+      /* Better text rendering for reading content */
+      .prose-flow {
+        font-variant-ligatures: common-ligatures contextual;
+        font-variant-numeric: oldstyle-nums proportional-nums;
+        font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1, "pnum" 1;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      /* Proper hanging punctuation support where available */
+      .prose-flow p {
+        hanging-punctuation: first last;
+      }
+      
+      /* First-letter drop cap support (optional - add class .drop-cap to enable) */
+      .prose-flow .drop-cap::first-letter {
+        float: left;
+        font-size: 3.5em;
+        line-height: 0.8;
+        padding-right: 0.1em;
+        padding-top: 0.1em;
+        font-weight: 500;
+      }
+      
+      /* Better selection colors */
+      ::selection {
+        background-color: rgba(226, 88, 34, 0.3);
+        color: inherit;
+      }
+      
+      /* Smoother scrolling for reading */
+      .smooth-scroll {
+        scroll-behavior: smooth;
+      }
+      
+      /* Zero Scrollbar Policy */
+      ::-webkit-scrollbar {
+        width: 0px;
+        background: transparent;
+      }
+      .no-tap-highlight {
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* Focus indicators for accessibility */
+      button:focus-visible,
+      [role="button"]:focus-visible,
+      a:focus-visible,
+      input:focus-visible {
+        outline: 2px solid #E25822;
+        outline-offset: 2px;
+        border-radius: 8px;
+      }
+      /* Reduced motion support */
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+      /* Animation: slideUp - only plays once on mount */
+      @keyframes slideUp {
+        from { transform: translateY(100%); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .animate-slideUp {
+        animation: slideUp 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      /* Animation: jiggle - iOS-style edit mode wiggle (CSS-only, no JS) */
+      @keyframes jiggle {
+        0%, 100% { transform: scale(0.94) rotate(0deg); }
+        25% { transform: scale(0.94) rotate(-1deg); }
+        75% { transform: scale(0.94) rotate(1deg); }
+      }
+      .animate-jiggle {
+        animation: jiggle 0.25s ease-in-out infinite;
+      }
+    </style>
+
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "jszip": "https://esm.sh/jszip@3.10.1",
+    "framer-motion": "https://esm.sh/framer-motion@11.1.7?external=react,react-dom",
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/Flow/assets/index-CP2cVjs9.js"></script>
+  <link rel="modulepreload" crossorigin href="/Flow/assets/animations-D9Wo9mUM.js">
+  <link rel="modulepreload" crossorigin href="/Flow/assets/vendor-react-uIRdnfX0.js">
+  <link rel="modulepreload" crossorigin href="/Flow/assets/rsvp-ChCL7CNZ.js">
+  <link rel="modulepreload" crossorigin href="/Flow/assets/cloud-BD3GCjEV.js">
+  <link rel="modulepreload" crossorigin href="/Flow/assets/icons-DhCoUMbR.js">
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
