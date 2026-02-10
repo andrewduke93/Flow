@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Book } from '../types';
-import { FlowReader } from './FlowReader';
+import { TitanReaderView } from './TitanReaderView';
 import { StreamEngine } from '../services/streamEngine';
 import { 
   ChevronLeft, Play, Pause, RotateCcw, Sun, Moon, Sunset,
@@ -182,11 +182,10 @@ export const ReaderContainer: React.FC<ReaderContainerProps> = ({ book, onClose 
       style={{ backgroundColor: theme.background }}
     >
       {/* READER */}
-      <FlowReader 
+      <TitanReaderView 
         book={book}
         onToggleChrome={handleToggleChrome}
         isActive={true}
-        showGhostWords={showGhost}
       />
 
       {/* ====== FLOATING PILL DOCK (matches library style) ====== */}

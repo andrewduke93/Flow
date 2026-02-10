@@ -287,7 +287,7 @@ export const TitanCloudLibrary: React.FC<TitanCloudLibraryProps> = ({ existingBo
         {!isSearching && results.length === 0 && query && (
           <div className="flex flex-col items-center justify-center h-40 text-center opacity-60">
             <p className="font-serif italic text-lg lowercase" style={{ color: theme.secondaryText }}>
-              "no matches found in {activeSource.name.toLowerCase()}"
+              "no matches found in project gutenberg"
             </p>
             <p className="text-xs mt-2 opacity-60" style={{ color: theme.secondaryText }}>
               try a different search or browse another source

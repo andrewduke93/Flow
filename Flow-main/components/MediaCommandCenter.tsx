@@ -54,7 +54,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
       setIsPlaying(heartbeat.isPlaying);
       
       if (!isScrubbing) {
-        const pct = core.totalTokens > 0 ? conductor.currentTokenIndex / core.totalTokens : 0;
+        const pct = core.totalTokens > 0 ? heartbeat.currentIndex / core.totalTokens : 0;
         setProgress(pct);
         if (progressRef.current) {
           progressRef.current.style.width = `${pct * 100}%`;
@@ -76,7 +76,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
 
   // Time remaining
   const getTimeLeft = useCallback(() => {
-    const tokensLeft = Math.max(0, core.totalTokens - conductor.currentTokenIndex);
+    const tokensLeft = Math.max(0, core.totalTokens - heartbeat.currentIndex);
     const wpm = settings.rsvpSpeed || 250;
     const minutesLeft = tokensLeft / wpm;
     
@@ -118,10 +118,10 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     
     // Commit position
     const targetIndex = Math.floor(pct * core.totalTokens);
-    conductor.seekToToken(targetIndex);
+    conductor.seekRelative(targetIndex - heartbeat.currentIndex);
     
     setIsScrubbing(false);
-    if (wasPlayingRef.current) heartbeat.start();
+    if (wasPlayingRef.current) heartbeat.play();
     RSVPHapticEngine.impactMedium();
   }, [isScrubbing]);
 
@@ -148,7 +148,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     wasPlayingBeforeRewind.current = heartbeat.isPlaying;
     
     // Immediate step
-    conductor.seekByTokens(-REWIND_STEP);
+    conductor.seekRelative(-REWIND_STEP);
     
     // Hold for continuous
     rewindHoldTimerRef.current = setTimeout(() => {
@@ -156,9 +156,9 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
       if (wasPlayingBeforeRewind.current) heartbeat.stop();
       
       rewindIntervalRef.current = setInterval(() => {
-        conductor.seekByTokens(-REWIND_STEP);
+        conductor.seekRelative(-REWIND_STEP);
         RSVPHapticEngine.selectionChanged();
-        if (conductor.currentTokenIndex <= 0) stopRewind();
+        if (heartbeat.currentIndex <= 0) stopRewind();
       }, 150);
     }, 300);
   }, [isRSVPActive]);
@@ -171,7 +171,7 @@ export const MediaCommandCenter: React.FC<MediaCommandCenterProps> = memo(({
     
     if (isRewindHeld) {
       setIsRewindHeld(false);
-      if (wasPlayingBeforeRewind.current) heartbeat.start();
+      if (wasPlayingBeforeRewind.current) heartbeat.play();
       RSVPHapticEngine.impactMedium();
     }
   }, [isRewindHeld]);

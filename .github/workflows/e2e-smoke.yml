@@ -1,0 +1,32 @@
+name: E2E smoke — Flow
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for repo info)
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install puppeteer deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget ca-certificates fonts-liberation libx11-6 libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libatk1.0-0 libatk-bridge2.0-0 libpangocairo-1.0-0 libpango-1.0-0 libcups2 libnss3 lsb-release libasound2
+
+      - name: Install packages
+        run: |
+          npm ci --no-audit --no-fund
+
+      - name: Run smoke test against deployed Pages
+        env:
+          SMOKE_URL: https://andrewduke93.github.io/Flow/
+        run: |
+          node e2e/rsvp-smoke.js

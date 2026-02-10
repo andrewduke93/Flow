@@ -14,10 +14,10 @@ interface BookFinishedModalProps {
 // Soulful celebration messages
 const celebrations = [
   { emoji: '✨', title: 'you did it!', sub: 'another story lives in you now' },
-  { emoji: '🌟', title: 'beautiful', sub: 'that\\'s a whole world you just explored' },
-  { emoji: '📖', title: 'the end~', sub: 'but really, it\\'s just the beginning' },
+  { emoji: '🌟', title: 'beautiful', sub: 'that\'s a whole world you just explored' },
+  { emoji: '📖', title: 'the end~', sub: 'but really, it\'s just the beginning' },
   { emoji: '🎊', title: 'wow', sub: 'look at you, finishing books like that' },
-  { emoji: '🌙', title: 'complete', sub: 'this one\\'s part of your story now' },
+  { emoji: '🌙', title: 'complete', sub: 'this one\'s part of your story now' },
 ];
 
 export function BookFinishedModal({
